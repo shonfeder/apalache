@@ -40,4 +40,9 @@ class CheckCmd extends Command(name = "check",
   var checkRuntime: Boolean =
     opt[Boolean](name = "checkRuntime", default = false,
       description = " (BROKEN) check for runtime errors, e.g., applying f[x] when x is outside of f's domain, default: false")
+  var temporal: String = opt[String](
+    name = "temporal",
+    default = "",
+    description = "temporal property to be hold in fair system, e.g., Prop"
+  )
 }
