@@ -154,9 +154,33 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
     logger.info("Found %d initializing transitions and %d next transitions"
       .format(initTransitions.length, nextTransitions.length))
 
+    //find aggregated temporal property
+    val specName = options.getOption("checker", "spec", None).asInstanceOf[Option[String]]
+    val notSpec =
+      if (specName.isEmpty) {
+        None
+      } else {
+        val specBody = findBodyOf(specName.get, initReplacedDecls: _*)
+        if (specBody == NullEx) {
+          val msg = "Specification definition %s not found".format(specName.get)
+          logger.error(msg)
+          throw new IllegalArgumentException(msg)
+        }
+
+        val temporal = transformer.sanitize(specBody)( bodyDB, sourceStore )
+        val validator = new FairnessValidator()
+        if (!validator.validateWF(temporal)) {
+          val msg = "Specification does not include Weak Fairness"
+          logger.error(msg)
+          throw new IllegalArgumentException(msg)
+        }
+
+        throw new RuntimeException("Not implemented yet")
+      }
+
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
     specWithTransitions
-      = Some(new SpecWithTransitions(newModule, initTransitions, nextTransitions, cinitPrime, notInvariant, notInvariantPrime))
+      = Some(new SpecWithTransitions(newModule, initTransitions, nextTransitions, cinitPrime, notInvariant, notInvariantPrime, notSpec))
     true
   }
 

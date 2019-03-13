@@ -24,4 +24,5 @@ class SpecWithTransitions(val rootModule: TlaModule,
                           val nextTransitions: List[TlaEx],
                           val constInitPrime: Option[TlaEx],
                           val notInvariant: Option[TlaEx],
-                          val notInvariantPrime: Option[TlaEx])
+                          val notInvariantPrime: Option[TlaEx],
+                          val notSpec: Option[TlaEx])

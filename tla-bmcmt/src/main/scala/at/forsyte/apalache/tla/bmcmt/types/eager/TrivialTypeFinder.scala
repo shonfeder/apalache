@@ -7,6 +7,7 @@ import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.control.TlaControlOper
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.predef.{TlaBoolSet, TlaIntSet, TlaNatSet}
+import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 import at.forsyte.apalache.tla.lir.values.{TlaBool, TlaInt, TlaStr}
 
 import scala.collection.immutable.{Map, SortedMap}
@@ -716,6 +717,12 @@ class TrivialTypeFinder extends TypeFinder[CellT] {
 
   private def computeBoolOps(argTypes: Seq[CellT]): PartialFunction[TlaEx, CellT] = {
     case ex@OperEx(TlaBoolOper.not, _) =>
+      assert(argTypes.length == 1)
+      expectType(BoolT(), ex, argTypes.head)
+      BoolT()
+
+    case ex@OperEx(op, _)
+      if op == TlaTempOper.box || op == TlaTempOper.diamond =>
       assert(argTypes.length == 1)
       expectType(BoolT(), ex, argTypes.head)
       BoolT()
