@@ -76,7 +76,18 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         val initConstState = initializeConstants(dummyState)
         stack +:= (initConstState, initialArena.cellTrue())
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
-        applySearchStrategy()
+        val result = applySearchStrategy()
+        //TODO: I don't filter them. Should I?
+        val next = checkerInput.nextTransitions
+        val state = stack.head._1.setRex(tla.or(next:_*))
+        val ex = rewriter.rewriteUntilDone(state).ex
+        solverContext.assertGroundExpr(ex)
+        //TODO: test it
+        if (!solverContext.sat()) {
+          //TODO: think about result processing
+          throw new RuntimeException("No loop!!!")
+        }
+        result
       } catch {
         case _ : CancelSearchException =>
           Outcome.Error

@@ -4,12 +4,10 @@ import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper}
 import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
-import com.google.inject.Singleton
 
 import scala.collection.mutable
 
-@Singleton
-class FairnessValidator {
+object FairnessValidator {
 
   /**
     * Checks if temporal property of the system, satisfies weak fairness condition.

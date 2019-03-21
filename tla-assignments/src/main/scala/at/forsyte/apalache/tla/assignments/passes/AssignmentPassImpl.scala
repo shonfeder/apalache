@@ -167,15 +167,14 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
           throw new IllegalArgumentException(msg)
         }
 
-        val temporal = transformer.sanitize(specBody)( bodyDB, sourceStore )
-        val validator = new FairnessValidator()
-        if (!validator.validateWF(temporal)) {
+        val spec = transformer.sanitize(specBody)( bodyDB, sourceStore )
+        if (!FairnessValidator.validateWF(spec)) {
           val msg = "Specification does not include Weak Fairness"
           logger.error(msg)
           throw new IllegalArgumentException(msg)
         }
 
-        throw new RuntimeException("Not implemented yet")
+        Some(spec)
       }
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
