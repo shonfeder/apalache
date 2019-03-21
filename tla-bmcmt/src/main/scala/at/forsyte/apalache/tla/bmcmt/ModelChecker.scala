@@ -79,6 +79,12 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         val result = applySearchStrategy()
         //TODO: I don't filter them. Should I?
         val next = checkerInput.nextTransitions
+        //TODO: check if it is really what should be done
+        stack = stack.map { it =>
+          val binding = it._1.binding
+          it._1.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
+          it
+        }
         val state = stack.head._1.setRex(tla.or(next:_*))
         val ex = rewriter.rewriteUntilDone(state).ex
         solverContext.assertGroundExpr(ex)
