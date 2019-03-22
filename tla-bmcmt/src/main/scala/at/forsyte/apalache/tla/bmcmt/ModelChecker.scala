@@ -2,17 +2,18 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl}
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGrade, ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.CherryPick
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.control.TlaControlOper
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
-import at.forsyte.apalache.tla.lir.oper.TlaBoolOper
+import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper, TlaSetOper}
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.collection.immutable.SortedMap
@@ -77,19 +78,8 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         stack +:= (initConstState, initialArena.cellTrue())
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
         val result = applySearchStrategy()
-        //TODO: I don't filter them. Should I?
-        val next = checkerInput.nextTransitions
-        //TODO: check if it is really what should be done
-        stack = stack.map { it =>
-          val binding = it._1.binding
-          it._1.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
-          it
-        }
-        val state = stack.head._1.setRex(tla.or(next:_*))
-        val ex = rewriter.rewriteUntilDone(state).ex
-        solverContext.assertGroundExpr(ex)
-        //TODO: test it
-        if (!solverContext.sat()) {
+
+        if (!isLoopExists) {
           //TODO: think about result processing
           throw new RuntimeException("No loop!!!")
         }
@@ -106,6 +96,69 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
     // flush the logs
     rewriter.dispose()
     outcome
+  }
+
+  //TODO: test it
+  def isLoopExists: Boolean = {
+    var originalCacheSize = rewriter.exprCache.values().size
+    //TODO: filter them
+//    val next = checkerInput.nextTransitions
+    val next = checkerInput.nextTransitions.map {
+      case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
+        OperEx (TlaOper.eq, arg1, arg)
+      case _ => throw new RuntimeException("In NEXT statement only assignments are supposed to be.")
+
+    }
+
+    for (i <- next.indices) {
+
+      var last = stack.head
+      //TODO: don't forget to add loop over all actions
+      val state = last._1.setRex(next(i))
+      last = (state, last._2)
+      stack = last :: stack.tail
+
+      // we ignore first and last states
+      //TODO: finish it
+      for (j <- 1 until stack.size) {
+        val selected: (SymbState, ArenaCell) = makeAllPrimed(stack(j))
+        stack = (stack.slice(0, j) :+ selected) ++ stack.slice(j + 1, stack.size)
+
+        rewriter.push()
+        rewriter.push()
+        val ex = rewriter.rewriteUntilDone(state.setTheory(CellTheory())).ex
+        solverContext.assertGroundExpr(ex)
+
+        val result = solverContext.sat()
+
+        if (result) {
+          return result
+        } else {
+          rewriter.pop(2)
+          val selected: (SymbState, ArenaCell) = makeAllUnprimed(stack(j))
+          stack = (stack.slice(0, j) :+ selected) ++ stack.slice(j + 1, stack.size)
+        }
+      }
+    }
+
+    false
+  }
+
+  def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
+    val state = selected._1
+    val binding = state.binding
+    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
+    withNewBinding.binding.foreach { it => rewriter.exprCache.put(OperEx(TlaActionOper.prime, NameEx(it._1.dropRight(1))), (it._2.toNameEx, ExprGrade.Constant)) }
+
+    (withNewBinding, selected._2)
+  }
+
+  def makeAllUnprimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
+    val state = selected._1
+    val binding = state.binding
+    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1.dropRight(1), t._2) }))
+
+    (withNewBinding, selected._2)
   }
 
   /**
