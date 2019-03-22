@@ -79,7 +79,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
         val result = applySearchStrategy()
 
-        if (!isLoopExists) {
+        if (!doesLoopExist) {
           //TODO: think about result processing
           throw new RuntimeException("No loop!!!")
         }
@@ -98,50 +98,58 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
     outcome
   }
 
-  //TODO: test it
-  def isLoopExists: Boolean = {
-    var originalCacheSize = rewriter.exprCache.values().size
-    //TODO: filter them
-//    val next = checkerInput.nextTransitions
-    val next = checkerInput.nextTransitions.map {
-      case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
-        OperEx (TlaOper.eq, arg1, arg)
-      case _ => throw new RuntimeException("In NEXT statement only assignments are supposed to be.")
-
-    }
+  //TODO (Viktor): write unit-tests
+  def doesLoopExist: Boolean = {
+    val next = checkerInput.nextTransitions.map { it => convertToEquality(it)}
 
     for (i <- next.indices) {
-
-      var last = stack.head
-      //TODO: don't forget to add loop over all actions
-      val state = last._1.setRex(next(i))
-      last = (state, last._2)
-      stack = last :: stack.tail
+      val last = setActionForLastState(next(i))
 
       // we ignore first and last states
       //TODO: finish it
       for (j <- 1 until stack.size) {
-        val selected: (SymbState, ArenaCell) = makeAllPrimed(stack(j))
-        stack = (stack.slice(0, j) :+ selected) ++ stack.slice(j + 1, stack.size)
-
-        rewriter.push()
-        rewriter.push()
-        val ex = rewriter.rewriteUntilDone(state.setTheory(CellTheory())).ex
-        solverContext.assertGroundExpr(ex)
-
-        val result = solverContext.sat()
-
-        if (result) {
-          return result
-        } else {
-          rewriter.pop(2)
-          val selected: (SymbState, ArenaCell) = makeAllUnprimed(stack(j))
-          stack = (stack.slice(0, j) :+ selected) ++ stack.slice(j + 1, stack.size)
+        if (checkForLoopWithAction(j, last)) {
+          return true
         }
       }
     }
 
     false
+  }
+
+  private def convertToEquality(ex: TlaEx): TlaEx = ex match {
+    case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
+      OperEx (TlaOper.eq, arg1, arg)
+    case _ => throw new RuntimeException("In NEXT statement only assignments are supposed to be.")
+  }
+
+  private def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
+    var selected = makeAllPrimed(stack(stateNumber))
+    stack = (stack.slice(0, stateNumber) :+ selected) ++ stack.slice(stateNumber + 1, stack.size)
+
+    //TODO (Viktor): basically, the number of invocations of push/pop methods should depend on the number of variables
+    rewriter.push()
+    rewriter.push()
+
+    val ex = rewriter.rewriteUntilDone(lastState.setTheory(CellTheory())).ex
+    solverContext.assertGroundExpr(ex)
+
+    val result = solverContext.sat()
+
+    rewriter.pop(2)
+    selected = makeAllUnprimed(stack(stateNumber))
+    stack = (stack.slice(0, stateNumber) :+ selected) ++ stack.slice(stateNumber + 1, stack.size)
+
+    result
+  }
+
+  private def setActionForLastState(action: TlaEx): SymbState = {
+    var last = stack.head
+    val state = last._1.setRex(action)
+    last = (state, last._2)
+    stack = last :: stack.tail
+
+    state
   }
 
   def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {

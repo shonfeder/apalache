@@ -169,7 +169,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
 
         val spec = transformer.sanitize(specBody)( bodyDB, sourceStore )
         if (!FairnessValidator.validateWF(spec)) {
-          val msg = "Specification does not include Weak Fairness"
+          val msg = "Specification does not include Weak Fairness condition"
           logger.error(msg)
           throw new IllegalArgumentException(msg)
         }

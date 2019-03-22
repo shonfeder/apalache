@@ -15,6 +15,7 @@ object FairnessValidator {
     * @param expression temporal expression
     * @return
     */
+  //TODO (Viktor): write unit-tests
   def validateWF(expression: TlaEx): Boolean = {
     val enabledActions: mutable.Set[TlaEx] = new mutable.HashSet[TlaEx]()
     val nextActions: mutable.Set[TlaEx] = new mutable.HashSet[TlaEx]()
