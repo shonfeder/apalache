@@ -21,5 +21,6 @@ class CheckerInput(val rootModule: TlaModule,
                    val initTransitions: List[TlaEx],
                    val nextTransitions: List[TlaEx],
                    val constInitPrimed: Option[TlaEx],
-                   val notInvariant: Option[TlaEx]) {
+                   val notInvariant: Option[TlaEx],
+                   val specification: Option[TlaEx]) {
 }

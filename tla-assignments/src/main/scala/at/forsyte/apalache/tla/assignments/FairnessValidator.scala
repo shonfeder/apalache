@@ -21,7 +21,7 @@ object FairnessValidator {
     val nextActions: mutable.Set[TlaEx] = new mutable.HashSet[TlaEx]()
 
 
-    //TODO: think about it in the mean time, the must be better solution
+    //TODO: think about it in the mean time, there must be better solution
     def findEnabledAndNextActions(expression: TlaEx): Unit = expression match {
       case OperEx(TlaBoolOper.implies, OperEx(TlaBoolOper.or, args @ _*), _) =>
         args.foreach(it => collectEnabledActions(it))

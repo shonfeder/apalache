@@ -99,6 +99,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
   }
 
   //TODO (Viktor): write unit-tests
+  //TODO (Viktor): check with multiple variables
   def doesLoopExist: Boolean = {
     val next = checkerInput.nextTransitions.map { it => convertToEquality(it)}
 
@@ -106,6 +107,8 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
       val last = setActionForLastState(next(i))
 
       // we ignore first and last states
+      //first - add variable 'x'' and check for the presence of the loop
+      //last - add variable 'x'' and check for the presence of the loop
       //TODO: finish it
       for (j <- 1 until stack.size) {
         if (checkForLoopWithAction(j, last)) {
@@ -128,6 +131,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
     stack = (stack.slice(0, stateNumber) :+ selected) ++ stack.slice(stateNumber + 1, stack.size)
 
     //TODO (Viktor): basically, the number of invocations of push/pop methods should depend on the number of variables
+    // ask Igor about it
     rewriter.push()
     rewriter.push()
 
@@ -165,6 +169,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
     val state = selected._1
     val binding = state.binding
     val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1.dropRight(1), t._2) }))
+    //TODO (Viktor): clear cache
 
     (withNewBinding, selected._2)
   }

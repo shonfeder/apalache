@@ -156,7 +156,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
 
     //find aggregated temporal property
     val specName = options.getOption("checker", "spec", None).asInstanceOf[Option[String]]
-    val notSpec =
+    val specification =
       if (specName.isEmpty) {
         None
       } else {
@@ -179,7 +179,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
     specWithTransitions
-      = Some(new SpecWithTransitions(newModule, initTransitions, nextTransitions, cinitPrime, notInvariant, notInvariantPrime, notSpec))
+      = Some(new SpecWithTransitions(newModule, initTransitions, nextTransitions, cinitPrime, notInvariant, notInvariantPrime, specification))
     true
   }
 
