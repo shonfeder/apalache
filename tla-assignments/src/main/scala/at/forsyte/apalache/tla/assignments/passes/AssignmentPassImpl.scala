@@ -177,9 +177,23 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
         Some(spec)
       }
 
+    val loopInvariant =
+      if (specification.isEmpty) {
+        None
+      } else {
+        val invariant = transformer.extractLoopInvariant(specification.get)
+        Some(invariant)
+      }
+
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
-    specWithTransitions
-      = Some(new SpecWithTransitions(newModule, initTransitions, nextTransitions, cinitPrime, notInvariant, notInvariantPrime, specification))
+    specWithTransitions = Some(new SpecWithTransitions(newModule,
+                                                       initTransitions,
+                                                       nextTransitions,
+                                                       cinitPrime,
+                                                       notInvariant,
+                                                       notInvariantPrime,
+                                                       specification,
+                                                       loopInvariant))
     true
   }
 

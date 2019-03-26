@@ -78,7 +78,9 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
         val result = applySearchStrategy()
 
+        //TODO (Viktor): add conditional execution of code above
         val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
+                                            checkerInput.loopInvariant,
                                             stack,
                                             rewriter,
                                             solverContext)
@@ -88,7 +90,10 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
           //TODO (Viktor): think about result processing
           throw new RuntimeException("No loop!!!")
         } else {
-
+          if (loopAnalyser.validateLoopInvariant(loopTuples)) {
+            //TODO (Viktor): think about result processing
+            throw new RuntimeException("Loop invariant does not hold!!!")
+          }
         }
         result
       } catch {

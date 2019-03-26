@@ -17,10 +17,12 @@ import at.forsyte.apalache.tla.lir.{TlaEx, TlaModule}
   * @param notInvariant    An optional invariant (negated).
   * @author Igor Konnov
   */
+//TODO (Viktor): eventually get rid of specification property
 class CheckerInput(val rootModule: TlaModule,
                    val initTransitions: List[TlaEx],
                    val nextTransitions: List[TlaEx],
                    val constInitPrimed: Option[TlaEx],
                    val notInvariant: Option[TlaEx],
-                   val specification: Option[TlaEx]) {
+                   val specification: Option[TlaEx],
+                   val loopInvariant: Option[TlaEx]) {
 }

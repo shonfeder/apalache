@@ -8,6 +8,7 @@ import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import scala.collection.mutable.ListBuffer
 
 class LoopAnalyser(val nextTransitions: List[TlaEx],
+                   val loopInvariant: Option[TlaEx],
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
@@ -72,7 +73,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     state
   }
 
-  def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
+  private def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
     val state = selected._1
     val binding = state.binding
     val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
@@ -81,12 +82,16 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     (withNewBinding, selected._2)
   }
 
-  def makeAllUnprimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
+  private def makeAllUnprimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
     val state = selected._1
     val binding = state.binding
     val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1.dropRight(1), t._2) }))
     //TODO (Viktor): clear cache
 
     (withNewBinding, selected._2)
+  }
+
+  def validateLoopInvariant(transitionLoopStartIndexTuples: List[(Int, Int)]): Boolean = {
+    throw new RuntimeException("Not implemented yet")
   }
 }

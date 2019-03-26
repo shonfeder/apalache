@@ -31,8 +31,6 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
       if (spec.notInvariant.isDefined) Some(toNegatedForm(spec.notInvariant.get)) else None
     val notInvPrime =
       if (spec.notInvariantPrime.isDefined) Some(toNegatedForm(spec.notInvariantPrime.get)) else None
-    val notTemporal =
-      if (spec.specification.isDefined) Some(toNegatedForm(spec.specification.get)) else None
     val constInitPrime =
       if (spec.constInitPrime.isDefined) Some(toNegatedForm(spec.constInitPrime.get)) else None
 
@@ -44,7 +42,14 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
     if (constInitPrime.isDefined) {
       markFreeExistentials(constInitPrime.get)
     }
-    new SpecWithTransitions(spec.rootModule, initTransitions, nextTransitions, constInitPrime, notInv, notInvPrime, notTemporal)
+    new SpecWithTransitions(spec.rootModule,
+                            initTransitions,
+                            nextTransitions,
+                            constInitPrime,
+                            notInv,
+                            notInvPrime,
+                            spec.specification,
+                            spec.loopInvariant)
   }
 
   private def markFreeExistentials(ex: TlaEx): Unit = ex match {

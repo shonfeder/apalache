@@ -238,4 +238,7 @@ class Transformer {
     }
   }
 
+  def extractLoopInvariant(specification: TlaEx): TlaEx = specification match {
+    case _ => throw new RuntimeException("Not implemented yet!")
+  }
 }

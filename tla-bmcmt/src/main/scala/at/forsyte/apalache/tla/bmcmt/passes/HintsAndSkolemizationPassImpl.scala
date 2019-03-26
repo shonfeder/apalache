@@ -67,9 +67,16 @@ class HintsAndSkolemizationPassImpl @Inject()(val options: PassOptions,
     val constInitPrimeRenamed = renameIfDefined(spec.constInitPrime)
     val notInvRenamed = renameIfDefined(spec.notInvariant)
     val notInvPrimeRenamed = renameIfDefined(spec.notInvariantPrime)
-    val notSpecRenamed = renameIfDefined(spec.specification)
-    var newSpec = new SpecWithTransitions(spec.rootModule, initRenamed, nextRenamed,
-      constInitPrimeRenamed, notInvRenamed, notInvPrimeRenamed, notSpecRenamed)
+    val specification = renameIfDefined(spec.specification)
+    val loopInvariant = renameIfDefined(spec.loopInvariant)
+    var newSpec = new SpecWithTransitions(spec.rootModule,
+                                          initRenamed,
+                                          nextRenamed,
+                                          constInitPrimeRenamed,
+                                          notInvRenamed,
+                                          notInvPrimeRenamed,
+                                          specification,
+                                          loopInvariant)
     val skolem = new SimpleSkolemization(frexStoreImpl)
     newSpec = skolem.transformAndLabel(newSpec)
 
