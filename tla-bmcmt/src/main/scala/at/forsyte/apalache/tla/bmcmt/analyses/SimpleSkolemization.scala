@@ -32,7 +32,7 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
     val notInvPrime =
       if (spec.notInvariantPrime.isDefined) Some(toNegatedForm(spec.notInvariantPrime.get)) else None
     val notTemporal =
-      if (spec.notSpec.isDefined) Some(toNegatedForm(spec.notSpec.get)) else None
+      if (spec.specification.isDefined) Some(toNegatedForm(spec.specification.get)) else None
     val constInitPrime =
       if (spec.constInitPrime.isDefined) Some(toNegatedForm(spec.constInitPrime.get)) else None
 

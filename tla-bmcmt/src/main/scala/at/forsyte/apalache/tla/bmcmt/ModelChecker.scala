@@ -2,18 +2,17 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGrade, ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl}
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, LoopAnalyser}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.CherryPick
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir._
-import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.control.TlaControlOper
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
-import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.oper.TlaBoolOper
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.collection.immutable.SortedMap
@@ -79,9 +78,17 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
         val result = applySearchStrategy()
 
-        if (!doesLoopExist) {
-          //TODO: think about result processing
+        val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
+                                            stack,
+                                            rewriter,
+                                            solverContext)
+
+        val loopTuples = loopAnalyser.findAllLoops
+        if (checkerInput.specification.isDefined && loopTuples.nonEmpty) {
+          //TODO (Viktor): think about result processing
           throw new RuntimeException("No loop!!!")
+        } else {
+
         }
         result
       } catch {
@@ -96,82 +103,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
     // flush the logs
     rewriter.dispose()
     outcome
-  }
-
-  //TODO (Viktor): write unit-tests
-  //TODO (Viktor): check with multiple variables
-  def doesLoopExist: Boolean = {
-    val next = checkerInput.nextTransitions.map { it => convertToEquality(it)}
-
-    for (i <- next.indices) {
-      val last = setActionForLastState(next(i))
-
-      // we ignore first and last states
-      //first - add variable 'x'' and check for the presence of the loop
-      //last - add variable 'x'' and check for the presence of the loop
-      //TODO: finish it
-      for (j <- 1 until stack.size) {
-        if (checkForLoopWithAction(j, last)) {
-          return true
-        }
-      }
-    }
-
-    false
-  }
-
-  private def convertToEquality(ex: TlaEx): TlaEx = ex match {
-    case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
-      OperEx (TlaOper.eq, arg1, arg)
-    case _ => throw new RuntimeException("In NEXT statement only assignments are supposed to be.")
-  }
-
-  private def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
-    var selected = makeAllPrimed(stack(stateNumber))
-    stack = (stack.slice(0, stateNumber) :+ selected) ++ stack.slice(stateNumber + 1, stack.size)
-
-    //TODO (Viktor): basically, the number of invocations of push/pop methods should depend on the number of variables
-    // ask Igor about it
-    rewriter.push()
-    rewriter.push()
-
-    val ex = rewriter.rewriteUntilDone(lastState.setTheory(CellTheory())).ex
-    solverContext.assertGroundExpr(ex)
-
-    val result = solverContext.sat()
-
-    rewriter.pop(2)
-    selected = makeAllUnprimed(stack(stateNumber))
-    stack = (stack.slice(0, stateNumber) :+ selected) ++ stack.slice(stateNumber + 1, stack.size)
-
-    result
-  }
-
-  private def setActionForLastState(action: TlaEx): SymbState = {
-    var last = stack.head
-    val state = last._1.setRex(action)
-    last = (state, last._2)
-    stack = last :: stack.tail
-
-    state
-  }
-
-  def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
-    val state = selected._1
-    val binding = state.binding
-    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
-    withNewBinding.binding.foreach { it => rewriter.exprCache.put(OperEx(TlaActionOper.prime, NameEx(it._1.dropRight(1))), (it._2.toNameEx, ExprGrade.Constant)) }
-
-    (withNewBinding, selected._2)
-  }
-
-  def makeAllUnprimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
-    val state = selected._1
-    val binding = state.binding
-    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1.dropRight(1), t._2) }))
-    //TODO (Viktor): clear cache
-
-    (withNewBinding, selected._2)
   }
 
   /**
