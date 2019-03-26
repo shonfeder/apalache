@@ -182,7 +182,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
         None
       } else {
         val invariant = transformer.extractLoopInvariant(specification.get)
-        Some(invariant)
+        invariant
       }
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)

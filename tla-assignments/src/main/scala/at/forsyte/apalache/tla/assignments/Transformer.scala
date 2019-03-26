@@ -6,6 +6,7 @@ import at.forsyte.apalache.tla.lir.control.LetInOper
 import at.forsyte.apalache.tla.lir.db.{BodyDB, TransformationListener}
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.plugins.Identifier
+import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 import com.google.inject.Singleton
 
 /**
@@ -238,7 +239,13 @@ class Transformer {
     }
   }
 
-  def extractLoopInvariant(specification: TlaEx): TlaEx = specification match {
-    case _ => throw new RuntimeException("Not implemented yet!")
+  def extractLoopInvariant(specification: TlaEx): Option[TlaEx] = specification match {
+    case OperEx(TlaBoolOper.and, args@_*) =>
+      args.map(arg => extractLoopInvariant(arg))
+          .find(it => it.isDefined)
+          .map(it => it.get)
+    case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, arg))) => Some(arg)
+    case _ => None
+
   }
 }

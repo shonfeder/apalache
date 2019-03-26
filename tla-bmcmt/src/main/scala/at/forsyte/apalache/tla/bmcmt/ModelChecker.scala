@@ -86,7 +86,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
                                             solverContext)
 
         val loopTuples = loopAnalyser.findAllLoops
-        if (checkerInput.specification.isDefined && loopTuples.nonEmpty) {
+        if (checkerInput.specification.isDefined && loopTuples.isEmpty) {
           //TODO (Viktor): think about result processing
           throw new RuntimeException("No loop!!!")
         } else {

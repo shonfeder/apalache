@@ -34,6 +34,8 @@ object FairnessValidator {
       case OperEx(TlaOper.eq, _*) => Unit
       case OperEx(TlaActionOper.stutter, OperEx(TlaBoolOper.or, args @ _*), _) =>
         args.foreach(it => nextActions += it)
+      case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
+        Unit
       case ex@OperEx(_, _*) =>
         throw new RuntimeException("Unexpected pattern: " + ex)
     }
