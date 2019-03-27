@@ -90,7 +90,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
           //TODO (Viktor): think about result processing
           throw new RuntimeException("No loop!!!")
         } else {
-          if (loopAnalyser.validateLoopInvariant(loopTuples)) {
+          if (!loopAnalyser.validateLoopInvariant(loopTuples)) {
             //TODO (Viktor): think about result processing
             throw new RuntimeException("Loop invariant does not hold!!!")
           }
