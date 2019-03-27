@@ -17,6 +17,15 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   //TODO (Viktor): write unit-tests
   //TODO (Viktor): check with multiple variables
   def findAllLoops: List[(Int, Int)] = {
+    def setActionForLastState(action: TlaEx): SymbState = {
+      var last = stateStack.head
+      val state = last._1.setRex(action)
+      last = (state, last._2)
+      stateStack = last :: stateStack.tail
+
+      state
+    }
+
     val next = nextTransitions.map { it => convertToEquality(it)}
 
     val transitionLoopStartIndexTuples = ListBuffer[(Int, Int)]()
@@ -27,7 +36,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       //first - add variable 'x'' and check for the presence of the loop
       //last - add variable 'x'' and check for the presence of the loop
       //TODO (Viktor): finish it
-      for (j <- 1 until stateStack.size) {
+      for (j <- 1 until stateStack.size - 1) {
         if (checkForLoopWithAction(j, last)) {
           val tuple = (i, j)
           transitionLoopStartIndexTuples += tuple
@@ -45,51 +54,25 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   }
 
   private def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
-    var selected = makeAllPrimed(stateStack(stateNumber))
-    stateStack = (stateStack.slice(0, stateNumber) :+ selected) ++ stateStack.slice(stateNumber + 1, stateStack.size)
+    def addPrimedBinding(last: SymbState, selected: SymbState): SymbState = {
+      val selectedBinding = selected.binding
+      val lastBinding = last.binding
+      val lastWithBinding = last.setBinding(Binding(lastBinding.merged(selectedBinding.map { t => (t._1 + "'", t._2)})((k, _) => k)))
 
-    //TODO (Viktor): basically, the number of invocations of push/pop methods should depend on the number of variables
-    // ask Igor about it
-    rewriter.push()
-    rewriter.push()
+      lastWithBinding
+    }
 
-    val ex = rewriter.rewriteUntilDone(lastState.setTheory(CellTheory())).ex
-    solverContext.assertGroundExpr(ex)
+    def checkLoopTransition(last: SymbState) = {
+      rewriter.push()
+      val ex = rewriter.rewriteUntilDone(last.setTheory(CellTheory())).ex
+      solverContext.assertGroundExpr(ex)
+      val result = solverContext.sat()
+      rewriter.pop()
+      result
+    }
 
-    val result = solverContext.sat()
-
-    rewriter.pop(2)
-    selected = makeAllUnprimed(stateStack(stateNumber))
-    stateStack = (stateStack.slice(0, stateNumber) :+ selected) ++ stateStack.slice(stateNumber + 1, stateStack.size)
-
-    result
-  }
-
-  private def setActionForLastState(action: TlaEx): SymbState = {
-    var last = stateStack.head
-    val state = last._1.setRex(action)
-    last = (state, last._2)
-    stateStack = last :: stateStack.tail
-
-    state
-  }
-
-  private def makeAllPrimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
-    val state = selected._1
-    val binding = state.binding
-    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1 + "'", t._2) }))
-    withNewBinding.binding.foreach { it => rewriter.exprCache.put(OperEx(TlaActionOper.prime, NameEx(it._1.dropRight(1))), (it._2.toNameEx, ExprGrade.Constant)) }
-
-    (withNewBinding, selected._2)
-  }
-
-  private def makeAllUnprimed(selected: (SymbState, ArenaCell)): (SymbState, ArenaCell) = {
-    val state = selected._1
-    val binding = state.binding
-    val withNewBinding = state.setBinding(Binding(binding.map{ t => (t._1.dropRight(1), t._2) }))
-    //TODO (Viktor): clear cache
-
-    (withNewBinding, selected._2)
+    val lastWithPrimedBinding = addPrimedBinding(lastState, stateStack(stateNumber)._1)
+    checkLoopTransition(lastWithPrimedBinding)
   }
 
   def validateLoopInvariant(transitionLoopStartIndexTuples: List[(Int, Int)]): Boolean = {
@@ -109,7 +92,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       solverContext.pop(stateStack.size - j)
     }
 
-    return true
+    true
   }
 
   //TODO (Viktor): cover all cases
