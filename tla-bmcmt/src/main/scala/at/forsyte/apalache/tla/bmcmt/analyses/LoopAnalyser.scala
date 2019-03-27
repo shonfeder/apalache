@@ -1,14 +1,15 @@
 package at.forsyte.apalache.tla.bmcmt.analyses
 
 import at.forsyte.apalache.tla.bmcmt.{ArenaCell, Binding, CellTheory, SolverContext, SymbState, SymbStateRewriterImpl}
-import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx}
+import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx, ValEx}
 import at.forsyte.apalache.tla.lir.actions.TlaActionOper
-import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.convenience.tla
 
 import scala.collection.mutable.ListBuffer
 
 class LoopAnalyser(val nextTransitions: List[TlaEx],
-                   val loopInvariant: Option[TlaEx],
+                   val loopInvariant: TlaEx,
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
@@ -25,7 +26,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       // we ignore first and last states
       //first - add variable 'x'' and check for the presence of the loop
       //last - add variable 'x'' and check for the presence of the loop
-      //TODO: finish it
+      //TODO (Viktor): finish it
       for (j <- 1 until stateStack.size) {
         if (checkForLoopWithAction(j, last)) {
           val tuple = (i, j)
@@ -92,6 +93,37 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   }
 
   def validateLoopInvariant(transitionLoopStartIndexTuples: List[(Int, Int)]): Boolean = {
-    throw new RuntimeException("Not implemented yet")
+    val notLoopInvariant = tla.not(loopInvariant)
+    for (i <- transitionLoopStartIndexTuples.indices) {
+      //TODO (Viktor): ignored last state, add it into consideration
+      var j = stateStack.size - 1
+      while (j >= transitionLoopStartIndexTuples(i)._2) {
+        rewriter.push()
+        val ex = replaceVariable(notLoopInvariant, stateStack(j - 1)._1.binding)
+        solverContext.assertGroundExpr(ex)
+        j -= 1
+      }
+      if (solverContext.sat()) {
+        return false
+      }
+      solverContext.pop(stateStack.size - j)
+    }
+
+    return true
+  }
+
+  //TODO (Viktor): cover all cases
+  def replaceVariable(expression: TlaEx, binding: Binding): TlaEx = expression match {
+    case NameEx(name) =>
+      binding(name).toNameEx
+    case ValEx(value) => ValEx(value)
+    case OperEx(TlaBoolOper.not, arg) =>
+      OperEx(TlaBoolOper.not, replaceVariable(arg, binding))
+    case OperEx(TlaArithOper.ge, arg1, arg2) =>
+      OperEx(TlaArithOper.ge, replaceVariable(arg1, binding), replaceVariable(arg2, binding))
+    case OperEx(TlaArithOper.plus, arg1, arg2) =>
+      OperEx(TlaArithOper.plus, replaceVariable(arg1, binding), replaceVariable(arg2, binding))
+    case ex@OperEx(_, _*) =>
+      throw new RuntimeException("Unexpected pattern: " + ex)
   }
 }

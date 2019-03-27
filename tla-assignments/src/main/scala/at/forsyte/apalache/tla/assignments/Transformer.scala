@@ -244,8 +244,10 @@ class Transformer {
       args.map(arg => extractLoopInvariant(arg))
           .find(it => it.isDefined)
           .map(it => it.get)
-    case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, arg))) => Some(arg)
-    case _ => None
+    case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, arg1, arg2))) =>
+      Some(arg1)
+    case _ =>
+      None
 
   }
 }

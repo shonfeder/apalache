@@ -80,7 +80,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
 
         //TODO (Viktor): add conditional execution of code above
         val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
-                                            checkerInput.loopInvariant,
+                                            checkerInput.loopInvariant.get,
                                             stack,
                                             rewriter,
                                             solverContext)
