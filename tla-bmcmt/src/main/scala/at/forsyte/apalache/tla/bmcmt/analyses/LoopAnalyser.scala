@@ -5,11 +5,13 @@ import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.convenience.tla
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 //TODO (Viktor): write unit-tests
 class LoopAnalyser(val nextTransitions: List[TlaEx],
-                   val loopInvariant: TlaEx,
+                   val liveness: TlaEx,
+                   val enabledHints: List[TlaEx],
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
@@ -54,23 +56,25 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
 
     val next = nextTransitions.map { it => convertToEquality(it)}
 
-    val loopStartIndeces = ListBuffer[Int]()
+    val loopStartIndexes = mutable.SortedSet[Int]()
     for (i <- next.indices) {
       val last = setActionForLastState(next(i))
 
       for (j <- 0 until stateStack.size - 1) {
         if (checkForLoopWithAction(j, last)) {
           val tuple = j
-          loopStartIndeces += tuple
+          loopStartIndexes += tuple
         }
       }
     }
 
-    loopStartIndeces.toList
+    loopStartIndexes.toList
   }
 
-  def validateLiveness(loopStartIndexes: List[Int]): Boolean = {
-    val notLoopInvariant = tla.not(loopInvariant)
+  def validateLiveness(loopStartIndexes: List[Int]): List[Int] = {
+    val notLoopInvariant = tla.not(liveness)
+
+    val counterExamples = ListBuffer[Int]()
 
     for (i <- loopStartIndexes.indices) {
       val startIndex = loopStartIndexes(i)
@@ -90,12 +94,44 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       val result = solverContext.sat()
 
       if (result) {
-        return false
+        counterExamples += startIndex
       }
 
       rewriter.pop()
     }
 
-    true
+    counterExamples.toList
+  }
+
+  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
+    val weakFairnessConjunction = tla.and(enabledHints:_*)
+
+    val fairCounterExamples = ListBuffer[Int]()
+
+    for (i <- counterExampleLoopStartIndexes.indices) {
+      val startIndex = counterExampleLoopStartIndexes(i)
+
+      rewriter.push()
+
+      var j = 0
+      var lastState = stateStack.head._1
+      while(j <= startIndex) {
+        val requiredBinding = stateStack(j)._1.binding
+        val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
+        lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+        solverContext.assertGroundExpr(lastState.ex)
+
+        j += 1
+      }
+      val result = solverContext.sat()
+
+      if (result) {
+        fairCounterExamples += startIndex
+      }
+
+      rewriter.pop()
+    }
+
+    fairCounterExamples.toList
   }
 }

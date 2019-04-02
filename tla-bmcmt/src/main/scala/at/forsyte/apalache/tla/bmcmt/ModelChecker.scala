@@ -81,6 +81,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         if (checkerInput.liveness.isDefined) {
           val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
                                               checkerInput.liveness.get,
+                                              checkerInput.enabledHints,
                                               stack,
                                               rewriter,
                                               solverContext)
@@ -90,9 +91,13 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
             //TODO (Viktor): think about result processing
             throw new RuntimeException("No loop!!!")
           } else {
-            if (!loopAnalyser.validateLiveness(loopTuples)) {
-              //TODO (Viktor): think about result processing
-              throw new RuntimeException("Liveness property does not hold!!!")
+            val counterExamples = loopAnalyser.validateLiveness(loopTuples)
+            if (counterExamples.nonEmpty) {
+              val fairCounterExamples = loopAnalyser.checkFairnessOfCounterExamples(counterExamples)
+              if (fairCounterExamples.nonEmpty) {
+                //TODO (Viktor): think about result processing
+                throw new RuntimeException("Liveness property does not hold!!!")
+              }
             }
           }
         }
