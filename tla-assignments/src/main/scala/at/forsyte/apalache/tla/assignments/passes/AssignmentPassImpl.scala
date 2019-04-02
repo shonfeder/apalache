@@ -23,6 +23,8 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                    @Named("AfterAssignment") nextPass: Pass with SpecWithTransitionsMixin)
       extends AssignmentPass with LazyLogging {
 
+  val ENABLED_PREFIX = "ENABLED"
+
   var tlaModule: Option[TlaModule] = None
   private var specWithTransitions: Option[SpecWithTransitions] = None
 
@@ -154,36 +156,35 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
     logger.info("Found %d initializing transitions and %d next transitions"
       .format(initTransitions.length, nextTransitions.length))
 
-    //find aggregated temporal property
-    val specName = options.getOption("checker", "spec", None).asInstanceOf[Option[String]]
-    val specification =
-      if (specName.isEmpty) {
+    val temporalName = options.getOption("checker", "temporal", None).asInstanceOf[Option[String]]
+    val temporal =
+      if (temporalName.isEmpty) {
         None
       } else {
-        val specBody = findBodyOf(specName.get, initReplacedDecls: _*)
-        if (specBody == NullEx) {
-          val msg = "Specification definition %s not found".format(specName.get)
+        val temporalBody = findBodyOf(temporalName.get, initReplacedDecls: _*)
+        if (temporalBody == NullEx) {
+          val msg = "Definition of temporal property %s not found".format(temporalName.get)
           logger.error(msg)
           throw new IllegalArgumentException(msg)
         }
 
-        val spec = transformer.sanitize(specBody)( bodyDB, sourceStore )
-        if (!FairnessValidator.validateWF(spec)) {
-          val msg = "Specification does not include Weak Fairness condition"
-          logger.error(msg)
-          throw new IllegalArgumentException(msg)
-        }
+        val temporal = transformer.sanitize(temporalBody)( bodyDB, sourceStore )
 
-        Some(spec)
+        Some(temporal)
       }
 
-    val loopInvariant =
-      if (specification.isEmpty) {
+    val liveness =
+      if (temporal.isEmpty) {
         None
       } else {
-        val invariant = transformer.extractLoopInvariant(specification.get)
-        invariant
+        val liveness = transformer.extractLivenessProperty(temporal.get)
+        liveness
       }
+
+    val enabledHints = bodyDB.fullScan
+                             .filter { it => it._1.startsWith(ENABLED_PREFIX) }
+                             .map { it => it._2._2 }
+
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
     specWithTransitions = Some(new SpecWithTransitions(newModule,
@@ -192,8 +193,9 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                                        cinitPrime,
                                                        notInvariant,
                                                        notInvariantPrime,
-                                                       specification,
-                                                       loopInvariant))
+                                                       temporal,
+                                                       liveness,
+                                                       enabledHints))
     true
   }
 

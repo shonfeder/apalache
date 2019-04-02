@@ -24,5 +24,5 @@ class CheckerInput(val rootModule: TlaModule,
                    val constInitPrimed: Option[TlaEx],
                    val notInvariant: Option[TlaEx],
                    val specification: Option[TlaEx],
-                   val loopInvariant: Option[TlaEx]) {
+                   val liveness: Option[TlaEx]) {
 }

@@ -40,9 +40,9 @@ class CheckCmd extends Command(name = "check",
   var checkRuntime: Boolean =
     opt[Boolean](name = "checkRuntime", default = false,
       description = " (BROKEN) check for runtime errors, e.g., applying f[x] when x is outside of f's domain, default: false")
-  var spec: String = opt[String](
-    name = "spec",
+  var temporal: String = opt[String](
+    name = "temporal",
     default = "",
-    description = "Specification of fair system, e.g., Spec"
+    description = "Specification of system with liveness, e.g., Temporal"
   )
 }

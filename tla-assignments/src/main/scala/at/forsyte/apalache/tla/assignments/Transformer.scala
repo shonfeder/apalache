@@ -239,9 +239,13 @@ class Transformer {
     }
   }
 
-  def extractLoopInvariant(specification: TlaEx): Option[TlaEx] = specification match {
+  def extractLivenessProperty(specification: TlaEx): Option[TlaEx] = specification match {
+    case OperEx(TlaBoolOper.implies, arg, args@_*) =>
+      args.map(extractLivenessProperty)
+          .find(it => it.isDefined)
+          .map(it => it.get)
     case OperEx(TlaBoolOper.and, args@_*) =>
-      args.map(arg => extractLoopInvariant(arg))
+      args.map(extractLivenessProperty)
           .find(it => it.isDefined)
           .map(it => it.get)
     case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, arg1, arg2))) =>

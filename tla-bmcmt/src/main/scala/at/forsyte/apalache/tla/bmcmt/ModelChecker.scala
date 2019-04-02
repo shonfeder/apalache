@@ -78,21 +78,22 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
         val result = applySearchStrategy()
 
-        //TODO (Viktor): add conditional execution of code above
-        val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
-                                            checkerInput.loopInvariant.get,
-                                            stack,
-                                            rewriter,
-                                            solverContext)
+        if (checkerInput.liveness.isDefined) {
+          val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
+                                              checkerInput.liveness.get,
+                                              stack,
+                                              rewriter,
+                                              solverContext)
 
-        val loopTuples = loopAnalyser.findAllLoops
-        if (checkerInput.specification.isDefined && loopTuples.isEmpty) {
-          //TODO (Viktor): think about result processing
-          throw new RuntimeException("No loop!!!")
-        } else {
-          if (!loopAnalyser.validateLoopInvariant(loopTuples)) {
+          val loopTuples = loopAnalyser.findAllLoops
+          if (checkerInput.specification.isDefined && loopTuples.isEmpty) {
             //TODO (Viktor): think about result processing
-            throw new RuntimeException("Loop invariant does not hold!!!")
+            throw new RuntimeException("No loop!!!")
+          } else {
+            if (!loopAnalyser.validateLiveness(loopTuples)) {
+              //TODO (Viktor): think about result processing
+              throw new RuntimeException("Liveness property does not hold!!!")
+            }
           }
         }
         result

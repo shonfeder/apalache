@@ -22,6 +22,8 @@ class BodyDB extends HashMapDB[String, (List[FormalParam], TlaEx)] {
   def body( p_name : String ) : Option[TlaEx] = get( p_name ).map( _._2 )
 
   def arity( p_name : String ) : Option[Integer] = params( p_name ).map( _.size )
+
+  def fullScan = m_map.toList
 }
 
 object DummyBodyDB extends BodyDB {

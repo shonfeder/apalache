@@ -69,11 +69,11 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     loopStartIndeces.toList
   }
 
-  def validateLoopInvariant(loopStartIndeces: List[Int]): Boolean = {
+  def validateLiveness(loopStartIndexes: List[Int]): Boolean = {
     val notLoopInvariant = tla.not(loopInvariant)
 
-    for (i <- loopStartIndeces.indices) {
-      val startIndex = loopStartIndeces(i)
+    for (i <- loopStartIndexes.indices) {
+      val startIndex = loopStartIndexes(i)
 
       rewriter.push()
 
