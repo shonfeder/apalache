@@ -181,9 +181,11 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
         liveness
       }
 
-    val enabledHints = bodyDB.fullScan
+    val enabledActionHintTuples = bodyDB.fullScan
                              .filter { it => it._1.startsWith(ENABLED_PREFIX) }
-                             .map { it => it._2._2 }
+                             .map { it => (it._1.substring(8), it._2._2) }
+                             .map { it => (bodyDB.get(it._1), it._2) }
+                             .map { it => (it._1.get._2, it._2)}
 
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
@@ -195,7 +197,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                                        notInvariantPrime,
                                                        temporal,
                                                        liveness,
-                                                       enabledHints))
+                                                       enabledActionHintTuples))
     true
   }
 

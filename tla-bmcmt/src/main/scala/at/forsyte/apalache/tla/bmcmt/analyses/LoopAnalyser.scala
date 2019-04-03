@@ -26,12 +26,6 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       state
     }
 
-    def convertToEquality(ex: TlaEx): TlaEx = ex match {
-      case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
-        OperEx (TlaOper.eq, arg1, arg)
-      case _ => throw new RuntimeException("In NEXT statement only assignments are supposed to be.")
-    }
-
     def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
       def checkLoopTransition(last: SymbState) = {
         rewriter.push()
@@ -46,7 +40,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       checkLoopTransition(lastWithPrimedBinding)
     }
 
-    val next = nextTransitions.map { it => convertToEquality(it)}
+    val next = nextTransitions.map { it => convertToEquality(it) }
 
     val loopStartIndexes = mutable.SortedSet[Int]()
     for (i <- next.indices) {
@@ -63,6 +57,13 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     loopStartIndexes.toList
   }
 
+  private def convertToEquality(ex: TlaEx): TlaEx = ex match {
+    case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
+      OperEx(TlaOper.eq, arg1, arg)
+    case OperEx(oper, args@_*) => OperEx(oper, args.map(it => convertToEquality(it)): _*)
+    case it => it
+  }
+
   def validateLiveness(loopStartIndexes: List[Int]): List[Int] = {
     val notLoopInvariant = tla.not(liveness)
 
@@ -75,7 +76,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
 
       var j = 0
       var lastState = stateStack.head._1
-      while(j <= startIndex) {
+      while (j <= startIndex) {
         val requiredBinding = stateStack(j)._1.binding
         val state = lastState.setBinding(requiredBinding).setRex(notLoopInvariant)
         lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
@@ -99,13 +100,13 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     def filterByEnabledActions(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
       val filteredCounterExamples = ListBuffer[Int]()
 
-      val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2):_*)
+      val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2): _*)
       for (startIndex <- counterExampleLoopStartIndexes) {
         rewriter.push()
 
         var j = 0
         var lastState = stateStack.head._1
-        while(j <= startIndex) {
+        while (j <= startIndex) {
           val requiredBinding = stateStack(j)._1.binding
           val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
           lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
@@ -128,25 +129,38 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
 
       val filteredCounterExamples = ListBuffer[Int]()
 
-      val takenActionsDisjunction = tla.or(enabledActionHintTuples.map(it => it._1):_*)
+      val next = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
+      var takenCounter = 0
       for (startIndex <- counterExampleLoopStartIndexes) {
 
         var j = 0
         var lastState = stateStack.head._1
-        while(j <= startIndex) {
-          rewriter.push()
+        var taken = false
+        while (j <= startIndex && !taken) {
+          taken = false
+          for (toBeTakenNext <- next) {
+            rewriter.push()
 
-          val requiredBinding = stateStack(j)._1.binding
-          val state = addPrimedBinding(lastState.setBinding(requiredBinding), stateStack(if (j - 1 >= 0) j - 1 else 0)._1).setRex(takenActionsDisjunction)
-          lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
-          solverContext.assertGroundExpr(lastState.ex)
-          j += 1
+            val requiredBinding = stateStack(j)._1.binding
+            val state = addPrimedBinding(
+              lastState.setBinding(requiredBinding),
+              stateStack(if (j - 1 >= 0) j - 1 else 0)._1
+              ).setRex(toBeTakenNext)
+            lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+            solverContext.assertGroundExpr(lastState.ex)
+            j += 1
 
-          rewriter.pop()
+            taken = solverContext.sat()
+
+            if (taken) {
+              takenCounter += 1
+            }
+
+            rewriter.pop()
+          }
         }
-        val result = solverContext.sat()
 
-        if (result) {
+        if (takenCounter == next.size) {
           filteredCounterExamples += startIndex
         }
       }
@@ -161,7 +175,9 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
     val selectedBinding = selected.binding
     val stateBinding = state.binding
-    val stateWithBinding = state.setBinding(Binding(stateBinding.merged(selectedBinding.map { t => (t._1 + "'", t._2)})((k, _) => k)))
+    val stateWithBinding = state
+                           .setBinding(Binding(stateBinding
+                                               .merged(selectedBinding.map { t => (t._1 + "'", t._2) })((k, _) => k)))
 
     stateWithBinding
   }

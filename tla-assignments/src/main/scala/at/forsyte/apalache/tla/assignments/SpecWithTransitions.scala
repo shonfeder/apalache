@@ -27,4 +27,4 @@ class SpecWithTransitions(val rootModule: TlaModule,
                           val notInvariantPrime: Option[TlaEx],
                           val specification: Option[TlaEx],
                           val liveness: Option[TlaEx],
-                          val enabledHints: List[TlaEx])
+                          val enabledActionHintTuples: List[(TlaEx, TlaEx)])
