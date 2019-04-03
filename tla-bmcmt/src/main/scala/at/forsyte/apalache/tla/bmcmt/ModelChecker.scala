@@ -81,7 +81,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         if (checkerInput.liveness.isDefined) {
           val loopAnalyser = new LoopAnalyser(checkerInput.nextTransitions,
                                               checkerInput.liveness.get,
-                                              checkerInput.enabledHints,
+                                              checkerInput.enabledActionHintTuples,
                                               stack,
                                               rewriter,
                                               solverContext)

@@ -69,7 +69,9 @@ class HintsAndSkolemizationPassImpl @Inject()(val options: PassOptions,
     val notInvPrimeRenamed = renameIfDefined(spec.notInvariantPrime)
     val specification = renameIfDefined(spec.specification)
     val liveness = renameIfDefined(spec.liveness)
-    val enabledRenamed = spec.enabledHints.sorted(StringOrdering).map(renaming.renameBindingsUnique)
+    val enabledRenamed = spec.enabledActionHintTuples
+                             .sorted(StringOrdering)
+                             .map(it => (renaming.renameBindingsUnique(it._1), renaming.renameBindingsUnique(it._2)))
     var newSpec = new SpecWithTransitions(spec.rootModule,
                                           initRenamed,
                                           nextRenamed,

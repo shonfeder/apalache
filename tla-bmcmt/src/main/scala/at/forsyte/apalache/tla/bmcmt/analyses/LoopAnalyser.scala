@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 //TODO (Viktor): write unit-tests
 class LoopAnalyser(val nextTransitions: List[TlaEx],
                    val liveness: TlaEx,
-                   val enabledHints: List[TlaEx],
+                   val enabledActionHintTuples: List[(TlaEx, TlaEx)],
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
@@ -33,14 +33,6 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     }
 
     def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
-      def addPrimedBinding(last: SymbState, selected: SymbState): SymbState = {
-        val selectedBinding = selected.binding
-        val lastBinding = last.binding
-        val lastWithBinding = last.setBinding(Binding(lastBinding.merged(selectedBinding.map { t => (t._1 + "'", t._2)})((k, _) => k)))
-
-        lastWithBinding
-      }
-
       def checkLoopTransition(last: SymbState) = {
         rewriter.push()
         val ex = rewriter.rewriteUntilDone(last.setTheory(CellTheory())).ex
@@ -104,34 +96,73 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   }
 
   def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
-    val weakFairnessConjunction = tla.and(enabledHints:_*)
+    def filterByEnabledActions(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
+      val filteredCounterExamples = ListBuffer[Int]()
 
-    val fairCounterExamples = ListBuffer[Int]()
+      val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2):_*)
+      for (startIndex <- counterExampleLoopStartIndexes) {
+        rewriter.push()
 
-    for (i <- counterExampleLoopStartIndexes.indices) {
-      val startIndex = counterExampleLoopStartIndexes(i)
+        var j = 0
+        var lastState = stateStack.head._1
+        while(j <= startIndex) {
+          val requiredBinding = stateStack(j)._1.binding
+          val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
+          lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+          solverContext.assertGroundExpr(lastState.ex)
 
-      rewriter.push()
+          j += 1
+        }
+        val result = solverContext.sat()
+        if (result) {
+          filteredCounterExamples += startIndex
+        }
 
-      var j = 0
-      var lastState = stateStack.head._1
-      while(j <= startIndex) {
-        val requiredBinding = stateStack(j)._1.binding
-        val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
-        lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
-        solverContext.assertGroundExpr(lastState.ex)
-
-        j += 1
+        rewriter.pop()
       }
-      val result = solverContext.sat()
 
-      if (result) {
-        fairCounterExamples += startIndex
-      }
-
-      rewriter.pop()
+      filteredCounterExamples.toList
     }
 
-    fairCounterExamples.toList
+    def filterByTakenActions(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
+
+      val filteredCounterExamples = ListBuffer[Int]()
+
+      val takenActionsDisjunction = tla.or(enabledActionHintTuples.map(it => it._1):_*)
+      for (startIndex <- counterExampleLoopStartIndexes) {
+
+        var j = 0
+        var lastState = stateStack.head._1
+        while(j <= startIndex) {
+          rewriter.push()
+
+          val requiredBinding = stateStack(j)._1.binding
+          val state = addPrimedBinding(lastState.setBinding(requiredBinding), stateStack(if (j - 1 >= 0) j - 1 else 0)._1).setRex(takenActionsDisjunction)
+          lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+          solverContext.assertGroundExpr(lastState.ex)
+          j += 1
+
+          rewriter.pop()
+        }
+        val result = solverContext.sat()
+
+        if (result) {
+          filteredCounterExamples += startIndex
+        }
+      }
+
+      filteredCounterExamples.toList
+    }
+
+    val filteredByEnabled = filterByEnabledActions(counterExampleLoopStartIndexes)
+    filterByTakenActions(filteredByEnabled)
+  }
+
+  def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
+    val selectedBinding = selected.binding
+    val stateBinding = state.binding
+    val stateWithBinding = state.setBinding(Binding(stateBinding.merged(selectedBinding.map { t => (t._1 + "'", t._2)})((k, _) => k)))
+
+    stateWithBinding
   }
 }

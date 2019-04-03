@@ -25,5 +25,5 @@ class CheckerInput(val rootModule: TlaModule,
                    val notInvariant: Option[TlaEx],
                    val specification: Option[TlaEx],
                    val liveness: Option[TlaEx],
-                   val enabledHints: List[TlaEx]) {
+                   val enabledActionHintTuples: List[(TlaEx, TlaEx)]) {
 }

@@ -106,7 +106,7 @@ class ExprGradeAnalysis @Inject()(val store: ExprGradeStoreImpl) {
                             spec.notInvariantPrime,
                             spec.specification,
                             spec.liveness,
-                            spec.enabledHints)
+                            spec.enabledActionHintTuples)
   }
 
   /**
