@@ -16,7 +16,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
 
-  def findAllLoops: List[Int] = {
+  def findAllLoops: List[(Int, TlaEx)] = {
     def setActionForLastState(action: TlaEx): SymbState = {
       var last = stateStack.head
       val state = last._1.setRex(action)
@@ -42,13 +42,13 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
 
     val next = nextTransitions.map { it => convertToEquality(it) }
 
-    val loopStartIndexes = mutable.SortedSet[Int]()
-    for (i <- next.indices) {
-      val last = setActionForLastState(next(i))
+    val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
+    for (i <- next) {
+      val last = setActionForLastState(i)
 
       for (j <- 0 until stateStack.size - 1) {
         if (checkForLoopWithAction(j, last)) {
-          val tuple = j
+          val tuple = (j, i)
           loopStartIndexes += tuple
         }
       }
@@ -64,19 +64,18 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     case it => it
   }
 
-  def validateLiveness(loopStartIndexes: List[Int]): List[Int] = {
+  def validateLiveness(loopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
     val notLoopInvariant = tla.not(liveness)
 
-    val counterExamples = ListBuffer[Int]()
+    val counterExamples = ListBuffer[(Int, TlaEx)]()
 
-    for (i <- loopStartIndexes.indices) {
-      val startIndex = loopStartIndexes(i)
+    for (startIndex <- loopStartIndexActionTuples) {
 
       rewriter.push()
 
       var j = 0
       var lastState = stateStack.head._1
-      while (j <= startIndex) {
+      while (j <= startIndex._1) {
         val requiredBinding = stateStack(j)._1.binding
         val state = lastState.setBinding(requiredBinding).setRex(notLoopInvariant)
         lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
@@ -96,17 +95,17 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     counterExamples.toList
   }
 
-  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
-    def filterByEnabledActions(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
-      val filteredCounterExamples = ListBuffer[Int]()
+  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
+    def filterByEnabledActions(counterExampleLoopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
+      val filteredCounterExamples = ListBuffer[(Int, TlaEx)]()
 
       val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2): _*)
-      for (startIndex <- counterExampleLoopStartIndexes) {
+      for (startIndex <- counterExampleLoopStartIndexActionTuples) {
         rewriter.push()
 
         var j = 0
         var lastState = stateStack.head._1
-        while (j <= startIndex) {
+        while (j <= startIndex._1) {
           val requiredBinding = stateStack(j)._1.binding
           val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
           lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
@@ -125,27 +124,25 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       filteredCounterExamples.toList
     }
 
-    def filterByTakenActions(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
+    def filterByTakenActions(counterExampleLoopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
 
-      val filteredCounterExamples = ListBuffer[Int]()
-
-      val next = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
-      var takenCounter = 0
-      for (startIndex <- counterExampleLoopStartIndexes) {
+      def collectTakenActions(actions: List[TlaEx], loopStartIndexActionTuple: (Int, TlaEx)): List[TlaEx] = {
+        val takenActions = ListBuffer[TlaEx]()
+        takenActions += loopStartIndexActionTuple._2
 
         var j = 0
         var lastState = stateStack.head._1
         var taken = false
-        while (j <= startIndex && !taken) {
+        while (j <= loopStartIndexActionTuple._1 && !taken) {
           taken = false
-          for (toBeTakenNext <- next) {
+          for (toBeTakenAction <- actions) {
             rewriter.push()
 
             val requiredBinding = stateStack(j)._1.binding
             val state = addPrimedBinding(
               lastState.setBinding(requiredBinding),
               stateStack(if (j - 1 >= 0) j - 1 else 0)._1
-              ).setRex(toBeTakenNext)
+              ).setRex(toBeTakenAction)
             lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
             solverContext.assertGroundExpr(lastState.ex)
             j += 1
@@ -153,14 +150,27 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
             taken = solverContext.sat()
 
             if (taken) {
-              takenCounter += 1
+              takenActions += toBeTakenAction
             }
 
             rewriter.pop()
           }
         }
 
-        if (takenCounter == next.size) {
+        takenActions.toList
+      }
+
+      val filteredCounterExamples = ListBuffer[(Int, TlaEx)]()
+
+      val actions = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
+
+
+      var takenActions = List[TlaEx]()
+      for (startIndex <- counterExampleLoopStartIndexActionTuples) {
+
+        takenActions = collectTakenActions(actions, startIndex)
+
+        if (actions.forall(takenActions.contains)) {
           filteredCounterExamples += startIndex
         }
       }
