@@ -5,7 +5,6 @@ import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.convenience.tla
 
-import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 //TODO (Viktor): write unit-tests
@@ -17,50 +16,58 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
                    val solverContext: SolverContext) {
 
   def findAllLoops: List[(Int, TlaEx)] = {
-    def setActionForLastState(action: TlaEx): SymbState = {
-      var last = stateStack.head
-      val state = last._1.setRex(action)
-      last = (state, last._2)
-      stateStack = last :: stateStack.tail
-
-      state
-    }
-
-    def checkForLoopWithAction(stateNumber: Int, lastState: SymbState): Boolean = {
-      def checkLoopTransition(last: SymbState) = {
-        rewriter.push()
-        val ex = rewriter.rewriteUntilDone(last.setTheory(CellTheory())).ex
-        solverContext.assertGroundExpr(ex)
-        val result = solverContext.sat()
-        rewriter.pop()
-        result
-      }
-
-      val lastWithPrimedBinding = addPrimedBinding(lastState, stateStack(stateNumber)._1)
-      checkLoopTransition(lastWithPrimedBinding)
-    }
-
-    val next = nextTransitions.map { it => convertToEquality(it) }
-
     val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
-    for (i <- next) {
-      val last = setActionForLastState(i)
 
-      for (j <- 0 until stateStack.size - 1) {
-        if (checkForLoopWithAction(j, last)) {
-          val tuple = (j, i)
-          loopStartIndexes += tuple
-        }
-      }
+    val next = nextTransitions.map(convertToEquality)
+    for (action <- next) {
+      loopStartIndexes ++= findLoopsForAction(action)
     }
 
     loopStartIndexes.toList
   }
 
+  private def findLoopsForAction(action: TlaEx): ListBuffer[(Int, TlaEx)] = {
+    val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
+
+    val lastState = setActionForLastState(action)
+    for (loopStartIndex <- 0 until stateStack.size - 1) {
+      val loopStartState = stateStack(loopStartIndex)._1
+      if (checkForLoopWithAction(loopStartState, lastState)) {
+        val tuple = (loopStartIndex, action)
+        loopStartIndexes += tuple
+      }
+    }
+
+    loopStartIndexes
+  }
+
+  private def setActionForLastState(action: TlaEx): SymbState = {
+    var lastTuple = stateStack.head
+    val state = lastTuple._1.setRex(action)
+    lastTuple = (state, lastTuple._2)
+    stateStack = lastTuple :: stateStack.tail
+
+    state
+  }
+
+  private def checkForLoopWithAction(loopStartState: SymbState, lastState: SymbState): Boolean = {
+    def checkLoopTransition(last: SymbState): Boolean = {
+      rewriter.push()
+      val ex = rewriter.rewriteUntilDone(last.setTheory(CellTheory())).ex
+      solverContext.assertGroundExpr(ex)
+      val result = solverContext.sat()
+      rewriter.pop()
+      result
+    }
+
+    val lastWithPrimedBinding = addPrimedBinding(lastState, loopStartState)
+    checkLoopTransition(lastWithPrimedBinding)
+  }
+
   private def convertToEquality(ex: TlaEx): TlaEx = ex match {
     case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
       OperEx(TlaOper.eq, arg1, arg)
-    case OperEx(oper, args@_*) => OperEx(oper, args.map(it => convertToEquality(it)): _*)
+    case OperEx(operator, args@_*) => OperEx(operator, args.map(convertToEquality): _*)
     case it => it
   }
 
@@ -185,9 +192,9 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
     val selectedBinding = selected.binding
     val stateBinding = state.binding
-    val stateWithBinding = state
-                           .setBinding(Binding(stateBinding
-                                               .merged(selectedBinding.map { t => (t._1 + "'", t._2) })((k, _) => k)))
+    val stateWithBinding = state.setBinding(
+      Binding(stateBinding.merged(selectedBinding.map { t => (t._1 + "'", t._2) })((k, _) => k))
+    )
 
     stateWithBinding
   }
