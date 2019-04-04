@@ -91,7 +91,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
 
     var lastState = stateStack.head._1
     for (j <- 0 to loopStartIndex) {
-      lastState = setBindingAndActionForLastState(stateStack(j)._1, lastState, notLiveness)
+      lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, notLiveness)
       solverContext.assertGroundExpr(lastState.ex)
     }
     val result = solverContext.sat()
@@ -101,9 +101,9 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     result
   }
 
-  private def setBindingAndActionForLastState(lastState: SymbState, selectedState: SymbState, notLiveness: TlaEx): SymbState = {
+  private def setBindingAndActionForLastState(lastState: SymbState, selectedState: SymbState, action: TlaEx): SymbState = {
     val requiredBinding = selectedState.binding
-    val state = lastState.setBinding(requiredBinding).setRex(notLiveness)
+    val state = lastState.setBinding(requiredBinding).setRex(action)
 
     rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
   }
@@ -119,9 +119,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
         var j = 0
         var lastState = stateStack.head._1
         while (j <= startIndex._1) {
-          val requiredBinding = stateStack(j)._1.binding
-          val state = lastState.setBinding(requiredBinding).setRex(weakFairnessConjunction)
-          lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+          lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, weakFairnessConjunction)
           solverContext.assertGroundExpr(lastState.ex)
 
           j += 1
