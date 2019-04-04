@@ -91,7 +91,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
             //TODO (Viktor): think about result processing
             throw new RuntimeException("No loop!!!")
           } else {
-            val counterExamples = loopAnalyser.validateLiveness(loopTuples)
+            val counterExamples = loopAnalyser.checkLiveness(loopTuples)
             if (counterExamples.nonEmpty) {
               val fairCounterExamples = loopAnalyser.checkFairnessOfCounterExamples(counterExamples)
               if (fairCounterExamples.nonEmpty) {

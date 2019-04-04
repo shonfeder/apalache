@@ -15,6 +15,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
 
+  //TODO (Viktor): do we need to return action for loop???
   def findAllLoops: List[(Int, TlaEx)] = {
     val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
 
@@ -71,35 +72,40 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     case it => it
   }
 
-  def validateLiveness(loopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
-    val notLoopInvariant = tla.not(liveness)
-
+  def checkLiveness(loopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
     val counterExamples = ListBuffer[(Int, TlaEx)]()
 
-    for (startIndex <- loopStartIndexActionTuples) {
-
-      rewriter.push()
-
-      var j = 0
-      var lastState = stateStack.head._1
-      while (j <= startIndex._1) {
-        val requiredBinding = stateStack(j)._1.binding
-        val state = lastState.setBinding(requiredBinding).setRex(notLoopInvariant)
-        lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
-        solverContext.assertGroundExpr(lastState.ex)
-
-        j += 1
+    val notLiveness = tla.not(liveness)
+    for (startIndexActionTuple <- loopStartIndexActionTuples) {
+      val isInvalidLiveness = checkIfLivenessEventNeverHappened(startIndexActionTuple._1, notLiveness)
+      if (isInvalidLiveness) {
+        counterExamples += startIndexActionTuple
       }
-      val result = solverContext.sat()
-
-      if (result) {
-        counterExamples += startIndex
-      }
-
-      rewriter.pop()
     }
 
     counterExamples.toList
+  }
+
+  private def checkIfLivenessEventNeverHappened(loopStartIndex: Int, notLiveness: TlaEx): Boolean = {
+    rewriter.push()
+
+    var lastState = stateStack.head._1
+    for (j <- 0 to loopStartIndex) {
+      lastState = setBindingAndActionForLastState(stateStack(j)._1, lastState, notLiveness)
+      solverContext.assertGroundExpr(lastState.ex)
+    }
+    val result = solverContext.sat()
+
+    rewriter.pop()
+
+    result
+  }
+
+  private def setBindingAndActionForLastState(lastState: SymbState, selectedState: SymbState, notLiveness: TlaEx): SymbState = {
+    val requiredBinding = selectedState.binding
+    val state = lastState.setBinding(requiredBinding).setRex(notLiveness)
+
+    rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
   }
 
   def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
@@ -189,7 +195,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     filterByTakenActions(filteredByEnabled)
   }
 
-  def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
+  private def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
     val selectedBinding = selected.binding
     val stateBinding = state.binding
     val stateWithBinding = state.setBinding(
