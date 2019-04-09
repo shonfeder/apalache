@@ -50,7 +50,8 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
                             notInvPrime,
                             spec.specification,
                             spec.liveness,
-                            spec.enabledActionHintTuples)
+                            spec.enabledActionWeakFairnessHintTuples,
+                            spec.enabledActionStrongFairnessHintTuples)
   }
 
   private def markFreeExistentials(ex: TlaEx): Unit = ex match {

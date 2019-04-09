@@ -69,9 +69,12 @@ class HintsAndSkolemizationPassImpl @Inject()(val options: PassOptions,
     val notInvPrimeRenamed = renameIfDefined(spec.notInvariantPrime)
     val specification = renameIfDefined(spec.specification)
     val liveness = renameIfDefined(spec.liveness)
-    val enabledRenamed = spec.enabledActionHintTuples
-                             .sorted(StringOrdering)
-                             .map(it => (renaming.renameBindingsUnique(it._1), renaming.renameBindingsUnique(it._2)))
+    val enabledWeakFairnessRenamed = spec.enabledActionWeakFairnessHintTuples
+                                         .sorted(StringOrdering)
+                                         .map(it => (renaming.renameBindingsUnique(it._1), renaming.renameBindingsUnique(it._2)))
+    val enabledStrongFairnessRenamed = spec.enabledActionStrongFairnessHintTuples
+                                           .sorted(StringOrdering)
+                                           .map(it => (renaming.renameBindingsUnique(it._1), renaming.renameBindingsUnique(it._2)))
     var newSpec = new SpecWithTransitions(spec.rootModule,
                                           initRenamed,
                                           nextRenamed,
@@ -80,7 +83,8 @@ class HintsAndSkolemizationPassImpl @Inject()(val options: PassOptions,
                                           notInvPrimeRenamed,
                                           specification,
                                           liveness,
-                                          enabledRenamed)
+                                          enabledWeakFairnessRenamed,
+                                          enabledStrongFairnessRenamed)
     val skolem = new SimpleSkolemization(frexStoreImpl)
     newSpec = skolem.transformAndLabel(newSpec)
 

@@ -23,8 +23,6 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                    @Named("AfterAssignment") nextPass: Pass with SpecWithTransitionsMixin)
       extends AssignmentPass with LazyLogging {
 
-  val ENABLED_PREFIX = "ENABLED"
-
   var tlaModule: Option[TlaModule] = None
   private var specWithTransitions: Option[SpecWithTransitions] = None
 
@@ -173,20 +171,16 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
         Some(temporal)
       }
 
+    val propertyExtractor = new PropertyExtractor()
     val liveness =
       if (temporal.isEmpty) {
         None
       } else {
-        val liveness = transformer.extractLivenessProperty(temporal.get)
+        val liveness = propertyExtractor.extractLivenessProperty(temporal.get)
         liveness
       }
 
-    val enabledActionHintTuples = bodyDB.fullScan
-                             .filter { it => it._1.startsWith(ENABLED_PREFIX) }
-                             .map { it => (it._1.substring(8), it._2._2) }
-                             .map { it => (bodyDB.get(it._1), it._2) }
-                             .map { it => (it._1.get._2, it._2)}
-
+    val (enabledActionWeakFairnessHintTuples, enabledActionStrongFairnessHintTuples) = propertyExtractor.extractActionHintTuples(temporal.get)
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
     specWithTransitions = Some(new SpecWithTransitions(newModule,
@@ -197,7 +191,8 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                                        notInvariantPrime,
                                                        temporal,
                                                        liveness,
-                                                       enabledActionHintTuples))
+                                                       enabledActionWeakFairnessHintTuples,
+                                                       enabledActionStrongFairnessHintTuples))
     true
   }
 

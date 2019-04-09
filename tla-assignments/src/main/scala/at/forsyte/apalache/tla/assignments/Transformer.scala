@@ -6,7 +6,6 @@ import at.forsyte.apalache.tla.lir.control.LetInOper
 import at.forsyte.apalache.tla.lir.db.{BodyDB, TransformationListener}
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.plugins.Identifier
-import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 import com.google.inject.Singleton
 
 /**
@@ -237,21 +236,5 @@ class Transformer {
       Identifier.identify( san )
       Some( san )
     }
-  }
-
-  def extractLivenessProperty(specification: TlaEx): Option[TlaEx] = specification match {
-    case OperEx(TlaBoolOper.implies, arg, args@_*) =>
-      args.map(extractLivenessProperty)
-          .find(it => it.isDefined)
-          .map(it => it.get)
-    case OperEx(TlaBoolOper.and, args@_*) =>
-      args.map(extractLivenessProperty)
-          .find(it => it.isDefined)
-          .map(it => it.get)
-    case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, arg1, arg2))) =>
-      Some(arg1)
-    case _ =>
-      None
-
   }
 }

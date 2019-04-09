@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.analyses
 
-import at.forsyte.apalache.tla.bmcmt.{ArenaCell, Binding, CellTheory, SolverContext, SymbState, SymbStateRewriterImpl}
+import at.forsyte.apalache.tla.bmcmt.{ArenaCell, Binding, CellTheory, CheckerInput, SolverContext, SymbState, SymbStateRewriterImpl}
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.convenience.tla
@@ -9,9 +9,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 //TODO (Viktor): write unit-tests
-class LoopAnalyser(val nextTransitions: List[TlaEx],
-                   val liveness: TlaEx,
-                   val enabledActionHintTuples: List[(TlaEx, TlaEx)],
+class LoopAnalyser(val checkerInput: CheckerInput,
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
@@ -19,7 +17,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   def findAllLoops: List[Int] = {
     val loopStartIndexes = mutable.Set[Int]()
 
-    val next = nextTransitions.map(convertToEquality)
+    val next = checkerInput.nextTransitions.map(convertToEquality)
     for (action <- next) {
       loopStartIndexes ++= findLoopsForAction(action)
     }
@@ -72,7 +70,7 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
   }
 
   def checkLiveness(loopStartIndexActionTuples: List[Int]): List[Int] = {
-    val notLiveness = tla.not(liveness)
+    val notLiveness = tla.not(checkerInput.liveness.get)
 
     val counterExamples = ListBuffer[Int]()
     for (loopStartIndex <- loopStartIndexActionTuples) {
@@ -156,11 +154,11 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
       actions.forall(it => isTaken(it, loopStartIndex))
     }
 
-    val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2): _*)
-    val actions = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
+    val weakFairnessConjunction = tla.and(checkerInput.enabledActionWeakFairnessHintTuples.map(it => it._2): _*)
+    val actions = checkerInput.enabledActionWeakFairnessHintTuples.map(it => it._1).map(it => convertToEquality(it))
 
-    val temp = counterExampleLoopStartIndexes.filter(it => areActionsEnabled(it, weakFairnessConjunction))
-    temp.filter(it => areActionsTaken(it, actions))
+    counterExampleLoopStartIndexes.filter(it => areActionsEnabled(it, weakFairnessConjunction))
+                                  .filter(it => areActionsTaken(it, actions))
   }
 
   private def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {

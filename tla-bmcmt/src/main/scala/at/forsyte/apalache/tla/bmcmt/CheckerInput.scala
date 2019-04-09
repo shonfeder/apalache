@@ -25,5 +25,6 @@ class CheckerInput(val rootModule: TlaModule,
                    val notInvariant: Option[TlaEx],
                    val specification: Option[TlaEx],
                    val liveness: Option[TlaEx],
-                   val enabledActionHintTuples: List[(TlaEx, TlaEx)]) {
+                   val enabledActionWeakFairnessHintTuples: List[(TlaEx, TlaEx)],
+                   val enabledActionStrongFairnessHintTuples: List[(TlaEx, TlaEx)]) {
 }
