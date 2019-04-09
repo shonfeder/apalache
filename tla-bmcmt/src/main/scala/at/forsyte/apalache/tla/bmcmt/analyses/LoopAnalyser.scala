@@ -5,6 +5,7 @@ import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.convenience.tla
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 //TODO (Viktor): write unit-tests
@@ -15,9 +16,8 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
 
-  //TODO (Viktor): do we need to return action for loop???
-  def findAllLoops: List[(Int, TlaEx)] = {
-    val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
+  def findAllLoops: List[Int] = {
+    val loopStartIndexes = mutable.Set[Int]()
 
     val next = nextTransitions.map(convertToEquality)
     for (action <- next) {
@@ -27,15 +27,14 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     loopStartIndexes.toList
   }
 
-  private def findLoopsForAction(action: TlaEx): ListBuffer[(Int, TlaEx)] = {
-    val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
+  private def findLoopsForAction(action: TlaEx): ListBuffer[Int] = {
+    val loopStartIndexes = ListBuffer[Int]()
 
     val lastState = setActionForLastState(action)
     for (loopStartIndex <- 0 until stateStack.size - 1) {
       val loopStartState = stateStack(loopStartIndex)._1
       if (checkForLoopWithAction(loopStartState, lastState)) {
-        val tuple = (loopStartIndex, action)
-        loopStartIndexes += tuple
+        loopStartIndexes += loopStartIndex
       }
     }
 
@@ -72,14 +71,13 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     case it => it
   }
 
-  def checkLiveness(loopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
-    val counterExamples = ListBuffer[(Int, TlaEx)]()
-
+  def checkLiveness(loopStartIndexActionTuples: List[Int]): List[Int] = {
     val notLiveness = tla.not(liveness)
-    for (startIndexActionTuple <- loopStartIndexActionTuples) {
-      val isInvalidLiveness = checkIfLivenessEventNeverHappened(startIndexActionTuple._1, notLiveness)
-      if (isInvalidLiveness) {
-        counterExamples += startIndexActionTuple
+
+    val counterExamples = ListBuffer[Int]()
+    for (loopStartIndex <- loopStartIndexActionTuples) {
+      if (checkIfLivenessEventNeverHappened(loopStartIndex, notLiveness)) {
+        counterExamples += loopStartIndex
       }
     }
 
@@ -108,89 +106,61 @@ class LoopAnalyser(val nextTransitions: List[TlaEx],
     rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
   }
 
-  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
-    def filterByEnabledActions(counterExampleLoopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
-      val filteredCounterExamples = ListBuffer[(Int, TlaEx)]()
+  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
+    def areActionsEnabled(loopStartIndex: Int, weakFairnessConjunction: TlaEx): Boolean = {
+      rewriter.push()
 
-      val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2): _*)
-      for (startIndex <- counterExampleLoopStartIndexActionTuples) {
-        rewriter.push()
+      var j = 0
+      var lastState = stateStack.head._1
+      while (j <= loopStartIndex) {
+        lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, weakFairnessConjunction)
+        solverContext.assertGroundExpr(lastState.ex)
 
-        var j = 0
-        var lastState = stateStack.head._1
-        while (j <= startIndex._1) {
-          lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, weakFairnessConjunction)
-          solverContext.assertGroundExpr(lastState.ex)
-
-          j += 1
-        }
-        val result = solverContext.sat()
-        if (result) {
-          filteredCounterExamples += startIndex
-        }
-
-        rewriter.pop()
+        j += 1
       }
+      val result = solverContext.sat()
 
-      filteredCounterExamples.toList
+      rewriter.pop()
+
+      result
     }
 
-    def filterByTakenActions(counterExampleLoopStartIndexActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
-
-      def collectTakenActions(actions: List[TlaEx], loopStartIndexActionTuple: (Int, TlaEx)): List[TlaEx] = {
-        val takenActions = ListBuffer[TlaEx]()
-        takenActions += loopStartIndexActionTuple._2
-
-        var j = 0
+    def areActionsTaken(loopStartIndex: Int, actions: List[TlaEx]): Boolean = {
+      def isTaken(action: TlaEx, loopStartIndex: Int): Boolean = {
+        var i = 0
         var lastState = stateStack.head._1
-        var taken = false
-        while (j <= loopStartIndexActionTuple._1 && !taken) {
-          taken = false
-          for (toBeTakenAction <- actions) {
-            rewriter.push()
+        while (i <= loopStartIndex) {
+          rewriter.push()
 
-            val requiredBinding = stateStack(j)._1.binding
-            val state = addPrimedBinding(
-              lastState.setBinding(requiredBinding),
-              stateStack(if (j - 1 >= 0) j - 1 else 0)._1
-              ).setRex(toBeTakenAction)
-            lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
-            solverContext.assertGroundExpr(lastState.ex)
-            j += 1
+          val requiredBinding = stateStack(i)._1.binding
+          val state = addPrimedBinding(
+            lastState.setBinding(requiredBinding),
+            stateStack(if (i - 1 >= 0) i - 1 else loopStartIndex)._1
+            ).setRex(action)
+          lastState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
+          solverContext.assertGroundExpr(lastState.ex)
+          i += 1
 
-            taken = solverContext.sat()
+          val taken = solverContext.sat()
 
-            if (taken) {
-              takenActions += toBeTakenAction
-            }
+          rewriter.pop()
 
-            rewriter.pop()
+          if (taken) {
+            return true
           }
         }
 
-        takenActions.toList
+        false
       }
 
-      val filteredCounterExamples = ListBuffer[(Int, TlaEx)]()
-
-      val actions = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
-
-
-      var takenActions = List[TlaEx]()
-      for (startIndex <- counterExampleLoopStartIndexActionTuples) {
-
-        takenActions = collectTakenActions(actions, startIndex)
-
-        if (actions.forall(takenActions.contains)) {
-          filteredCounterExamples += startIndex
-        }
-      }
-
-      filteredCounterExamples.toList
+      actions.forall(it => isTaken(it, loopStartIndex))
     }
 
-    val filteredByEnabled = filterByEnabledActions(counterExampleLoopStartIndexes)
-    filterByTakenActions(filteredByEnabled)
+    val weakFairnessConjunction = tla.and(enabledActionHintTuples.map(it => it._2): _*)
+    val actions = enabledActionHintTuples.map(it => it._1).map( it => convertToEquality(it))
+
+    val temp = counterExampleLoopStartIndexes.filter(it => areActionsEnabled(it, weakFairnessConjunction))
+    temp.filter(it => areActionsTaken(it, actions))
   }
 
   private def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
