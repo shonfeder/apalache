@@ -27,5 +27,5 @@ class SpecWithTransitions(val rootModule: TlaModule,
                           val notInvariantPrime: Option[TlaEx],
                           val specification: Option[TlaEx],
                           val liveness: Option[TlaEx],
-                          val enabledActionWeakFairnessHintTuples: List[(TlaEx, TlaEx)],
-                          val enabledActionStrongFairnessHintTuples: List[(TlaEx, TlaEx)])
+                          val enabledActionWeakFairnessHintTuples: Option[List[(TlaEx, TlaEx)]],
+                          val enabledActionStrongFairnessHintTuples: Option[List[(TlaEx, TlaEx)]])

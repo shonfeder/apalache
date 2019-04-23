@@ -171,16 +171,22 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
         Some(temporal)
       }
 
-    val propertyExtractor = new PropertyExtractor()
+    val propertyExtractor = new PropertyExtractor(bodyDB)
     val liveness =
       if (temporal.isEmpty) {
         None
       } else {
-        val liveness = propertyExtractor.extractLivenessProperty(temporal.get)
+        val liveness = propertyExtractor.extractLivenessProperty(findBodyOf(temporalName.get, initReplacedDecls: _*))
         liveness
       }
 
-    val (enabledActionWeakFairnessHintTuples, enabledActionStrongFairnessHintTuples) = propertyExtractor.extractActionHintTuples(temporal.get)
+    val (enabledActionWeakFairnessHintTuples, enabledActionStrongFairnessHintTuples) =
+      if (temporalName.isEmpty) {
+        (None, None)
+      } else {
+        val (weakFairnessTuples, strongFairnessTuples) = propertyExtractor.extractActionHintTuples(temporalName.get)
+        (Some(weakFairnessTuples), Some(strongFairnessTuples))
+      }
 
     val newModule = new TlaModule(tlaModule.get.name, tlaModule.get.imports, uniqueVarDecls)
     specWithTransitions = Some(new SpecWithTransitions(newModule,

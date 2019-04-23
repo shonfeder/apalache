@@ -14,8 +14,8 @@ class LoopAnalyser(val checkerInput: CheckerInput,
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
 
-  def findAllLoops: List[Int] = {
-    val loopStartIndexes = mutable.Set[Int]()
+  def findAllLoops: List[(Int, TlaEx)] = {
+    val loopStartIndexes = mutable.Set[(Int, TlaEx)]()
 
     val next = checkerInput.nextTransitions.map(convertToEquality)
     for (action <- next) {
@@ -25,14 +25,15 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     loopStartIndexes.toList
   }
 
-  private def findLoopsForAction(action: TlaEx): ListBuffer[Int] = {
-    val loopStartIndexes = ListBuffer[Int]()
+  private def findLoopsForAction(action: TlaEx): ListBuffer[(Int, TlaEx)] = {
+    val loopStartIndexes = ListBuffer[(Int, TlaEx)]()
 
     val lastState = setActionForLastState(action)
     for (loopStartIndex <- 0 until stateStack.size - 1) {
       val loopStartState = stateStack(loopStartIndex)._1
       if (checkForLoopWithAction(loopStartState, lastState)) {
-        loopStartIndexes += loopStartIndex
+        val validTuple = (loopStartIndex, action)
+        loopStartIndexes += validTuple
       }
     }
 
@@ -69,32 +70,35 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     case it => it
   }
 
-  def checkLiveness(loopStartIndexActionTuples: List[Int]): List[Int] = {
+  def checkLiveness(loopStartIndexWithActionTuples: List[(Int, TlaEx)]): List[(Int, TlaEx)] = {
+    def checkIfLivenessEventNeverHappened(loopIndexWithActionTuple: (Int, TlaEx), notLiveness: TlaEx): Boolean = {
+      rewriter.push()
+
+      var lastState = stateStack.head._1
+      lastState = rewriter.rewriteUntilDone(addPrimedBinding(lastState, stateStack(loopIndexWithActionTuple._1)._1).setTheory(CellTheory()))
+      solverContext.assertGroundExpr(lastState.ex)
+
+      for (j <- 0 to loopIndexWithActionTuple._1) {
+        lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, notLiveness)
+        solverContext.assertGroundExpr(lastState.ex)
+      }
+      val result = solverContext.sat()
+
+      rewriter.pop()
+
+      result
+    }
+
     val notLiveness = tla.not(checkerInput.liveness.get)
 
-    val counterExamples = ListBuffer[Int]()
-    for (loopStartIndex <- loopStartIndexActionTuples) {
+    val counterExamples = ListBuffer[(Int, TlaEx)]()
+    for (loopStartIndex <- loopStartIndexWithActionTuples) {
       if (checkIfLivenessEventNeverHappened(loopStartIndex, notLiveness)) {
         counterExamples += loopStartIndex
       }
     }
 
     counterExamples.toList
-  }
-
-  private def checkIfLivenessEventNeverHappened(loopStartIndex: Int, notLiveness: TlaEx): Boolean = {
-    rewriter.push()
-
-    var lastState = stateStack.head._1
-    for (j <- 0 to loopStartIndex) {
-      lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, notLiveness)
-      solverContext.assertGroundExpr(lastState.ex)
-    }
-    val result = solverContext.sat()
-
-    rewriter.pop()
-
-    result
   }
 
   private def setBindingAndActionForLastState(lastState: SymbState, selectedState: SymbState, action: TlaEx): SymbState = {
@@ -104,29 +108,29 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
   }
 
-  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexes: List[Int]): List[Int] = {
-    def areActionsEnabled(loopStartIndex: Int, weakFairnessConjunction: TlaEx): Boolean = {
+  def checkFairnessOfCounterExamples(counterExampleLoopStartIndexWithActionTuples: List[(Int, TlaEx)]): Boolean = {
+    val notLiveness = tla.not(checkerInput.liveness.get)
+
+    def doesFairnessHold(loopStartIndexWithActionTuple: (Int, TlaEx), weakFairnessConjunction: TlaEx, actions: List[TlaEx]): Boolean = {
       rewriter.push()
 
       var j = 0
       var lastState = stateStack.head._1
-      while (j <= loopStartIndex) {
+      lastState = rewriter.rewriteUntilDone(addPrimedBinding(lastState, stateStack(loopStartIndexWithActionTuple._1)._1).setTheory(CellTheory()))
+      solverContext.assertGroundExpr(lastState.ex)
+
+      while (j <= loopStartIndexWithActionTuple._1) {
         lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, weakFairnessConjunction)
+        solverContext.assertGroundExpr(lastState.ex)
+
+        lastState = setBindingAndActionForLastState(lastState, stateStack(j)._1, notLiveness)
         solverContext.assertGroundExpr(lastState.ex)
 
         j += 1
       }
-      val result = solverContext.sat()
 
-      rewriter.pop()
-
-      result
-    }
-
-    def areActionsTaken(loopStartIndex: Int, actions: List[TlaEx]): Boolean = {
       def isTaken(action: TlaEx, loopStartIndex: Int): Boolean = {
         var i = 0
-        var lastState = stateStack.head._1
         while (i <= loopStartIndex) {
           rewriter.push()
 
@@ -151,14 +155,17 @@ class LoopAnalyser(val checkerInput: CheckerInput,
         false
       }
 
-      actions.forall(it => isTaken(it, loopStartIndex))
+      val result = actions.forall(it => isTaken(it, loopStartIndexWithActionTuple._1))
+
+      rewriter.pop()
+
+      result
     }
 
-    val weakFairnessConjunction = tla.and(checkerInput.enabledActionWeakFairnessHintTuples.map(it => it._2): _*)
-    val actions = checkerInput.enabledActionWeakFairnessHintTuples.map(it => it._1).map(it => convertToEquality(it))
+    val weakFairnessConjunction = tla.and(checkerInput.enabledActionWeakFairnessHintTuples.get.map(it => it._2): _*)
+    val actions = checkerInput.enabledActionWeakFairnessHintTuples.get.map(it => it._1).map(it => convertToEquality(it))
 
-    counterExampleLoopStartIndexes.filter(it => areActionsEnabled(it, weakFairnessConjunction))
-                                  .filter(it => areActionsTaken(it, actions))
+    counterExampleLoopStartIndexWithActionTuples.exists(doesFairnessHold(_, weakFairnessConjunction, actions))
   }
 
   private def addPrimedBinding(state: SymbState, selected: SymbState): SymbState = {
