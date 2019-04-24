@@ -37,7 +37,7 @@ class PropertyExtractor(val bodyDB: BodyDB) {
     def findWeakFairnessNames(specification: TlaEx): List[String] = specification match {
       case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)), _) =>
         findWeakFairnessNames(arg)
-      case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)), _) =>
+      case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, _)), _) =>
         List()
       case OperEx(TlaBoolOper.implies, specificationPlaceholder, _) =>
         val optionalFormula = string2formula(specificationPlaceholder.toString.dropRight(2))
@@ -57,7 +57,7 @@ class PropertyExtractor(val bodyDB: BodyDB) {
     def findStrongFairnessNames(specification: TlaEx): List[String] = specification match {
       case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)), _) =>
         findStrongFairnessNames(arg)
-      case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)), _) =>
+      case OperEx(TlaBoolOper.implies, OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, _)), _) =>
         List()
       case OperEx(TlaBoolOper.implies, specificationPlaceholder, _) =>
         val optionalFormula = string2formula(specificationPlaceholder.toString.dropRight(2))
