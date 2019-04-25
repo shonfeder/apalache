@@ -143,7 +143,7 @@ class LoopAnalyser(val checkerInput: CheckerInput,
 
     if (result) {
       for (i <- strongFairnessHintsWithActionsTuples.indices) {
-        solverContext.assertGroundExpr(buildFormulaForStrongFairness(strongFairnessHintsWithActionsTuples(i)._1))
+        solverContext.assertGroundExpr(buildFormulaForStrongFairness(strongFairnessHintsWithActionsTuples(i)._2))
       }
 
       result = actionsWithSF.forall(it => isTaken(it, loopStartIndexWithActionTuple._1))
@@ -181,8 +181,8 @@ class LoopAnalyser(val checkerInput: CheckerInput,
   }
 
   private def buildFormulaForStrongFairness(hint: TlaEx): TlaEx = {
-    lastState = setBindingAndActionForLastState(lastState, stateStack.head._1, hint)
-    for (i <- 1 until stateStack.size - 1) {
+    lastState = setBindingAndActionForLastState(lastState, stateStack(1)._1, hint)
+    for (i <- 2 until stateStack.size - 1) {
       val expression = lastState.ex
       lastState = setBindingAndActionForLastState(lastState, stateStack(i)._1, hint)
       lastState = addExpressionWithDisjunction(lastState, expression)
