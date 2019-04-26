@@ -84,12 +84,12 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
                                               rewriter,
                                               solverContext)
 
-          val loopIndexWithActionTuples = loopAnalyser.findAllLoops
+          val loopIndexWithActionTuples = loopAnalyser.findAllLoopStartStateIndexes
           if (checkerInput.specification.isDefined && loopIndexWithActionTuples.isEmpty) {
             //TODO (Viktor): think about result processing
             throw new RuntimeException("No loop!!!")
           } else {
-            val counterExamples = loopAnalyser.checkLiveness(loopIndexWithActionTuples)
+            val isNotLiveness = loopAnalyser.checkFairLiveness(loopIndexWithActionTuples)
             // ok, liveness property does not hold,
             // but now we need to check if it is actually fair execution,
             // so we already know that there is a counter-example, where everywhere the negation of liveness always holds
@@ -97,13 +97,10 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
             // in that case the negation will be: "there exists such execution path, where x >= 8"
             // if we have such path, and fairness properties holds,
             // we can say the path is fair, and this is a valid counter-example
-            if (counterExamples.nonEmpty) {
-              val isFair = loopAnalyser.checkFairnessOfCounterExamples(counterExamples)
-              if (isFair) {
-                dumpCounterexample()
-                //TODO (Viktor): think about result processing
-                throw new RuntimeException("Liveness property does not hold!!!")
-              }
+            if (isNotLiveness) {
+              dumpCounterexample()
+              //TODO (Viktor): think about result processing
+              throw new RuntimeException("Liveness property does not hold!!!")
             } else {
               //TODO (Viktor): think about result processing
               throw new RuntimeException("Liveness property always holds!!!")
