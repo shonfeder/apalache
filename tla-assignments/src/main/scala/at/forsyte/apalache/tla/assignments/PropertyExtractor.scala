@@ -13,15 +13,7 @@ class PropertyExtractor(val bodyDB: BodyDB) {
 
   def extractLivenessProperty(specification: TlaEx): Option[TlaEx] = specification match {
     case OperEx(TlaBoolOper.implies, _, livenessPlaceholder) =>
-      val liveness = bodyDB.get(livenessPlaceholder.toString.dropRight(2))
-      if (liveness.isDefined) {
-        liveness.get._2 match {
-          case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, OperEx(TlaActionOper.stutter, formula, _))) => Some(formula)
-          case _ => None
-        }
-      } else {
-        None
-      }
+      bodyDB.get(livenessPlaceholder.toString.dropRight(2)).map(t => t._2)
     case _ => None
   }
 

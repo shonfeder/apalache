@@ -1,21 +1,43 @@
 package at.forsyte.apalache.tla.bmcmt.analyses
 
 import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, Binding, CellTheory, CheckerInput, SolverContext, SymbState, SymbStateRewriterImpl}
+import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
-import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 //TODO (Viktor): write unit-tests
+//TODO: check pattern-matching
 class LoopAnalyser(val checkerInput: CheckerInput,
                    var stateStack: List[(SymbState, ArenaCell)],
                    val rewriter: SymbStateRewriterImpl,
                    val solverContext: SolverContext) {
 
   private var actualCellArena: Arena = stateStack.head._1.arena
-  private val notLiveness: TlaEx = tla.not(checkerInput.liveness.get)
+  private val notLiveness: TlaEx = negateLiveness(checkerInput.liveness.get)
+
+  private def negateLiveness(liveness: TlaEx): TlaEx = liveness match {
+    case OperEx(TlaTempOper.diamond, arg) =>
+      OperEx(TlaTempOper.box, negateLiveness(arg))
+    case OperEx(TlaTempOper.box, arg) =>
+      OperEx(TlaTempOper.diamond, negateLiveness(arg))
+    case OperEx(TlaBoolOper.implies, left, right) =>
+      OperEx(TlaBoolOper.implies, negateLiveness(left), negateLiveness(right))
+    case OperEx(operator: TlaArithOper, args@_*) =>
+      tla.not(OperEx(operator, args:_*))
+    case OperEx(TlaActionOper.nostutter, formula, _) =>
+      negateLiveness(formula)
+    case _ =>
+      throw new RuntimeException("Unhandled pattern")
+  }
+
+  /**
+    * Find all loops for current configuration
+    */
 
   def findAllLoopStartStateIndexes: List[(Int, TlaEx)] = {
     val loopStartIndexWithActionTuples = mutable.Set[(Int, TlaEx)]()
@@ -27,10 +49,6 @@ class LoopAnalyser(val checkerInput: CheckerInput,
 
     loopStartIndexWithActionTuples.toList
   }
-
-  /**
-    * Find all loops for current configuration
-    */
 
   private def convertToEquality(ex: TlaEx): TlaEx = ex match {
     case OperEx(TlaSetOper.in, arg1, OperEx(TlaSetOper.enumSet, arg)) =>
@@ -90,8 +108,9 @@ class LoopAnalyser(val checkerInput: CheckerInput,
   }
 
   /*
-   * Find at least liveness fair counter-example
+   * Find at least one non-liveness fair counter-example
    */
+
   def checkFairLiveness(loopStartStateIndexWithActionTuples: List[(Int, TlaEx)]): Boolean = {
     val result = loopStartStateIndexWithActionTuples.exists(checkFairNotLiveness)
     result
@@ -130,7 +149,20 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     rewrittenState.ex
   }
 
-  private def buildNotLivenessCondition(loopStartStateIndex: Int): TlaEx = {
+  private def buildNotLivenessCondition(loopStartStateIndex: Int): TlaEx = notLiveness match {
+    case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
+    case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
+      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
+    case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, right)) =>
+      OperEx(TlaBoolOper.and,
+             OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, left):_*),
+             OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, right):_*))
+    case _ =>
+      throw new RuntimeException("Unhandled pattern")
+  }
+
+  private def buildNotLivenessConditionsForStates(loopStartStateIndex: Int, notLiveness: TlaEx): List[TlaEx] =  {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
     for (i <- 0 to loopStartStateIndex) {
@@ -140,7 +172,7 @@ class LoopAnalyser(val checkerInput: CheckerInput,
       notLivenessStateConditions += rewrittenState.ex
     }
 
-    OperEx(TlaBoolOper.and, notLivenessStateConditions:_*)
+    notLivenessStateConditions.toList
   }
 
   private def buildWeakFairnessCondition(loopStartStateIndex: Int): TlaEx = {
