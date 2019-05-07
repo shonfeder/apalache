@@ -26,7 +26,11 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     case OperEx(TlaTempOper.box, arg) =>
       OperEx(TlaTempOper.diamond, negateLiveness(arg))
     case OperEx(TlaBoolOper.implies, left, right) =>
-      OperEx(TlaBoolOper.implies, negateLiveness(left), negateLiveness(right))
+      OperEx(TlaBoolOper.and, negateLiveness(left), negateLiveness(right))
+    case OperEx(TlaBoolOper.and, args@_*) =>
+      OperEx(TlaBoolOper.or, args.map(negateLiveness):_*)
+    case OperEx(TlaBoolOper.or, args@_*) =>
+      OperEx(TlaBoolOper.and, args.map(negateLiveness):_*)
     case OperEx(operator: TlaArithOper, args@_*) =>
       tla.not(OperEx(operator, args:_*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
