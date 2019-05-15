@@ -176,7 +176,7 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
       if (temporal.isEmpty) {
         None
       } else {
-        val liveness = propertyExtractor.extractLivenessProperty(findBodyOf(temporalName.get, initReplacedDecls: _*))
+        val liveness = propertyExtractor.extractLivenessProperty(temporal.get)
         liveness
       }
 

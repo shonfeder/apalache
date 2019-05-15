@@ -35,6 +35,8 @@ class LoopAnalyser(val checkerInput: CheckerInput,
       tla.not(OperEx(operator, args:_*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
       negateLiveness(formula)
+    case OperEx(TlaTempOper.leadsTo, left, right) =>
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
@@ -158,7 +160,7 @@ class LoopAnalyser(val checkerInput: CheckerInput,
       OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
       OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
-    case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, right)) =>
+    case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
       OperEx(TlaBoolOper.and,
              OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, left):_*),
              OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, right):_*))

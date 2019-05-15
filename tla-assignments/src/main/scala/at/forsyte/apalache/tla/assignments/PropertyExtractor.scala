@@ -12,8 +12,7 @@ class PropertyExtractor(val bodyDB: BodyDB) {
   private val PREFIX_LENGTH = 8
 
   def extractLivenessProperty(specification: TlaEx): Option[TlaEx] = specification match {
-    case OperEx(TlaBoolOper.implies, _, livenessPlaceholder) =>
-      bodyDB.get(livenessPlaceholder.toString.dropRight(2)).map(t => t._2)
+    case OperEx(TlaBoolOper.implies, _, livenessPlaceholder) => Some(livenessPlaceholder)
     case _ => None
   }
 
