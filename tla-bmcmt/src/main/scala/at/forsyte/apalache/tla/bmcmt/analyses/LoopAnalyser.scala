@@ -161,24 +161,43 @@ class LoopAnalyser(val checkerInput: CheckerInput,
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
       OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
-      OperEx(TlaBoolOper.and,
-             OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, left):_*),
-             OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, right):_*))
+      OperEx(
+        TlaBoolOper.or,
+        stateStack.indices
+                  .map(index => OperEx(
+                      TlaBoolOper.and,
+                      Seq(
+                        buildNotLivenessConditionForState(index, left),
+                        OperEx(
+                          TlaBoolOper.and,
+                          buildNotLivenessConditionsForStates(index, stateStack.size - 1, right):_*
+                        )
+                      ):_*
+                    )
+                  ):_*
+      )
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
 
-  private def buildNotLivenessConditionsForStates(loopStartStateIndex: Int, notLiveness: TlaEx): List[TlaEx] =  {
+  private def buildNotLivenessConditionsForStates(lastState: Int, notLiveness: TlaEx): List[TlaEx]
+    =  buildNotLivenessConditionsForStates(0, lastState, notLiveness)
+
+  private def buildNotLivenessConditionsForStates(firstState: Int, lastState: Int, notLiveness: TlaEx): List[TlaEx] =  {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
-    for (i <- 0 to loopStartStateIndex) {
-      val consideringState = stateStack(i)._1.setArena(actualCellArena).setRex(notLiveness)
-      val rewrittenState = rewriter.rewriteUntilDone(consideringState.setTheory(CellTheory()))
-      actualCellArena = rewrittenState.arena
-      notLivenessStateConditions += rewrittenState.ex
+    for (i <- 0 to lastState) {
+      notLivenessStateConditions += buildNotLivenessConditionForState(i, notLiveness)
     }
 
     notLivenessStateConditions.toList
+  }
+
+  private def buildNotLivenessConditionForState(index: Int, notLiveness: TlaEx): TlaEx = {
+    val consideringState = stateStack(index)._1.setArena(actualCellArena).setRex(notLiveness)
+    val rewrittenState = rewriter.rewriteUntilDone(consideringState.setTheory(CellTheory()))
+    actualCellArena = rewrittenState.arena
+    rewrittenState.ex
   }
 
   private def buildWeakFairnessCondition(loopStartStateIndex: Int): TlaEx = {
