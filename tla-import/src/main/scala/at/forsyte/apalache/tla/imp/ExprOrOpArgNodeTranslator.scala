@@ -6,6 +6,7 @@ import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.control.LetInOper
 import at.forsyte.apalache.tla.lir.oper.{TlaFunOper, TlaOper}
 import at.forsyte.apalache.tla.lir.values.{TlaDecimal, TlaInt, TlaStr}
+import com.typesafe.scalalogging.LazyLogging
 import tla2sany.semantic._
 
 import scala.collection.JavaConverters._
@@ -16,7 +17,7 @@ import scala.collection.JavaConverters._
   * @author konnov
   */
 class ExprOrOpArgNodeTranslator(environmentHandler: EnvironmentHandler, sourceStore: SourceStore,
-                                context: Context, recStatus: RecursionStatus) {
+                                context: Context, recStatus: RecursionStatus) extends LazyLogging {
   private val desugarer = new Desugarer() // construct elsewhere?
 
   def translate(node: ExprOrOpArgNode): TlaEx = {
@@ -42,6 +43,9 @@ class ExprOrOpArgNodeTranslator(environmentHandler: EnvironmentHandler, sourceSt
 
         case letIn: LetInNode =>
           translateLetIn(letIn)
+
+        case substIn: SubstInNode =>
+          translateSubstIn(substIn)
 
         case at: AtNode =>
           translateAt(at)
@@ -87,17 +91,30 @@ class ExprOrOpArgNodeTranslator(environmentHandler: EnvironmentHandler, sourceSt
     // Hence, we reverse the list first.
     //
     // TODO: properly handle recursive declarations
-    val innerContext = letIn.context.getOpDefs.elements.asScala.toList.reverse.foldLeft(Context()) {
-      case (ctx, node: OpDefNode) =>
-        ctx.push(OpDefTranslator(environmentHandler, sourceStore, context.disjointUnion(ctx)).translate(node))
+    var letInDeclarations = List[TlaOperDecl]()
+    var letInContext = context
+    for (node <- letIn.context.getOpDefs.elements.asScala.toList.reverse) {
+      node match {
+        case opdef: OpDefNode =>
+          val decl = OpDefTranslator(environmentHandler, sourceStore, letInContext).translate(opdef)
+          letInDeclarations = letInDeclarations :+ decl
+          letInContext = letInContext.push(decl)
 
-      case (_, other) =>
-        throw new SanyImporterException("Expected OpDefNode, found: " + other.getClass)
+        case _ =>
+          throw new SanyImporterException("Expected OpDefNode, found: " + node)
+      }
     }
-    val oper = new LetInOper(innerContext.declarations.map { d => d.asInstanceOf[TlaOperDecl] })
-    val body = ExprOrOpArgNodeTranslator(environmentHandler, sourceStore, context.disjointUnion(innerContext), recStatus)
+
+    val oper = new LetInOper(letInDeclarations)
+    val body = ExprOrOpArgNodeTranslator(environmentHandler, sourceStore, letInContext, recStatus)
       .translate(letIn.getBody)
     OperEx(oper, body)
+  }
+
+  // substitute an expression with the declarations that come from INSTANCE M WITH ...
+  private def translateSubstIn(substIn: SubstInNode): TlaEx = {
+    SubstTranslator(environmentHandler, sourceStore, context)
+      .translate(substIn, translate(substIn.getBody))
   }
 
   private def translateAt(node: AtNode): TlaEx = {

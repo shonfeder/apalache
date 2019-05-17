@@ -20,12 +20,13 @@ trait SolverContext extends StackableContext {
 
   /**
     * Declare an arena edge of type 'has'. This method introduces a Boolean variable for the edge.
-    * This method is called automatically by the arena.
+    * This method is called automatically by the arena. If the context already contains the constant
+    * with the same name, then this method does nothing.
     *
     * @param set the containing set
     * @param elem a set element
     */
-  def declareInPred(set: ArenaCell, elem: ArenaCell): Unit
+  def declareInPredIfNeeded(set: ArenaCell, elem: ArenaCell): Unit
 
   /**
     * Check whether the current view of the SMT solver is consistent with arena.
@@ -108,6 +109,14 @@ trait SolverContext extends StackableContext {
   def sat(): Boolean
 
   /**
+    * Check satisfiability of the context with a timeout
+    *
+    * @param timeoutSec the timeout in seconds. If timeout <= 0, it is not effective
+    * @return Some(result), if no timeout happened; otherwise, None
+    */
+  def satOrTimeout(timeoutSec: Long): Option[Boolean]
+
+    /**
     * Register an SMT listener
     *
     * @param listener register a listener, overrides the previous listener, if it was set before

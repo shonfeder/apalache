@@ -160,7 +160,7 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
     * @param set the containing set
     * @param elem a set element
     */
-  def declareInPred(set: ArenaCell, elem: ArenaCell): Unit = context.declareInPred(set, elem)
+  def declareInPredIfNeeded(set: ArenaCell, elem: ArenaCell): Unit = context.declareInPredIfNeeded(set, elem)
 
   /**
     * Check whether the current view of the SMT solver is consistent with arena.
@@ -223,6 +223,14 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
     */
   override def sat(): Boolean = context.sat()
 
+
+  /**
+    * Check satisfiability of the context with a timeout
+    *
+    * @param timeoutSec the timeout in seconds. If timeout <= 0, it is not effective
+    * @return Some(result), if no timeout happened; otherwise, None
+    */
+  override def satOrTimeout(timeoutSec: Long): Option[Boolean] = context.satOrTimeout(timeoutSec)
 
   /**
     * Register an SMT listener

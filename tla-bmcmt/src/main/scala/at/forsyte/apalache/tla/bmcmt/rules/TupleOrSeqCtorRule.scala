@@ -51,13 +51,13 @@ class TupleOrSeqCtorRule(rewriter: SymbStateRewriter) extends RewritingRule {
     val tuple = arena.topCell
 
     // connect the cells to the tuple (or a sequence): the order of edges is important!
-    arena = cells.foldLeft(arena)((a, e) => a.appendHas(tuple, e))
+    arena = arena.appendHasNoSmt(tuple, cells: _*)
     state.setArena(arena).setRex(tuple.toNameEx)
   }
 
   private def createSeq(state: SymbState, seqT: SeqT, cells: Seq[ArenaCell]): SymbState = {
     // create a sequence cell
-    var nextState = state.appendArenaCell(seqT)
+    var nextState = state.updateArena(_.appendCell(seqT))
     val seq = nextState.arena.topCell
 
     // connect N + 2 elements to seqT: the start (>= 0), the end (< len), and the sequence of values
@@ -65,7 +65,7 @@ class TupleOrSeqCtorRule(rewriter: SymbStateRewriter) extends RewritingRule {
     val start = nextState.asCell
     nextState = rewriter.rewriteUntilDone(nextState.setRex(tla.int(cells.length)))
     val end = nextState.asCell
-    nextState = nextState.setArena(nextState.arena.appendHas(seq, start +: end +: cells))
+    nextState = nextState.updateArena(_.appendHasNoSmt(seq, start +: end +: cells: _*))
     // we do not add SMT constraints as they are not important
     nextState.setRex(seq.toNameEx).setTheory(CellTheory())
   }

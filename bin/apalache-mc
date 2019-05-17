@@ -21,10 +21,13 @@ fi
 
 echo "# Package:   $JAR"
 
-# Do not change the following line.
-# It is automatically replaced with a version at the release stage.
-BUILD=""
-echo "# Build:     ${BUILD:-`git describe`}"
+# the maximum heap size, Z3 will use much more as a native library
+JVM_ARGS="-Xmx4096m"
+# uncomment to track memory usage with: jcmd <pid> VM.native_memory summary
+#JVM_ARGS="${JVM_ARGS} -XX:NativeMemoryTracking=summary"
 
-java -jar "$JAR" "$@"
+echo "# JVM args: $JVM_ARGS"
+echo "#"
+
+java $JVM_ARGS -jar "$JAR" "$@"
 

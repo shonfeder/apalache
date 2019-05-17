@@ -37,9 +37,37 @@ class SymbState(val ex: TlaEx,
   }
 
   /**
-    * A convenience function to update arena and save the new arena in a new state.
+    * This is a convenience method that allows us to call an arena method and store the result in a new state.
+    * By using this method, we avoid expressions like state.setArena(state.arena.foo(...))
+    *
+    * @param f a function that updates the state arena
+    * @return the new symbolic state
     */
-  def appendArenaCell(cellT: CellT): SymbState = {
-    setArena(arena.appendCell(cellT))
+  def updateArena(f: Arena => Arena): SymbState = {
+    setArena(f(arena))
   }
+
+  /**
+    * Find the names of the variables (their prime versions)
+    * that have changed between the primed and non-primed versions.
+    *
+    * @return the set of names of the variables that have changed, e.g., x', y', and z'
+    */
+  def changed: Set[String] = {
+    def eachName(set: Set[String], name: String): Set[String] = {
+      if (name.endsWith("'")) {
+        val nonPrimed = name.substring(0, name.length - 1)
+        if (!binding.contains(nonPrimed) || binding(nonPrimed) != binding(name)) {
+          set + name
+        } else {
+          set
+        }
+      } else {
+        set
+      }
+    }
+
+    binding.keySet.foldLeft(Set[String]())(eachName)
+  }
+
 }

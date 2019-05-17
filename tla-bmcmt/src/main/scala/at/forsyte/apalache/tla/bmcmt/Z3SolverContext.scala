@@ -1,6 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{File, PrintWriter}
+import java.util.concurrent.{TimeUnit, TimeoutException}
 
 import at.forsyte.apalache.tla.bmcmt.profiler.{FruitlessSmtListener, SmtListener}
 import at.forsyte.apalache.tla.bmcmt.types.{BoolT, CellT, FailPredT, IntT}
@@ -114,18 +115,19 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     }
   }
 
-  override def declareInPred(set: ArenaCell, elem: ArenaCell): Unit = {
+  override def declareInPredIfNeeded(set: ArenaCell, elem: ArenaCell): Unit = {
     val elemT = elem.cellType
     val setT = set.cellType
     val name = s"in_${elemT.signature}${elem}_${setT.signature}$set"
-    smtListener.onIntroSmtConst(name)
-    log(s";; declare edge predicate $name: Bool")
-    log(s"(declare-const $name Bool)")
-    nBoolConsts += 1
-    val const = z3context.mkConst(name, z3context.getBoolSort)
-    constCache += (name -> (const, BoolT(), level))
+    if (!constCache.contains(name)) {
+      smtListener.onIntroSmtConst(name)
+      log(s";; declare edge predicate $name: Bool")
+      log(s"(declare-const $name Bool)")
+      nBoolConsts += 1
+      val const = z3context.mkConst(name, z3context.getBoolSort)
+      constCache += (name -> (const, BoolT(), level))
+    }
   }
-
 
   /**
     * Check whether the current view of the SMT solver is consistent with arena.
@@ -364,6 +366,46 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
       throw new SmtEncodingException("SMT solver reports UNKNOWN. Perhaps, your specification is outside the supported logic.")
     }
     status == Status.SATISFIABLE
+  }
+
+  override def satOrTimeout(timeoutSec: Long): Option[Boolean] = {
+    if (timeoutSec <= 0) {
+      Some(sat())
+    } else {
+      def setTimeout(tm: Long): Unit = {
+        val params = z3context.mkParams()
+        params.add("timeout", BigInt(tm).toInt)
+        z3solver.setParameters(params)
+      }
+      // temporarily, change the timeout
+      setTimeout(timeoutSec * 1000)
+      log("(check-sat)")
+      val status = z3solver.check()
+      // set it to the maximum: Z3 is using 2^32 - 1, which is hard to pass in Java, so we can only set it to 2^31-1
+      setTimeout(Int.MaxValue)
+      logWriter.flush() // good time to flush
+      status match {
+        case Status.SATISFIABLE => Some(true)
+        case Status.UNSATISFIABLE => Some(false)
+        case Status.UNKNOWN => None
+      }
+
+      /*
+      // XXX: this produces a segfault sometimes...
+      val satFuture: Future[Boolean] = Future {
+        sat()
+      }(ExecutionContext.global)
+
+      try {
+        Some(Await.result(satFuture, Duration(timeoutSec, TimeUnit.SECONDS)))
+      } catch {
+        case _: TimeoutException | _: InterruptedException =>
+          z3context.interrupt()
+          log(s";; timeout")
+          None
+      }
+      */
+    }
   }
 
   /**

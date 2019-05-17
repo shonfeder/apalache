@@ -213,10 +213,10 @@ package lir {
 
   case class OperEx(oper: TlaOper, args: TlaEx*) extends TlaEx {
     require(oper.isCorrectArity(args.size),
-      "unexpected arity %d".format(args.size))
+      "unexpected arity %d in %s applied to %s".format(args.size, oper.name, args.map(_.toString) mkString ", "))
 
     require(oper.permitsArgs(args),
-      "The arguments violate the invariant of %s".format(oper.name))
+      "The invariant of %s is violated by the arguments: %s".format(oper.name, args.map(_.toString) mkString ", "))
 
     override def toNiceString( nTab : Int = 0 ): String = {
       (tab *nTab) + "( OperEx: " +
@@ -304,51 +304,35 @@ package lir {
     * does not contain OperEx(this.operator, ...), but it does contain OperFormalOperParam(this.name),
     * see TlaRecOperDecl.</p>
     *
+    * <p>Note that the body is declared as a variable, which can be overwritten later. We need it to deal with INSTANCE.
+    * Similarly, isRecursive is false by default, but it can be set to true during instantiation.
+    * </p>
+    *
     * @see TlaRecOperDecl
     *
     * @param name operator name
     * @param formalParams formal parameters
     * @param body operator definition, that is a TLA+ expression that captures the operator definition
     */
-  case class TlaOperDecl( name: String, formalParams: List[FormalParam], body: TlaEx ) extends TlaDecl {
-    require( !body.isNull )
+  case class TlaOperDecl( name: String, formalParams: List[FormalParam], var body: TlaEx ) extends TlaDecl {
+    // this is no longer required, as module instantiation uses null bodies
+    //    require( !body.isNull )
+
     val operator: TlaUserOper = new TlaUserOper(name, FixedArity(formalParams.length), this)
+    /**
+      * Is the operator definition recursive? Similar to body, this is a variable that can be changed later.
+      */
+    var isRecursive: Boolean = false
 
     override def deepCopy( ): TlaOperDecl =  TlaOperDecl( name, formalParams, body.deepCopy() )
 
+    // TODO: remove
     override def identical( other: TlaDecl ): Boolean = other match {
       case TlaOperDecl( oname, oparams, obody ) => name == oname && formalParams == oparams && body.identical( obody )
       case _ => false
     }
   }
 
-  /**
-    * <p>A declaration of a recursive operator. This class extends TlaOperDecl, so in most of the cases one can treat
-    * this object just as an operator declaration. However, if one wants to get more details about
-    * the recursive definition, one can cast the object to TlaRecOperDecl and get these details.</p>
-    *
-    * <p>Note that we deliberately declare this class as a child of TlaOperDecl, not a case class. By doing so,
-    * we avoid one more case in case enumeration. However, one can always match TlaRecOperDecl in pattern matching.</p>
-    *
-    * <p>To keep the classes compact, we do not provide a method like isRecursive in TlaDecl.
-    * One can use foo.isInstance[TlaRecOperDecl].</p>
-    *
-    * @param name operator name
-    * @param formalParams formal parameters
-    * @param body operator definition, which can call the operator itself via OperEx(TlaOper.apply, NameEx(name), ...)
-    */
-  class TlaRecOperDecl(name: String, formalParams: List[FormalParam], body: TlaEx)
-      extends TlaOperDecl(name, formalParams, body) {
-
-    override def hashCode(): Int = super.hashCode()
-
-    override def equals(o: scala.Any): Boolean = o match {
-      case that: TlaRecOperDecl =>
-        super.equals(that)
-
-      case _ => false
-    }
-  }
 }
 
 

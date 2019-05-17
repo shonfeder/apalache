@@ -1,9 +1,13 @@
 package at.forsyte.apalache.tla
 
+import java.io.{File, FileNotFoundException, FileReader, IOException}
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import java.util.Properties
 
+import scala.collection.JavaConverters._
 import at.forsyte.apalache.infra.PassOptionException
+import at.forsyte.apalache.infra.log.LogbackConfigurator
 import at.forsyte.apalache.infra.passes.{PassChainExecutor, TlaModuleMixin}
 import at.forsyte.apalache.tla.bmcmt.{CheckerException, InternalCheckerError}
 import at.forsyte.apalache.tla.bmcmt.passes.CheckerModule
@@ -12,6 +16,9 @@ import at.forsyte.apalache.tla.tooling.Version
 import at.forsyte.apalache.tla.tooling.opt.{CheckCmd, ParseCmd}
 import com.google.inject.Guice
 import com.typesafe.scalalogging.LazyLogging
+import org.apache.commons.configuration2.Configuration
+import org.apache.commons.configuration2.builder.fluent.Configurations
+import org.apache.commons.configuration2.ex.ConfigurationException
 import org.backuity.clist.Cli
 
 /**
@@ -23,11 +30,14 @@ object Tool extends App with LazyLogging {
   private lazy val ISSUES_LINK: String = "[https://github.com/konnov/apalache/issues]"
 
   override def main(args: Array[String]): Unit = {
-    Console.println("# APALACHE %s".format(Version.version))
+    Console.println("# APALACHE version %s build %s".format(Version.version, Version.build))
     Console.println("#")
     Console.println("# WARNING: This tool is in the experimental stage.")
     Console.println("#          Please report bugs at: " + ISSUES_LINK)
     Console.println("")
+    // force our programmatic logback configuration, as the autoconfiguration works unpredictably
+    new LogbackConfigurator().configureDefaultContext()
+    // start
     val startTime = LocalDateTime.now()
     val parseCmd = new ParseCmd
     val checkCmd = new CheckCmd
@@ -35,7 +45,7 @@ object Tool extends App with LazyLogging {
       Cli.parse(args).withProgramName("apalache-mc").version(Version.version)
         .withCommands(parseCmd, checkCmd) match {
         case Some(parse: ParseCmd) =>
-          logger.debug("Parse " + parse.file)
+          logger.info("Parse " + parse.file)
           handleExceptions(runParse(parse, _))
 
         case Some(check: CheckCmd) =>
@@ -52,12 +62,12 @@ object Tool extends App with LazyLogging {
 
   private def printTimeDiff(startTime: LocalDateTime): Unit = {
     val endTime = LocalDateTime.now()
-    Console.println("It took me %d days %2d hours %2d min %2d sec"
+    logger.info("It took me %d days %2d hours %2d min %2d sec"
       .format(ChronoUnit.DAYS.between(startTime, endTime),
         ChronoUnit.HOURS.between(startTime, endTime) % 23,
         ChronoUnit.MINUTES.between(startTime, endTime) % 60,
         ChronoUnit.SECONDS.between(startTime, endTime) % 60))
-    Console.println("Total time: %d.%d sec"
+    logger.info("Total time: %d.%d sec"
       .format(ChronoUnit.SECONDS.between(startTime, endTime),
         ChronoUnit.MILLIS.between(startTime, endTime) % 1000))
   }
@@ -75,13 +85,21 @@ object Tool extends App with LazyLogging {
       logger.info("Root module: %s with %d declarations".format(tlaModule.name,
         tlaModule.declarations.length))
     } else {
-      logger.error("Parser has failed")
+      logger.info("Parser has failed")
     }
   }
 
   private def runCheck(check: CheckCmd, u: Unit): Unit = {
     val injector = Guice.createInjector(new CheckerModule())
     val executor = injector.getInstance(classOf[PassChainExecutor])
+    val tuning =
+      if (check.tuning != "") {
+        loadProperties(check.tuning)
+      } else {
+        Map[String, String]()
+      }
+    executor.options.setOption("general.tuning", tuning)
+
     executor.options.setOption("general.debug", check.debug)
     executor.options.setOption("smt.prof", check.smtprof)
     executor.options.setOption("parser.filename", check.file.getAbsolutePath)
@@ -93,8 +111,6 @@ object Tool extends App with LazyLogging {
       if (check.cinit != "") Some(check.cinit) else None)
     executor.options.setOption("checker.length", check.length)
     executor.options.setOption("checker.search", check.search)
-    executor.options.setOption("checker.filter", check.filter)
-    executor.options.setOption("checker.randomizeDfs", check.randomizeDfs)
     executor.options.setOption("checker.checkRuntime", check.checkRuntime)
     executor.options.setOption("checker.temporal", if (check.temporal != "") Some(check.temporal) else None)
 
@@ -102,7 +118,26 @@ object Tool extends App with LazyLogging {
     if (result.isDefined) {
       logger.info("Checker reports no error up to computation length " + check.length)
     } else {
-      logger.error("Checker has failed")
+      logger.info("Checker has failed")
+    }
+  }
+
+  private def loadProperties(filename: String): Map[String, String] = {
+    // use an apache-commons library, as it supports variable substitution
+    try {
+      val config = new Configurations().properties(new File(filename))
+      // access configuration properties
+      var map = Map[String, String]()
+      for (name: String <- config.getKeys.asScala) {
+        map += (name -> config.getString(name))
+      }
+      map
+    } catch {
+      case _: FileNotFoundException =>
+        throw new PassOptionException(s"The properties file $filename not found")
+
+      case e: ConfigurationException =>
+        throw new PassOptionException(s"Error in the properties file $filename: ${e.getMessage}")
     }
   }
 
@@ -114,13 +149,16 @@ object Tool extends App with LazyLogging {
         logger.error(e.getMessage)
 
       case e: InternalCheckerError =>
-        logger.error("There is a bug in the tool, which should be fixed. REPORT IT: " + ISSUES_LINK, e)
+        Console.err.println("There is a bug in the tool, which should be fixed. REPORT IT: " + ISSUES_LINK, e)
+        logger.error("Internal error", e)
 
       case e: CheckerException =>
-        logger.error("The tool has failed around unknown location. REPORT IT: " + ISSUES_LINK, e)
+        Console.err.println("The tool has failed around unknown location. REPORT IT: " + ISSUES_LINK, e)
+        logger.error("Checker error", e)
 
       case e: Throwable =>
-        logger.error("This should not have happened, but it did. REPORT IT: " + ISSUES_LINK, e)
+        Console.err.println("This should not have happened, but it did. REPORT IT: " + ISSUES_LINK, e)
+        logger.error("Unhandled exception", e)
     }
   }
 }

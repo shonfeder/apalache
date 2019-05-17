@@ -12,8 +12,8 @@ Construct  | Supported? | Milestone | Comment
 ``ASSUME P`` | ✖ | - | Parsed, but not propagated to the solver
 ``F(x1, ..., x_n) == exp`` | ✔ / ✖ | `0.7-dev-calls` | Provisionally, any use of F is replaced with its body. Hence, recursive operators are not supported yet.
 ``f[x ∈ S] == exp`` | ? | `0.7-dev-calls` | A global function is replaced by an equivalent operator declaration. This feature has not been tested yet.
-``INSTANCE M WITH ...`` | ✖ | `0.5-dev-lang` | 
-``N(x1, ..., x_n) == INSTANCE M WITH...`` | ✖ | `0.5-dev-lang` |
+``INSTANCE M WITH ...`` | ✔ / ✖ | - | ``~>``, ``\cdot``, ``ENABLED`` are not treated specially 
+``N(x1, ..., x_n) == INSTANCE M WITH...`` | ✔ / ✖ | `0.5-dev-calls` | Parameterized instances are not supported yet, LOCAL operator definitions inside instances may fail to work
 ``THEOREM P`` | ✖ | - | 
 ``LOCAL def`` | ✔ | - | Handled by SANY 
 
@@ -46,7 +46,7 @@ Operator  | Supported? | Milestone | Comment
 =, ≠, ∈, ∉, ⋂, ⋃, ⊆, \  | ✔ | - |
 ``{e_1, ..., e_n}`` | ✔ | - | Empty sets ``{}`` require [type annotations](types-and-annotations.md)
 ``{x ∈ S : p}`` | ✔ | - |
-``{e : x ∈ S}`` | ✔ / ✖ | `0.5-dev-lang` | pattern matching like `{<<u, v>> \in S: p}` does not work
+``{e : x ∈ S}`` | ✔ | - |
 ``SUBSET S`` | ✔ | - | Provided that S is *explicit*. Produces a *symbolic* set.
 ``UNION S`` |  ✔ | - | Provided that S is *explicit*
 
@@ -56,7 +56,7 @@ Operator  | Supported? | Milestone | Comment
 ------------------------|:------------------:|:---------------:|--------------
 ``f[e]`` | ✔ | - |
 ``DOMAIN f`` | ✔ | - |
-``[ x ∈ S ↦ e]`` | ✔ / ✖ | `0.5-dev-lang` |  pattern matching like `{<<u, v>> \in S: p}` does not work
+``[ x ∈ S ↦ e]`` | ✔ / ✖ | - |  
 ``[ S → T ]`` | ✔ | - | Produces a *symbolic* set
 ``[ f EXCEPT ![e1] = e2 ]`` | ✔ | - | 
 
@@ -80,12 +80,13 @@ Note that our type system distinguishes tuples from general functions.
 
 Operator  | Supported? | Milestone | Comment
 ------------------------|:------------------:|:---------------:|--------------
-``e[i]`` | ✔ / ✖ | - | Provided that i is a constant expression
+``e[i]`` | ✔ / ✖ | - | Provided that ``i`` is a constant expression
 ``<< e1, ..., e_n >>`` | ✔ | - | By default, a tuple is constructed. Use a [type annotation](types-and-annotations.md) to construct a sequence of proper type.
 ``S1 x ... x S_n`` | ✔ | - |
+``[ t EXCEPT ![i] = e]`` | ✔/✖ | - | Provided that ``i`` is a constant expression 
 
 #### Strings and numbers
-
+ 
 Construct  | Supported? | Milestone | Comment
 ------------------------|:------------------:|:---------------:|--------------
 ``"c1...c_n"`` | ✔ | - | A string is always mapped to a unique uninterpreted constant
@@ -134,7 +135,7 @@ Operator  | Supported? | Milestone | Comment
 /, % | ✔ | - | Integer division and modulo
 ``a^b`` | ✔ / ✖ | - | Provided a and b are constant expressions. 
 ``a..b`` | ✔ / ✖ | - | Provided a and b are constant expressions. In general, use ``{x \in A..B : a <= x /\ x <= b}``, if you know constant bounds ``A`` and ``B`` on the variables ``a`` and ``b``. 
-``Int``, ``Nat`` | ✔ / ✖ | - | Only supported in ``\E x \in Nat: p`` and ``\E x \in Int: p``, if the expression is not located under ``\A`` and ``~``. 
+``Int``, ``Nat`` | ✔ / ✖ | - | Supported in ``\E x \in Nat: p`` and ``\E x \in Int: p``, if the expression is not located under ``\A`` and ``~``. We also support assignments like ``f' \in [S -> Int]`` and tests ``f \in [S -> Nat]`` 
 ÷ | ✖ | - | Real division, not supported
 
 ### Sequences

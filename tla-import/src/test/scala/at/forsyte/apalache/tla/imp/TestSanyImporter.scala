@@ -586,6 +586,46 @@ class TestSanyImporter extends FunSuite {
     expectDecl("String", ValEx(TlaStrSet))
   }
 
+  test("comprehensions with tuples") {
+    // TLA+ allows the user to use some form of pattern matching with tuples
+    val text =
+    """---- MODULE comprehensions ----
+      |VARIABLE XY, X, Y
+      |FilterTuples == { <<x, y>> \in XY :  x = 1}
+      |MapTuples == { x = 1 : <<x, y>> \in XY}
+      |MapTuples2 == { x = 1 : x, y \in XY}
+      |================================
+      |""".stripMargin
+
+    val locationStore = new SourceStore
+    val (rootName, modules) = new SanyImporter(EnvironmentHandlerGenerator.makeEH, locationStore)
+      .loadFromSource("comprehensions", Source.fromString(text))
+    val mod = expectSingleModule("comprehensions", rootName, modules)
+    val root = modules(rootName)
+
+    def expectDecl(name: String, body: TlaEx): Unit =
+      findAndExpectTlaDecl(locationStore, root, name, List(), body)
+
+    expectDecl("FilterTuples",
+      OperEx(TlaSetOper.filter,
+        OperEx(TlaFunOper.tuple, NameEx("x"), NameEx("y")),
+        NameEx("XY"),
+        OperEx(TlaOper.eq, NameEx("x"), ValEx(TlaInt(1)))
+      ))////
+    expectDecl("MapTuples",
+      OperEx(TlaSetOper.map,
+        OperEx(TlaOper.eq, NameEx("x"), ValEx(TlaInt(1))),
+        OperEx(TlaFunOper.tuple, NameEx("x"), NameEx("y")),
+        NameEx("XY")
+      ))////
+    expectDecl("MapTuples2",
+      OperEx(TlaSetOper.map,
+        OperEx(TlaOper.eq, NameEx("x"), ValEx(TlaInt(1))),
+        OperEx(TlaFunOper.tuple, NameEx("x"), NameEx("y")),
+        NameEx("XY")
+      ))////
+  }
+
   test("funCtor quantifiers") {
     // One can write tricky combinations of bound variables in TLA+.
     // We translate all of them uniformly:
@@ -884,7 +924,7 @@ class TestSanyImporter extends FunSuite {
         ValEx(TlaTrue),
         NameEx("x"), NameEx("X"),
         NameEx("y"), NameEx("X"),
-        TlaFunOper.mkTuple(NameEx("a"), NameEx("b")), NameEx("Z"),
+        NameEx("a_b"), NameEx("Z"), // the tuple <<a, b>> is collapsed to a_b by Desugarer
         NameEx("z"), NameEx("Z")
       ))(mod.declarations(5))
   }
@@ -1070,10 +1110,11 @@ class TestSanyImporter extends FunSuite {
       root.declarations.find {
         _.name == name
       } match {
-        case Some(d: TlaRecOperDecl) =>
+        case Some(d: TlaOperDecl) =>
           // We expect that R in the declaration body is referred by a formal parameter with the same name R.
           // The caveat here is that the formal parameter R does not appear in the list of the R's formal parameters,
           // but it is accessible via the field recParam.
+          assert(d.isRecursive)
           val recParam = OperFormalParam(name, FixedArity(nparams))
           assert(d.body == expectedBody)
           assert(locationStore.contains(d.body.safeId)) // and source file information has been saved
@@ -1116,10 +1157,11 @@ class TestSanyImporter extends FunSuite {
     root.declarations.find {
       _.name == "F"
     } match {
-      case Some(d: TlaRecOperDecl) =>
+      case Some(d: TlaOperDecl) =>
         // We expect that F in the declaration body is referred by a formal parameter with the same name F.
         // The caveat here is that the formal parameter F does not appear in the list of the F's formal parameters,
         // but it is accessible via the field recParam.
+        assert(d.isRecursive)
         val recParam = OperFormalParam("F", FixedArity(1))
         val ite = OperEx(TlaControlOper.ifThenElse,
           OperEx(TlaOper.eq, NameEx("n"), ValEx(TlaInt(0))),
@@ -1166,14 +1208,15 @@ class TestSanyImporter extends FunSuite {
       root.declarations.find {
         _.name == expectedName
       } match {
-        case Some(d: TlaRecOperDecl) =>
+        case Some(d: TlaOperDecl) =>
+          assert(d.isRecursive)
           assert(expectedName == d.name)
           assert(0 == d.formalParams.length)
           assert(body == d.body)
           assert(locationStore.contains(d.body.safeId)) // and source file information has been saved
 
         case _ =>
-          fail("Expected a TlaDecl")
+          fail("Expected a TlaRecDecl")
       }
     }
 
@@ -1185,6 +1228,87 @@ class TestSanyImporter extends FunSuite {
         NameEx("x"),
         NameEx("S"))
     ) ///
+  }
+
+  test("instances") {
+    val text =
+      """---- MODULE inst ----
+        |---- MODULE A ----
+        |EXTENDS Naturals
+        |CONSTANT N
+        |F(x) == x + N
+        |G == F(3)
+        |================================
+        |CONSTANT M
+        |J == INSTANCE A WITH N <- M
+        |\* I(V, K) == INSTANCE A WITH N <- K
+        |---- MODULE B ----
+        |---- MODULE C ----
+        |H(x) == x
+        |================================
+        |CONSTANT M
+        |C2 == INSTANCE C
+        |F(x) == C2!H(x)
+        |================================
+        |B2 == INSTANCE B
+        |================================
+        |""".stripMargin
+
+    val locationStore = new SourceStore
+    val (rootName, modules) = new SanyImporter(EnvironmentHandlerGenerator.makeEH, locationStore)
+      .loadFromSource("inst", Source.fromString(text))
+    assert(2 == modules.size) // inst + Naturals
+    // the root module and A
+    val root = modules(rootName)
+
+    def expectDecl(name: String, body: TlaEx): Unit =
+      findAndExpectTlaDecl(locationStore, root, name, List(), body)
+
+    // the root module contains its own declarations and the declarations by FiniteSets
+    root.declarations.find { _.name == "J!F" } match {
+      case Some(TlaOperDecl(_, params,
+          OperEx(TlaArithOper.plus, NameEx("x"), NameEx("M")))) =>
+        assert(params.length == 1)
+        assert(params.head.isInstanceOf[SimpleFormalParam])
+        assert("x" == params.head.asInstanceOf[SimpleFormalParam].name)
+
+      case _ =>
+        fail("expected the body for J!F")
+    }
+    val fDecl = root.declarations.find { _.name == "J!F" }.get
+    root.declarations.find { _.name == "J!G" } match {
+      case Some(TlaOperDecl(_, params, body)) =>
+        assert(params.isEmpty)
+        assert(body == OperEx(new TlaUserOper("J!F", FixedArity(1), fDecl.asInstanceOf[TlaOperDecl]),
+          ValEx(TlaInt(3))
+        ))
+
+      case _ =>
+        fail("expected the body for J!G")
+    }
+    // an instance with parameters, not working yet
+    /*
+    root.declarations.find { _.name == "I!F" } match {
+      case Some(TlaOperDecl(_, params,
+          OperEx(TlaArithOper.plus, NameEx("x"), NameEx("K")))) =>
+        assert(params.length == 3)
+        assert(params.head == SimpleFormalParam("V"))
+        assert(params(1) == SimpleFormalParam("K"))
+        assert(params(2) == SimpleFormalParam("x"))
+
+      case _ =>
+        fail("expected the body for I!F")
+    }
+    */
+    // two instances
+    root.declarations.find { _.name == "B2!C2!H" } match {
+      case Some(TlaOperDecl(_, params, NameEx("x"))) =>
+        assert(params.length == 1)
+        assert(params.head == SimpleFormalParam("x"))
+
+      case _ =>
+        fail("expected the body for B2!C2!H")
+    }
   }
 
   test("module imports") {
@@ -1480,7 +1604,7 @@ class TestSanyImporter extends FunSuite {
     val locationStore = new SourceStore
     val (rootName, modules) = new SanyImporter(EnvironmentHandlerGenerator.makeEH, locationStore)
       .loadFromSource("tlc", Source.fromString(text))
-    assert(4 == modules.size) // our module + 3 LOCAL modules
+    assert(5 == modules.size) // our module + 4 LOCAL modules
     // the root module and naturals
     val root = modules(rootName)
 
@@ -1659,7 +1783,7 @@ class TestSanyImporter extends FunSuite {
     // the root module and naturals
     val root = modules(rootName)
 
-    modules(rootName).declarations(2) match {
+    modules(rootName).declarations(4) match {
       case TlaAssumeDecl(e) =>
         assert(OperEx(TlaOper.eq, NameEx("N"), ValEx(TlaInt(4))) == e)
 

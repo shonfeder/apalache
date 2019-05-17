@@ -48,12 +48,16 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
         // TODO: remove theories, see https://github.com/konnov/apalache/issues/22
         // switch to cell theory
         val elemState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(elem))
-        val elemCell = elemState.arena.findCellByNameEx(elemState.ex)
+        val elemCell = elemState.asCell
         val setState = rewriter.rewriteUntilDone(elemState.setRex(set))
-        val setCell = setState.arena.findCellByNameEx(setState.ex)
+        val setCell = setState.asCell
         val finalState: SymbState = setCell.cellType match {
           case FinSetT(elemType) =>
-            basicIn(setState, setCell, elemCell, elemType)
+            if (setCell != setState.arena.cellNatSet() && setCell != setState.arena.cellIntSet()) {
+              basicIn(setState, setCell, elemCell, elemType)
+            } else {
+              intOrNatSetIn(setState, setCell, elemCell, elemType)
+            }
 
           case PowSetT(FinSetT(_)) =>
             powSetIn(setState, setCell, elemCell)
@@ -91,7 +95,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     val funsetDom = state.arena.getDom(funsetCell)
     val funsetCdm = state.arena.getCdm(funsetCell)
     var nextState = state
-    nextState = nextState.appendArenaCell(BoolT())
+    nextState = nextState.updateArena(_.appendCell(BoolT()))
     val pred = nextState.arena.topCell
     val relation = nextState.arena.getCdm(funCell)
     // In the new implementation, a function is a relation { <<x, f[x]>> : x \in U }.
@@ -113,6 +117,21 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     rewriter.rewriteUntilDone(nextState.setRex(pred).setTheory(CellTheory()))
   }
 
+  private def intOrNatSetIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: types.CellT): SymbState = {
+    if (setCell == state.arena.cellIntSet()) {
+      // Do nothing, it is just true. The type checker should have taken care of that.
+      state.setRex(state.arena.cellTrue())
+    } else {
+      // i \in Nat <=> i >= 0
+      assert(setCell == state.arena.cellNatSet())
+      assert(elemType == IntT())
+      var nextState = state.updateArena(_.appendCell(BoolT()))
+      val pred = nextState.arena.topCell
+      rewriter.solverContext.assertGroundExpr(tla.equiv(pred, tla.ge(elemCell, tla.int(0))))
+      nextState.setRex(pred).setTheory(CellTheory())
+    }
+  }
+
   private def basicIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: types.CellT) = {
     val potentialElems = state.arena.getHas(setCell)
     assert(elemCell.cellType == elemType) // otherwise, type finder is incorrect
@@ -121,7 +140,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
 //      state.setTheory(BoolTheory()).setRex(NameEx(SolverContext.falseConst))
       state.setTheory(CellTheory()).setRex(state.arena.cellFalse())
     } else {
-      var nextState = state.appendArenaCell(BoolT())
+      var nextState = state.updateArena(_.appendCell(BoolT()))
       val pred = nextState.arena.topCell.toNameEx
       if (state.arena.isLinkedViaHas(setCell, elemCell)) {
         // SE-SET-IN2: the element cell is already in the arena, just check dynamic membership

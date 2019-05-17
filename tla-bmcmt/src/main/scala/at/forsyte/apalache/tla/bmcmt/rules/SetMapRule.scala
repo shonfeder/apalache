@@ -1,7 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.rules.aux.MapBase
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{MapBase, TypeConverter}
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx}
@@ -59,7 +59,7 @@ class SetMapRule(rewriter: SymbStateRewriter) extends RewritingRule {
     // introduce a new set
     val arena = newState.arena.appendCell(targetSetT)
     val newSetCell = arena.topCell
-    val newArena = newCells.foldLeft(arena)((a, e) => a.appendHas(newSetCell, e))
+    val newArena = arena.appendHas(newSetCell, newCells: _*)
 
     // require each new cell to be in the new set iff the old cell was in the old set
     def addCellCons(oldCell: ArenaCell, newCell: ArenaCell): Unit = {

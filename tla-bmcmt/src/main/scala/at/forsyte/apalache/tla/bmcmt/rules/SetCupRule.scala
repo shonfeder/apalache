@@ -42,10 +42,10 @@ class SetCupRule(rewriter: SymbStateRewriter) extends RewritingRule {
           throw new TypeException(s"Failed to unify types ${leftSetCell.cellType}"
             + " and ${rightSetCell.cellType} when rewriting ${state.ex}")
         }
-        nextState = nextState.appendArenaCell(newType.get)
+        nextState = nextState.updateArena(_.appendCell(newType.get))
         val newSetCell = nextState.arena.topCell
         val allDistinct = common.toSeq ++ onlyLeft.toSeq ++ onlyRight.toSeq
-        nextState = nextState.setArena(nextState.arena.appendHas(newSetCell, allDistinct))
+        nextState = nextState.updateArena(_.appendHas(newSetCell, allDistinct: _*))
 
         // require each cell to be in in the union iff it is exactly in its origin set
         def addOnlyCellCons(thisSet: ArenaCell, thisElem: ArenaCell): Unit = {
