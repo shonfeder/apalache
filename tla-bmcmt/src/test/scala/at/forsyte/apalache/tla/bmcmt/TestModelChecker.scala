@@ -226,7 +226,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // x < 5
     val notInv = tla.not(tla.lt(tla.prime(tla.name("x")), tla.int(5)))
     val dummyModule = new TlaModule("root", List(), List())
-    val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, Some(notInv))
+    val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, Some(notInv), null, null, null, null)
     // initialize the model checker
     val strategy = new BfsStrategy(checkerInput, stepsBound = 10)
     // We require the invariant to be checked only after the second step. So we will miss invariant violation.

@@ -2,7 +2,7 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl}
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, LoopAnalyser}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, OracleHelper}
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
@@ -109,13 +109,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
             throw new RuntimeException("No loop!!!")
           } else {
             val isNotLiveness = loopAnalyser.checkFairLiveness(loopIndexWithActionTuples)
-            // ok, liveness property does not hold,
-            // but now we need to check if it is actually fair execution,
-            // so we already know that there is a counter-example, where everywhere the negation of liveness always holds
-            // e.g. <>[][x < 8]_<<x>> - eventually always x < 8 (it is loop)
-            // in that case the negation will be: "there exists such execution path, where x >= 8"
-            // if we have such path, and fairness properties holds,
-            // we can say the path is fair, and this is a valid counter-example
             if (isNotLiveness) {
               dumpCounterexample()
               //TODO (Viktor): think about result processing

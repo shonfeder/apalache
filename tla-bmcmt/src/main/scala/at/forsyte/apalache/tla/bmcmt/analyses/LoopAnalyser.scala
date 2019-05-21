@@ -37,6 +37,8 @@ class LoopAnalyser(val checkerInput: CheckerInput,
       negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
       OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
+    case OperEx(TlaOper.eq, args@_*) =>
+      OperEx(TlaOper.ne, args:_*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
@@ -176,6 +178,8 @@ class LoopAnalyser(val checkerInput: CheckerInput,
                     )
                   ):_*
       )
+    case OperEx(TlaTempOper.box, arg) =>
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(0, stateStack.size - 1, arg):_*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
