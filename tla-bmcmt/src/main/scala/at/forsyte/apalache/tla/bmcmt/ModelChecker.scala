@@ -2,7 +2,7 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, LoopAnalyser}
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, IndexedLoopAnalyser, LoopAnalyser}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, OracleHelper}
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
@@ -98,25 +98,17 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         val result = applySearchStrategy()
 
         if (checkerInput.liveness.isDefined) {
-          val loopAnalyser = new LoopAnalyser(checkerInput,
+          val loopAnalyser = new IndexedLoopAnalyser(checkerInput,
                                               stack,
                                               rewriter,
                                               solverContext)
 
-          val loopIndexWithActionTuples = loopAnalyser.findAllLoopStartStateIndexes
-          if (checkerInput.specification.isDefined && loopIndexWithActionTuples.isEmpty) {
+          if (loopAnalyser.checkNotLiveness) {
+            dumpCounterexample()
             //TODO (Viktor): think about result processing
-            throw new RuntimeException("No loop!!!")
+            throw new RuntimeException("Liveness property does not hold!!!")
           } else {
-            val isNotLiveness = loopAnalyser.checkFairLiveness(loopIndexWithActionTuples)
-            if (isNotLiveness) {
-              dumpCounterexample()
-              //TODO (Viktor): think about result processing
-              throw new RuntimeException("Liveness property does not hold!!!")
-            } else {
-              //TODO (Viktor): think about result processing
-              throw new RuntimeException("Liveness property always holds!!!")
-            }
+            throw new RuntimeException("Liveness property always holds!!!")
           }
         }
         result
