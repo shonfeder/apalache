@@ -2,7 +2,7 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, IndexedLoopAnalyser, LoopAnalyser}
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, IndexedLoopAnalyser, LoopAnalyser, SymbolicLoopAnalyzer}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, OracleHelper}
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
@@ -98,7 +98,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         val result = applySearchStrategy()
 
         if (checkerInput.liveness.isDefined) {
-          val loopAnalyser = new IndexedLoopAnalyser(checkerInput,
+          val loopAnalyser = new SymbolicLoopAnalyzer(checkerInput,
                                               stack,
                                               rewriter,
                                               solverContext)

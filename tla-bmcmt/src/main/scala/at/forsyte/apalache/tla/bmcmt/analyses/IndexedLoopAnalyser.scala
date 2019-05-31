@@ -139,8 +139,8 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
   private def checkFairNotLiveness(loopStartStateIndexWithAction: (Int, TlaEx)): Boolean = {
     rewriter.push()
     actualCellArena = stateStack.head._1.arena
-    val conditionExpression = buildConditionExpression(loopStartStateIndexWithAction)
-    val rewrittenState = rewriter.rewriteUntilDone(stateStack.head._1.setArena(actualCellArena).setRex(conditionExpression).setTheory(CellTheory()))
+    val fairNotLivenessExpression = buildConditionExpression(loopStartStateIndexWithAction)
+    val rewrittenState = rewriter.rewriteUntilDone(stateStack.head._1.setArena(actualCellArena).setRex(fairNotLivenessExpression).setTheory(CellTheory()))
     actualCellArena = rewrittenState.arena
     solverContext.assertGroundExpr(rewrittenState.ex)
     val result = solverContext.sat()
@@ -202,7 +202,7 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
   private def buildNotLivenessConditionsForStates(firstState: Int, lastState: Int, notLiveness: TlaEx): List[TlaEx] =  {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
-    for (i <- 0 to lastState) {
+    for (i <- firstState to lastState) {
       notLivenessStateConditions += buildNotLivenessConditionForState(i, notLiveness)
     }
 
