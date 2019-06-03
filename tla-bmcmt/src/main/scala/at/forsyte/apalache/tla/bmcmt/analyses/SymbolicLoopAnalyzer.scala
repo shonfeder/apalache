@@ -54,7 +54,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
       throw new RuntimeException("Unhandled pattern")
   }
 
-  def checkNotLiveness: Boolean = {
+  def checkNotLiveness(): Boolean = {
     rewriter.push()
     appendLoopStartCell()
 
@@ -74,62 +74,53 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     lambda = actualCellArena.topCell
 
     lastState = lastState.setArena(actualCellArena)
+    lastState = lastState.setBinding(lastState.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
     val tuple = (lastState, stateStack.head._2)
     stateStack = tuple :: stateStack.tail
   }
 
   private def buildFairNotLivenessExpression: TlaEx = {
-    val loopConstraint = buildLoopConstraint
+    val loopConstraint = buildLoopConstraint()
     val notLivenessConstraint = buildNotLivenessConstraint()
-    val weakFairnessConstraint = buildWeakFairnessCondition()
-    val strongFairnessConstraint = buildStrongFairnessCondition()
-    //TODO: WF, SF
+    val weakFairnessConstraint = buildWeakFairnessConstraint()
+    val strongFairnessConstraint = buildStrongFairnessConstraint()
 
-    OperEx(TlaBoolOper.and, loopConstraint, notLivenessConstraint, weakFairnessConstraint, )
+    OperEx(TlaBoolOper.and, loopConstraint, notLivenessConstraint, weakFairnessConstraint, strongFairnessConstraint)
   }
 
-  private def buildLoopConstraint: TlaEx = {
-    val loopImplications = buildLoopImplications
+  private def buildLoopConstraint(): TlaEx = {
+    val loopImplications = buildLoopImplications()
     OperEx(TlaBoolOper.and, loopImplications:_*)
   }
 
-  private def buildLoopImplications: List[TlaEx] = {
+  private def buildLoopImplications(): List[TlaEx] = {
     val loopImplications = ListBuffer[TlaEx]()
-
-    var lastState = stateStack.head._1
-    lastState = lastState.setBinding(lastState.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
 
     for (action <- checkerInput.nextTransitions) {
-      loopImplications ++= buildLoopImplicationsForAction(action, lastState)
+      loopImplications ++= buildLoopImplicationsForAction(action)
     }
 
     loopImplications.toList
   }
 
-  private def buildLoopImplicationsForAction(action: TlaEx, lastState: SymbState): List[TlaEx] = {
+  private def buildLoopImplicationsForAction(action: TlaEx): List[TlaEx] = {
     val loopImplications = ListBuffer[TlaEx]()
 
+    val lastState = stateStack.head._1
+
     for (i <- 0 until stateStack.size - 1) {
-      val lastWithImplication = lastState.setRex(buildLoopImplication(i, lastState, action))
-      val rewrittenState = rewriter.rewriteUntilDone(lastWithImplication.setArena(actualCellArena).setTheory(CellTheory()))
-      actualCellArena = rewrittenState.arena
-      loopImplications += rewrittenState.ex
+      val lastWithPrimed = addPrimedTargetBinding(lastState, stateStack(i)._1)
+      val lastWithImplication = lastWithPrimed.setRex(OperEx(TlaBoolOper.implies, getLoopCondition(i), action))
+      loopImplications += rewrite(lastWithImplication)
     }
 
     loopImplications.toList
   }
 
-  private def buildLoopImplication(index: Int, lastState: SymbState, action: TlaEx): TlaEx = {
-    val equality = OperEx(TlaOper.eq, ValEx(TlaInt(index)), NameEx("lambda"))
-    val transitionCondition = buildTransitionCondition(action, lastState, index)
+  private def getLoopCondition(i: Int): TlaEx = OperEx(TlaOper.eq, ValEx(TlaInt(i)), NameEx("lambda"))
 
-    OperEx(TlaBoolOper.implies, equality, transitionCondition)
-  }
-
-  private def buildTransitionCondition(action: TlaEx, lastState: SymbState, index: Int): TlaEx = {
-    val lastWithAction = setActionForLastState(action, lastState)
-    val lastWithPrimedBinding = addPrimedTargetBinding(lastWithAction, stateStack(index)._1).setArena(actualCellArena)
-    val rewrittenState = rewriter.rewriteUntilDone(lastWithPrimedBinding.setTheory(CellTheory()))
+  private def rewrite(state: SymbState): TlaEx = {
+    val rewrittenState = rewriter.rewriteUntilDone(state.setArena(actualCellArena).setTheory(CellTheory()))
     actualCellArena = rewrittenState.arena
     rewrittenState.ex
   }
@@ -144,31 +135,15 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     stateWithBinding
   }
 
-  private def setActionForLastState(action: TlaEx, lastState: SymbState): SymbState = lastState.setRex(action)
-
   private def buildNotLivenessConstraint(): TlaEx = notLiveness match {
     case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
       OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg):_*)
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
       OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(arg):_*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
-      OperEx(
-        TlaBoolOper.or,
-        stateStack.indices
-        .map(index => OperEx(
-          TlaBoolOper.and,
-          Seq(
-            buildNotLivenessConditionForState(index, left),
-            OperEx(
-              TlaBoolOper.and,
-              buildNotLivenessConditionsForStates(index, stateStack.size - 1, right):_*
-              )
-            ):_*
-          )
-             ):_*
-        )
+      OperEx(TlaBoolOper.or, buildLeadsToCondition(left, right):_*)
     case OperEx(TlaTempOper.box, arg) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(0, stateStack.size - 1, arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg):_*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
@@ -176,58 +151,66 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   private def buildNotLivenessConditionsForStates(notLiveness: TlaEx): List[TlaEx] = {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
-    var lastState = stateStack.head._1
-    lastState = lastState.setBinding(lastState.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
-
     for (i <- 0 until stateStack.size - 1) {
-      notLivenessStateConditions += buildNotLivenessConditionForState(i, notLiveness, lastState)
+      val state = stateStack(i)._1
+      val stateWithLambda = addLambdaBinding(state)
+      val stateWithExpression = stateWithLambda.setRex(wrapWithInLoopCondition(i, notLiveness))
+      val rewrittenExpression = rewrite(stateWithExpression)
+      notLivenessStateConditions += rewrittenExpression
     }
 
     notLivenessStateConditions.toList
   }
 
-  private def buildNotLivenessConditionsForStates(firstState: Int, lastState: Int, notLiveness: TlaEx): List[TlaEx] =  {
+  private def wrapWithInLoopCondition(index: Int, notLiveness: TlaEx): TlaEx = {
+    OperEx(TlaBoolOper.and, OperEx(TlaArithOper.ge, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
+  }
+
+  private def addLambdaBinding(state: SymbState): SymbState = {
+    state.setBinding(state.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
+  }
+
+  private def buildLeadsToCondition(left: TlaEx, right: TlaEx): List[TlaEx] = {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
-    for (i <- firstState to lastState) {
-      notLivenessStateConditions += buildNotLivenessConditionForState(i, notLiveness)
+    for (i <- 0 until stateStack.size - 1) {
+      val lastState = stateStack.head._1
+      val notLiveness = OperEx(TlaBoolOper.or, buildLeadsToNotLiveness(i, left, right):_*)
+      val stateWithExpression = lastState.setRex(wrapWithInLoopCondition(i, notLiveness))
+      val rewrittenExpression = rewrite(stateWithExpression)
+      notLivenessStateConditions += rewrittenExpression
     }
 
     notLivenessStateConditions.toList
   }
 
-  private def buildNotLivenessConditionForState(index: Int, notLiveness: TlaEx): TlaEx = {
-    val equality = OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda"))
+  private def buildLeadsToNotLiveness(loopStartIndex: Int, left: TlaEx, right: TlaEx): List[TlaEx] = {
+    val notLivenessStateConditions = ListBuffer[TlaEx]()
 
-    var consideringState = stateStack(index)._1.setArena(actualCellArena).setRex(notLiveness)
-    consideringState = consideringState.setBinding(consideringState.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
-    val rewrittenState = rewriter.rewriteUntilDone(consideringState.setTheory(CellTheory()))
-    actualCellArena = rewrittenState.arena
-    val notLivenessForState = rewrittenState.ex
+    for (i <- 0 until stateStack.size - 1) {
+      val state = stateStack(i)._1
+      val stateWithExpression = state.setRex(OperEx(TlaBoolOper.and, left :: buildActionsForStates(right, i):_*))
+      val rewrittenExpression = rewrite(stateWithExpression)
+      notLivenessStateConditions += rewrittenExpression
+    }
 
-    val lastWithNotLiveness = consideringState.setRex(OperEx(TlaBoolOper.and, equality, notLivenessForState))
-    val rewrittenStateWithNotLiveness = rewriter.rewriteUntilDone(lastWithNotLiveness.setArena(actualCellArena).setTheory(CellTheory()))
-    actualCellArena = rewrittenState.arena
-    rewrittenStateWithNotLiveness.ex
+    notLivenessStateConditions.toList
   }
 
-  private def buildNotLivenessConditionForState(index: Int, notLiveness: TlaEx, lastState: SymbState): TlaEx = {
-    val equality = OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda"))
-    val notLivenessCondition = buildNotLivenessConditionForState(notLiveness, lastState)
+  private def buildActionsForStates(action: TlaEx, start: Int): List[TlaEx] = {
+    val actions = ListBuffer[TlaEx]()
 
-    val lastWithNotLiveness = lastState.setRex(OperEx(TlaBoolOper.and, equality, notLivenessCondition))
-    val rewrittenState = rewriter.rewriteUntilDone(lastWithNotLiveness.setArena(actualCellArena).setTheory(CellTheory()))
-    actualCellArena = rewrittenState.arena
-    rewrittenState.ex
+    for (i <- 0 to start) {
+      val state = stateStack(i)._1
+      val stateWithAction = state.setRex(action)
+      val rewrittenExpression = rewrite(stateWithAction)
+      actions += rewrittenExpression
+    }
+
+    actions.toList
   }
 
-  private def buildNotLivenessConditionForState(notLiveness: TlaEx, lastState: SymbState): TlaEx = {
-    val rewrittenState = rewriter.rewriteUntilDone(lastState.setArena(actualCellArena).setRex(notLiveness))
-    actualCellArena = rewrittenState.arena
-    rewrittenState.ex
-  }
-
-  private def buildWeakFairnessCondition(): TlaEx = {
+  private def buildWeakFairnessConstraint(): TlaEx = {
     val weakFairnessActionWithHintTuples = checkerInput.enabledActionWeakFairnessHintTuples.get
     val weakFairnessConditions = weakFairnessActionWithHintTuples.map(it => buildWeakFairnessConditionForAction(it))
 
@@ -242,79 +225,63 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def buildWeaklyEnabledCondition(hint: TlaEx): TlaEx = {
-    val enabledStateConditions = generateEnabledConditions(hint)
-
-    OperEx(TlaBoolOper.and, enabledStateConditions:_*)
+    OperEx(TlaBoolOper.and, generateEnabledConditions(hint, wrapWithInLoopCondition):_*)
   }
 
-  private def generateEnabledConditions(hint: TlaEx): ListBuffer[TlaEx] = {
+  private def generateEnabledConditions(hint: TlaEx, transform: (Int, TlaEx) => TlaEx = (_, it) => it): ListBuffer[TlaEx] = {
     val enabledHintsConditions = ListBuffer[TlaEx]()
 
     for (i <- 0 until stateStack.size - 1) {
-      val enabledHint = applyHintOnState(hint, i)
-      enabledHintsConditions += enabledHint
+      val state = stateStack(i)._1
+      val stateWithLambda = addLambdaBinding(state)
+      val stateWithHint = stateWithLambda.setRex(transform(i, hint))
+      val rewrittenExpression = rewrite(stateWithHint)
+      enabledHintsConditions += rewrittenExpression
     }
 
     enabledHintsConditions
   }
 
-  private def applyHintOnState(hint: TlaEx, index: Int): TlaEx = {
-    val equality = OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda"))
-
-    var stateWithHint = stateStack(index)._1.setArena(actualCellArena).setRex(hint)
-    stateWithHint = stateWithHint.setBinding(stateWithHint.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
-    val rewrittenState = rewriter.rewriteUntilDone(stateWithHint)
-    actualCellArena = rewrittenState.arena
-    val hintExpression = rewrittenState.ex
-
-    val lastWithNotLiveness = rewrittenState.setRex(OperEx(TlaBoolOper.and, equality, hintExpression))
-    val rewrittenStateWithNotLiveness = rewriter.rewriteUntilDone(lastWithNotLiveness.setArena(actualCellArena).setTheory(CellTheory()))
-    actualCellArena = rewrittenStateWithNotLiveness.arena
-    rewrittenStateWithNotLiveness.ex
-  }
-
   private def buildTakenCondition(action: TlaEx): TlaEx = {
     val takenStateConditions = ListBuffer[TlaEx]()
 
-    for (i <- 0 until stateStack.size - 1) {
-      val equality = OperEx(TlaArithOper.le, ValEx(TlaInt(i)), NameEx("lambda"))
-
+    for (i <- 0 until stateStack.size - 2) {
       val targetState = stateStack(i)._1
-      val sourceIndex = i + 1
-      var sourceState = stateStack(sourceIndex)._1
-      sourceState = sourceState.setBinding(sourceState.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
-      val sourceWithPrimedBinding = addPrimedTargetBinding(sourceState, targetState).setArena(actualCellArena).setRex(action)
-      val rewrittenState = rewriter.rewriteUntilDone(sourceWithPrimedBinding.setTheory(CellTheory()))
-      actualCellArena = rewrittenState.arena
-      val takenExpr = rewrittenState.ex
+      val sourceState = stateStack(i + 1)._1
+      val stateWithLambda = addLambdaBinding(sourceState)
+      val sourceWithAction = addPrimedTargetBinding(stateWithLambda, targetState).setRex(wrapWithInLoopCondition(i, action))
+      val rewrittenExpression = rewrite(sourceWithAction)
+      takenStateConditions += rewrittenExpression
+    }
 
-      val lastWithNotLiveness = rewrittenState.setRex(OperEx(TlaBoolOper.and, equality, takenExpr))
-      val rewrittenStateWithNotLiveness = rewriter.rewriteUntilDone(lastWithNotLiveness.setArena(actualCellArena).setTheory(CellTheory()))
-      actualCellArena = rewrittenStateWithNotLiveness.arena
-
-      takenStateConditions += rewrittenStateWithNotLiveness.ex
+    for (i <- 0 until stateStack.size - 1) {
+      val targetState = stateStack(i)._1
+      val sourceState = stateStack.head._1
+      val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper.and, getLoopStartsCondition(i), action))
     }
 
     OperEx(TlaBoolOper.or, takenStateConditions:_*)
   }
 
-  def buildStrongFairnessCondition(): TlaEx = {
-    val strongFairnessActionWithHintTuples = checkerInput.enabledActionStrongFairnessHintTuples.get
+  private def getLoopStartsCondition(index: Int): TlaEx = {
+    OperEx(TlaOper.eq, ValEx(TlaInt(index)), NameEx("lambda"))
+  }
+
+  private def buildStronglyEnabledCondition(hint: TlaEx): TlaEx = {
+    OperEx(TlaBoolOper.or, generateEnabledConditions(hint):_*)
+  }
+
+  private def buildStrongFairnessConstraint(): TlaEx = {
+    val strongFairnessActionWithHintTuples = checkerInput.enabledActionWeakFairnessHintTuples.get
     val strongFairnessConditions = strongFairnessActionWithHintTuples.map(it => buildStrongFairnessConditionForAction(it))
 
     OperEx(TlaBoolOper.and, strongFairnessConditions:_*)
   }
 
-  private def buildStrongFairnessConditionForAction(loopStartStateIndex: Int, actionAndHint: (TlaEx, TlaEx)): TlaEx = {
+  private def buildStrongFairnessConditionForAction(actionAndHint: (TlaEx, TlaEx)): TlaEx = {
     val enabledCondition = buildStronglyEnabledCondition(actionAndHint._2)
     val takenCondition = buildTakenCondition(actionAndHint._1)
 
     OperEx(TlaBoolOper.implies, enabledCondition, takenCondition)
-  }
-
-  private def buildStronglyEnabledCondition(hint: TlaEx): TlaEx = {
-    val enabledStateConditions = generateEnabledConditions(hint)
-
-    OperEx(TlaBoolOper.or, enabledStateConditions:_*)
   }
 }

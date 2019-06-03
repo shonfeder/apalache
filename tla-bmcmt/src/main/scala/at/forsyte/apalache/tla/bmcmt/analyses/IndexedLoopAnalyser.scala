@@ -54,7 +54,7 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
   }
 
 
-  def checkNotLiveness: Boolean = {
+  def checkNotLiveness(): Boolean = {
     val loopStartIndexes = findAllLoopStartStateIndexes
     if (loopStartIndexes.isEmpty) {
       false
@@ -191,7 +191,7 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
              ):_*
         )
     case OperEx(TlaTempOper.box, arg) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(0, stateStack.size - 1, arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(stateStack.size - 1, arg):_*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
