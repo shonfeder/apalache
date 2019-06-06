@@ -103,7 +103,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
                                               rewriter,
                                               solverContext)
 
-          if (loopAnalyser.checkNotLiveness) {
+          if (loopAnalyser.checkNotLiveness()) {
             dumpCounterexample()
             //TODO (Viktor): think about result processing
             throw new RuntimeException("Liveness property does not hold!!!")

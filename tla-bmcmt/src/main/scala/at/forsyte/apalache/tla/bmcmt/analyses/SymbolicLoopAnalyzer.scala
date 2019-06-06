@@ -258,6 +258,8 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
       val targetState = stateStack(i)._1
       val sourceState = stateStack.head._1
       val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper.and, getLoopStartsCondition(i), action))
+      val rewrittenExpression = rewrite(sourceWithAction)
+      takenStateConditions += rewrittenExpression
     }
 
     OperEx(TlaBoolOper.or, takenStateConditions:_*)
