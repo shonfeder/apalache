@@ -63,6 +63,9 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
     case OperEx(TlaBoolOper.or, args@_*) =>
       args foreach markFreeExistentials
 
+    case OperEx(TlaBoolOper.implies, _, right) =>
+      markFreeExistentials(right)
+
     case OperEx(TlaControlOper.ifThenElse, args@_*) =>
       // we do not have to check that the predicate does not have \forall,
       // as we are only concerned with \exists in the scope of \forall

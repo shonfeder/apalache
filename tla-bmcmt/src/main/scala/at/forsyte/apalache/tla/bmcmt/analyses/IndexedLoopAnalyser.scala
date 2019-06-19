@@ -28,17 +28,18 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
     case OperEx(TlaBoolOper.implies, left, right) =>
       OperEx(TlaBoolOper.and, negateLiveness(left), negateLiveness(right))
     case OperEx(TlaBoolOper.and, args@_*) =>
-      OperEx(TlaBoolOper.or, args.map(negateLiveness):_*)
+      OperEx(TlaBoolOper.or, args.map(negateLiveness): _*)
     case OperEx(TlaBoolOper.or, args@_*) =>
-      OperEx(TlaBoolOper.and, args.map(negateLiveness):_*)
+      OperEx(TlaBoolOper.and, args.map(negateLiveness): _*)
     case OperEx(operator: TlaArithOper, args@_*) =>
-      tla.not(OperEx(operator, args:_*))
+      tla.not(OperEx(operator, args: _*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
       negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
-      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper
+                                                                                                 .not, right))))
     case OperEx(TlaOper.eq, args@_*) =>
-      OperEx(TlaOper.ne, args:_*)
+      OperEx(TlaOper.ne, args: _*)
     case OperEx(TlaBoolOper.forall, value, set, arg) =>
       OperEx(TlaBoolOper.exists, value, set, negateLiveness(arg))
     case OperEx(TlaOper.ne, left, right) =>
@@ -140,7 +141,11 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
     rewriter.push()
     actualCellArena = stateStack.head._1.arena
     val fairNotLivenessExpression = buildConditionExpression(loopStartStateIndexWithAction)
-    val rewrittenState = rewriter.rewriteUntilDone(stateStack.head._1.setArena(actualCellArena).setRex(fairNotLivenessExpression).setTheory(CellTheory()))
+    val rewrittenState = rewriter.rewriteUntilDone(stateStack.head
+                                                             ._1
+                                                             .setArena(actualCellArena)
+                                                             .setRex(fairNotLivenessExpression)
+                                                             .setTheory(CellTheory()))
     actualCellArena = rewrittenState.arena
     solverContext.assertGroundExpr(rewrittenState.ex)
     val result = solverContext.sat()
@@ -171,35 +176,29 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
 
   private def buildNotLivenessCondition(loopStartStateIndex: Int): TlaEx = notLiveness match {
     case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(loopStartStateIndex, arg): _*)
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
-      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg):_*)
+      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg): _*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
       OperEx(
         TlaBoolOper.or,
         stateStack.indices
-        .map(index => OperEx(
-          TlaBoolOper.and,
-          Seq(
-            buildNotLivenessConditionForState(index, left),
-            OperEx(
-              TlaBoolOper.and,
-              buildNotLivenessConditionsForStates(index, stateStack.size - 1, right):_*
-              )
-            ):_*
-          )
-             ):_*
+                  .map(index => OperEx(
+                    TlaBoolOper.and,
+                    buildNotLivenessConditionForState(index, left) :: buildNotLivenessConditionsForStates(index, right): _*
+                    )
+                       ): _*
         )
     case OperEx(TlaTempOper.box, arg) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(stateStack.size - 1, arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(stateStack.size - 1, arg): _*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
 
   private def buildNotLivenessConditionsForStates(lastState: Int, notLiveness: TlaEx): List[TlaEx]
-  =  buildNotLivenessConditionsForStates(0, lastState, notLiveness)
+  = buildNotLivenessConditionsForStates(0, lastState, notLiveness)
 
-  private def buildNotLivenessConditionsForStates(firstState: Int, lastState: Int, notLiveness: TlaEx): List[TlaEx] =  {
+  private def buildNotLivenessConditionsForStates(firstState: Int, lastState: Int, notLiveness: TlaEx): List[TlaEx] = {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
     for (i <- firstState to lastState) {
@@ -220,7 +219,7 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
     val weakFairnessActionWithHintTuples = checkerInput.enabledActionWeakFairnessHintTuples.get
     val weakFairnessConditions = weakFairnessActionWithHintTuples.map(it => buildWeakFairnessConditionForAction(loopStartStateIndex, it))
 
-    OperEx(TlaBoolOper.and, weakFairnessConditions:_*)
+    OperEx(TlaBoolOper.and, weakFairnessConditions: _*)
   }
 
   private def buildWeakFairnessConditionForAction(loopStartStateIndex: Int, actionAndHint: (TlaEx, TlaEx)): TlaEx = {
@@ -233,7 +232,7 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
   private def buildWeaklyEnabledCondition(loopStartStateIndex: Int, hint: TlaEx): TlaEx = {
     val enabledStateConditions = generateEnabledConditions(loopStartStateIndex, hint)
 
-    OperEx(TlaBoolOper.and, enabledStateConditions:_*)
+    OperEx(TlaBoolOper.and, enabledStateConditions: _*)
   }
 
   private def generateEnabledConditions(loopStartStateIndex: Int, hint: TlaEx): ListBuffer[TlaEx] = {
@@ -261,20 +260,21 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
       val targetState = stateStack(i)._1
       val sourceIndex = if (i == loopStartStateIndex) 0 else i + 1
       val sourceState = stateStack(sourceIndex)._1
-      val sourceWithPrimedBinding = addPrimedTargetBinding(sourceState, targetState).setArena(actualCellArena).setRex(action)
+      val sourceWithPrimedBinding = addPrimedTargetBinding(sourceState, targetState).setArena(actualCellArena)
+                                                                                    .setRex(action)
       val rewrittenState = rewriter.rewriteUntilDone(sourceWithPrimedBinding.setTheory(CellTheory()))
       actualCellArena = rewrittenState.arena
       takenStateConditions += rewrittenState.ex
     }
 
-    OperEx(TlaBoolOper.or, takenStateConditions:_*)
+    OperEx(TlaBoolOper.or, takenStateConditions: _*)
   }
 
   def buildStrongFairnessCondition(loopStartStateIndex: Int): TlaEx = {
     val strongFairnessActionWithHintTuples = checkerInput.enabledActionStrongFairnessHintTuples.get
     val strongFairnessConditions = strongFairnessActionWithHintTuples.map(it => buildStrongFairnessConditionForAction(loopStartStateIndex, it))
 
-    OperEx(TlaBoolOper.and, strongFairnessConditions:_*)
+    OperEx(TlaBoolOper.and, strongFairnessConditions: _*)
   }
 
   private def buildStrongFairnessConditionForAction(loopStartStateIndex: Int, actionAndHint: (TlaEx, TlaEx)): TlaEx = {
@@ -287,6 +287,6 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
   private def buildStronglyEnabledCondition(hint: TlaEx): TlaEx = {
     val enabledStateConditions = generateEnabledConditions(stateStack.size - 1, hint)
 
-    OperEx(TlaBoolOper.or, enabledStateConditions:_*)
+    OperEx(TlaBoolOper.or, enabledStateConditions: _*)
   }
 }

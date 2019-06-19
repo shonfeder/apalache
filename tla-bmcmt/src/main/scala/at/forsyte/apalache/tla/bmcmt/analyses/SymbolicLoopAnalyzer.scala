@@ -29,17 +29,18 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     case OperEx(TlaBoolOper.implies, left, right) =>
       OperEx(TlaBoolOper.and, negateLiveness(left), negateLiveness(right))
     case OperEx(TlaBoolOper.and, args@_*) =>
-      OperEx(TlaBoolOper.or, args.map(negateLiveness):_*)
+      OperEx(TlaBoolOper.or, args.map(negateLiveness): _*)
     case OperEx(TlaBoolOper.or, args@_*) =>
-      OperEx(TlaBoolOper.and, args.map(negateLiveness):_*)
+      OperEx(TlaBoolOper.and, args.map(negateLiveness): _*)
     case OperEx(operator: TlaArithOper, args@_*) =>
-      tla.not(OperEx(operator, args:_*))
+      tla.not(OperEx(operator, args: _*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
       negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
-      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper
+                                                                                                 .not, right))))
     case OperEx(TlaOper.eq, args@_*) =>
-      OperEx(TlaOper.ne, args:_*)
+      OperEx(TlaOper.ne, args: _*)
     case OperEx(TlaBoolOper.forall, value, set, arg) =>
       OperEx(TlaBoolOper.exists, value, set, negateLiveness(arg))
     case OperEx(TlaOper.ne, left, right) =>
@@ -58,10 +59,9 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     rewriter.push()
     appendLoopStartCell()
 
-    val fairNotLivenessExpression = buildFairNotLivenessExpression
-    val rewrittenState = rewriter.rewriteUntilDone(stateStack.head._1.setArena(actualCellArena).setRex(fairNotLivenessExpression).setTheory(CellTheory()))
-    actualCellArena = rewrittenState.arena
-    solverContext.assertGroundExpr(rewrittenState.ex)
+    val fairNotLivenessExpression = getFairNotLivenessExpression
+    val rewrittenExpression = rewrite(stateStack.head._1.setRex(fairNotLivenessExpression))
+    solverContext.assertGroundExpr(rewrittenExpression)
     val result = solverContext.sat()
     rewriter.pop()
 
@@ -79,7 +79,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     stateStack = tuple :: stateStack.tail
   }
 
-  private def buildFairNotLivenessExpression: TlaEx = {
+  private def getFairNotLivenessExpression: TlaEx = {
     val loopConstraint = buildLoopConstraint()
     val notLivenessConstraint = buildNotLivenessConstraint()
     val weakFairnessConstraint = buildWeakFairnessConstraint()
@@ -90,31 +90,24 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
 
   private def buildLoopConstraint(): TlaEx = {
     val loopImplications = buildLoopImplications()
-    OperEx(TlaBoolOper.and, loopImplications:_*)
+    rewrite(stateStack.head._1.setRex(OperEx(TlaBoolOper.or, loopImplications: _*)))
   }
 
   private def buildLoopImplications(): List[TlaEx] = {
     val loopImplications = ListBuffer[TlaEx]()
 
-    for (action <- checkerInput.nextTransitions) {
-      loopImplications ++= buildLoopImplicationsForAction(action)
+    for (i <- 0 until stateStack.size - 1) {
+      val stateWithExpression = stateStack(i)._1.setRex(buildLoopImplicationsForState(i))
+      val rewrittenExpression = rewrite(addLambdaBinding(stateWithExpression))
+      loopImplications += rewrittenExpression
     }
 
     loopImplications.toList
   }
 
-  private def buildLoopImplicationsForAction(action: TlaEx): List[TlaEx] = {
-    val loopImplications = ListBuffer[TlaEx]()
-
-    val lastState = stateStack.head._1
-
-    for (i <- 0 until stateStack.size - 1) {
-      val lastWithPrimed = addPrimedTargetBinding(lastState, stateStack(i)._1)
-      val lastWithImplication = lastWithPrimed.setRex(OperEx(TlaBoolOper.implies, getLoopCondition(i), action))
-      loopImplications += rewrite(lastWithImplication)
-    }
-
-    loopImplications.toList
+  def buildLoopImplicationsForState(stateIndex: Int): TlaEx = {
+    val actionDisjunction = OperEx(TlaBoolOper.or, checkerInput.nextTransitions: _*)
+    OperEx(TlaBoolOper.implies, getLoopCondition(stateIndex), actionDisjunction)
   }
 
   private def getLoopCondition(i: Int): TlaEx = OperEx(TlaOper.eq, ValEx(TlaInt(i)), NameEx("lambda"))
@@ -137,13 +130,22 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
 
   private def buildNotLivenessConstraint(): TlaEx = notLiveness match {
     case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg): _*)
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
-      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(arg):_*)
+      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(arg): _*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
-      OperEx(TlaBoolOper.or, buildLeadsToCondition(left, right):_*)
+      OperEx(
+        TlaBoolOper.or,
+        stateStack.indices
+                  .map(index =>
+                         OperEx(
+                           TlaBoolOper.and,
+                           rewrite(stateStack(index)._1.setRex(left)) :: buildActionsForStates(right, index): _*
+                           )
+                       ): _*
+        )
     case OperEx(TlaTempOper.box, arg) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg):_*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg): _*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
@@ -163,44 +165,17 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def wrapWithInLoopCondition(index: Int, notLiveness: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.and, OperEx(TlaArithOper.ge, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
+    OperEx(TlaBoolOper.and, OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
   }
 
   private def addLambdaBinding(state: SymbState): SymbState = {
     state.setBinding(state.binding.merged(Binding(("lambda", lambda)))((k, _) => k))
   }
 
-  private def buildLeadsToCondition(left: TlaEx, right: TlaEx): List[TlaEx] = {
-    val notLivenessStateConditions = ListBuffer[TlaEx]()
-
-    for (i <- 0 until stateStack.size - 1) {
-      val lastState = stateStack.head._1
-      val notLiveness = OperEx(TlaBoolOper.or, buildLeadsToNotLiveness(i, left, right):_*)
-      val stateWithExpression = lastState.setRex(wrapWithInLoopCondition(i, notLiveness))
-      val rewrittenExpression = rewrite(stateWithExpression)
-      notLivenessStateConditions += rewrittenExpression
-    }
-
-    notLivenessStateConditions.toList
-  }
-
-  private def buildLeadsToNotLiveness(loopStartIndex: Int, left: TlaEx, right: TlaEx): List[TlaEx] = {
-    val notLivenessStateConditions = ListBuffer[TlaEx]()
-
-    for (i <- 0 until stateStack.size - 1) {
-      val state = stateStack(i)._1
-      val stateWithExpression = state.setRex(OperEx(TlaBoolOper.and, left :: buildActionsForStates(right, i):_*))
-      val rewrittenExpression = rewrite(stateWithExpression)
-      notLivenessStateConditions += rewrittenExpression
-    }
-
-    notLivenessStateConditions.toList
-  }
-
-  private def buildActionsForStates(action: TlaEx, start: Int): List[TlaEx] = {
+  private def buildActionsForStates(action: TlaEx, last: Int): List[TlaEx] = {
     val actions = ListBuffer[TlaEx]()
 
-    for (i <- 0 to start) {
+    for (i <- 0 to last) {
       val state = stateStack(i)._1
       val stateWithAction = state.setRex(action)
       val rewrittenExpression = rewrite(stateWithAction)
@@ -214,7 +189,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     val weakFairnessActionWithHintTuples = checkerInput.enabledActionWeakFairnessHintTuples.get
     val weakFairnessConditions = weakFairnessActionWithHintTuples.map(it => buildWeakFairnessConditionForAction(it))
 
-    OperEx(TlaBoolOper.and, weakFairnessConditions:_*)
+    OperEx(TlaBoolOper.and, weakFairnessConditions: _*)
   }
 
   private def buildWeakFairnessConditionForAction(actionAndHint: (TlaEx, TlaEx)): TlaEx = {
@@ -225,7 +200,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def buildWeaklyEnabledCondition(hint: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.and, generateEnabledConditions(hint, wrapWithInLoopCondition):_*)
+    OperEx(TlaBoolOper.and, generateEnabledConditions(hint, wrapWithInLoopCondition): _*)
   }
 
   private def generateEnabledConditions(hint: TlaEx, transform: (Int, TlaEx) => TlaEx = (_, it) => it): ListBuffer[TlaEx] = {
@@ -257,12 +232,13 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     for (i <- 0 until stateStack.size - 1) {
       val targetState = stateStack(i)._1
       val sourceState = stateStack.head._1
-      val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper.and, getLoopStartsCondition(i), action))
+      val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper
+                                                                                              .and, getLoopStartsCondition(i), action))
       val rewrittenExpression = rewrite(sourceWithAction)
       takenStateConditions += rewrittenExpression
     }
 
-    OperEx(TlaBoolOper.or, takenStateConditions:_*)
+    OperEx(TlaBoolOper.or, takenStateConditions: _*)
   }
 
   private def getLoopStartsCondition(index: Int): TlaEx = {
@@ -270,14 +246,14 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def buildStronglyEnabledCondition(hint: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.or, generateEnabledConditions(hint):_*)
+    OperEx(TlaBoolOper.or, generateEnabledConditions(hint): _*)
   }
 
   private def buildStrongFairnessConstraint(): TlaEx = {
     val strongFairnessActionWithHintTuples = checkerInput.enabledActionWeakFairnessHintTuples.get
     val strongFairnessConditions = strongFairnessActionWithHintTuples.map(it => buildStrongFairnessConditionForAction(it))
 
-    OperEx(TlaBoolOper.and, strongFairnessConditions:_*)
+    OperEx(TlaBoolOper.and, strongFairnessConditions: _*)
   }
 
   private def buildStrongFairnessConditionForAction(actionAndHint: (TlaEx, TlaEx)): TlaEx = {
