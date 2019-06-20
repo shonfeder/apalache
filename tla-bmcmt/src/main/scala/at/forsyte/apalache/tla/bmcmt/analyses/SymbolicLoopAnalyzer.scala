@@ -36,9 +36,10 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
       tla.not(OperEx(operator, args: _*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
       negateLiveness(formula)
+    case OperEx(TlaActionOper.stutter, formula, _) =>
+      negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
-      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper
-                                                                                                 .not, right))))
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
     case OperEx(TlaOper.eq, args@_*) =>
       OperEx(TlaOper.ne, args: _*)
     case OperEx(TlaBoolOper.forall, value, set, arg) =>
@@ -97,7 +98,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     val loopImplications = ListBuffer[TlaEx]()
 
     for (i <- 0 until stateStack.size - 1) {
-      val stateWithExpression = stateStack(i)._1.setRex(buildLoopImplicationsForState(i))
+      val stateWithExpression = addPrimedTargetBinding(stateStack.head._1.setRex(buildLoopImplicationsForState(i)), stateStack(i)._1)
       val rewrittenExpression = rewrite(addLambdaBinding(stateWithExpression))
       loopImplications += rewrittenExpression
     }
@@ -107,7 +108,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
 
   def buildLoopImplicationsForState(stateIndex: Int): TlaEx = {
     val actionDisjunction = OperEx(TlaBoolOper.or, checkerInput.nextTransitions: _*)
-    OperEx(TlaBoolOper.implies, getLoopCondition(stateIndex), actionDisjunction)
+    OperEx(TlaBoolOper.and, actionDisjunction, getLoopCondition(stateIndex))
   }
 
   private def getLoopCondition(i: Int): TlaEx = OperEx(TlaOper.eq, ValEx(TlaInt(i)), NameEx("lambda"))
@@ -165,7 +166,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def wrapWithInLoopCondition(index: Int, notLiveness: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.and, OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
+    OperEx(TlaBoolOper.implies, OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
   }
 
   private def addLambdaBinding(state: SymbState): SymbState = {

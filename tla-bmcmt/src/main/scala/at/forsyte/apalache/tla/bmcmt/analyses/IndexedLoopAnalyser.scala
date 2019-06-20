@@ -181,13 +181,8 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
       OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(loopStartStateIndex, arg): _*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
       OperEx(
-        TlaBoolOper.or,
-        stateStack.indices
-                  .map(index => OperEx(
-                    TlaBoolOper.and,
-                    buildNotLivenessConditionForState(index, left) :: buildNotLivenessConditionsForStates(index, right): _*
-                    )
-                       ): _*
+        TlaBoolOper.and,
+        buildNotLivenessConditionForState(0, left) :: buildNotLivenessConditionsForStates(0, right): _*
         )
     case OperEx(TlaTempOper.box, arg) =>
       OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(stateStack.size - 1, arg): _*)
