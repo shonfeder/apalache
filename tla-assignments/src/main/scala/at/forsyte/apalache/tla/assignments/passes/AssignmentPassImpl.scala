@@ -159,14 +159,14 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
     logger.info("Found %d initializing transitions and %d next transitions"
       .format(initTransitions.length, nextTransitions.length))
 
-    val temporalName = options.getOption("checker", "temporal", None).asInstanceOf[Option[String]]
-    val temporal =
-      if (temporalName.isEmpty) {
+    val specificationName = options.getOption("checker", "specification", None).asInstanceOf[Option[String]]
+    val specification =
+      if (specificationName.isEmpty) {
         None
       } else {
-        val temporalBody = findBodyOf(temporalName.get, initReplacedDecls: _*)
+        val temporalBody = findBodyOf(specificationName.get, initReplacedDecls: _*)
         if (temporalBody == NullEx) {
-          val msg = "Definition of temporal property %s not found".format(temporalName.get)
+          val msg = "Definition of specification property %s not found".format(specificationName.get)
           logger.error(msg)
           throw new IllegalArgumentException(msg)
         }
@@ -178,18 +178,41 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
 
     val propertyExtractor = new PropertyExtractor(bodyDB)
     val liveness =
-      if (temporal.isEmpty) {
+      if (specification.isEmpty) {
         None
       } else {
-        val liveness = propertyExtractor.extractLivenessProperty(temporal.get)
+        val liveness = propertyExtractor.extractLivenessProperty(specification.get)
         liveness
       }
 
+    val livenessCheckingModeName = options.getOption("checker", "mode", None).asInstanceOf[Option[String]]
+    val livenessCheckingMode =
+      if (livenessCheckingModeName.isEmpty) {
+        val msg = "Definition of liveness checking mode not found"
+        logger.error(msg)
+        throw new IllegalArgumentException(msg)
+      } else {
+        if (livenessCheckingModeName.get == "enumerate") {
+          Some(LivenessCheckingMode.LASSO_ENUMERATION)
+        } else {
+          if (livenessCheckingModeName.get == "find") {
+            Some(LivenessCheckingMode.LASSO_FINDING)
+          } else {
+            if (liveness.isDefined) {
+              val msg = "Liveness checking mode %s not supported".format(livenessCheckingModeName.get)
+              logger.error(msg)
+              throw new IllegalArgumentException(msg)
+            }
+            None
+          }
+        }
+      }
+
     val (enabledActionWeakFairnessHintTuples, enabledActionStrongFairnessHintTuples) =
-      if (temporalName.isEmpty) {
+      if (specificationName.isEmpty) {
         (None, None)
       } else {
-        val (weakFairnessTuples, strongFairnessTuples) = propertyExtractor.extractActionHintTuples(temporalName.get)
+        val (weakFairnessTuples, strongFairnessTuples) = propertyExtractor.extractActionHintTuples(specificationName.get)
         (Some(weakFairnessTuples), Some(strongFairnessTuples))
       }
 
@@ -200,7 +223,8 @@ class AssignmentPassImpl @Inject()(options: PassOptions,
                                                        cinitPrime,
                                                        notInvariant,
                                                        notInvariantPrime,
-                                                       temporal,
+                                                       livenessCheckingMode,
+                                                       specification,
                                                        liveness,
                                                        enabledActionWeakFairnessHintTuples,
                                                        enabledActionStrongFairnessHintTuples))

@@ -112,7 +112,8 @@ object Tool extends App with LazyLogging {
     executor.options.setOption("checker.length", check.length)
     executor.options.setOption("checker.search", check.search)
     executor.options.setOption("checker.checkRuntime", check.checkRuntime)
-    executor.options.setOption("checker.temporal", if (check.temporal != "") Some(check.temporal) else None)
+    executor.options.setOption("checker.mode", Some(check.livenessCheckModeName))
+    executor.options.setOption("checker.specification", if (check.temporal != "") Some(check.temporal) else None)
 
     val result = executor.run()
     if (result.isDefined) {

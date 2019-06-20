@@ -1,5 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import at.forsyte.apalache.tla.assignments.LivenessCheckingMode
 import at.forsyte.apalache.tla.lir.{TlaEx, TlaModule}
 
 /**
@@ -23,6 +24,7 @@ class CheckerInput(val rootModule: TlaModule,
                    val nextTransitions: List[TlaEx],
                    val constInitPrimed: Option[TlaEx],
                    val notInvariant: Option[TlaEx],
+                   val livenessCheckingMode: Option[LivenessCheckingMode.Value],
                    val specification: Option[TlaEx],
                    val liveness: Option[TlaEx],
                    val enabledActionWeakFairnessHintTuples: Option[List[(TlaEx, TlaEx)]],

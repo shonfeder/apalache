@@ -45,6 +45,7 @@ class SimpleSkolemization @Inject()(val frexStore: FreeExistentialsStoreImpl) ex
                             constInitPrime,
                             notInv,
                             notInvPrime,
+                            spec.livenessCheckingMode,
                             spec.specification,
                             spec.liveness,
                             spec.enabledActionWeakFairnessHintTuples,

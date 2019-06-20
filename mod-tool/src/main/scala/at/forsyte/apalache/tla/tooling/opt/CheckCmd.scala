@@ -45,8 +45,13 @@ class CheckCmd extends Command(name = "check",
     opt[Boolean](name = "checkRuntime", default = false,
       description = " (BROKEN) check for runtime errors, e.g., applying f[x] when x is outside of f's domain, default: false")
   var temporal: String = opt[String](
-    name = "temporal",
+    name = "specification",
     default = "",
     description = "Specification of system with liveness, e.g., Temporal"
+  )
+  var livenessCheckModeName: String = opt[String](
+    name = "liveness-check-mode",
+    default = "find",
+    description = "Loop search mode, e.g. enumerate, default: find"
   )
 }

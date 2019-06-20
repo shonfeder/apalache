@@ -2,7 +2,8 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{FileWriter, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, IndexedLoopAnalyser, LoopAnalyser, SymbolicLoopAnalyzer}
+import at.forsyte.apalache.tla.assignments.LivenessCheckingMode
+import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore, FreeExistentialsStoreImpl, IndexedLoopAnalyser, SymbolicLoopAnalyzer}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, OracleHelper}
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
@@ -95,20 +96,27 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
         val initConstState = initializeConstants(dummyState)
         stack +:= (initConstState, initialArena.cellTrue())
         typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
-        val result = applySearchStrategy()
+        var result = applySearchStrategy()
 
         if (checkerInput.liveness.isDefined) {
-          val loopAnalyser = new SymbolicLoopAnalyzer(checkerInput,
-                                              stack,
-                                              rewriter,
-                                              solverContext)
+          val loopAnalyzer =
+            if (checkerInput.livenessCheckingMode.get == LivenessCheckingMode.LASSO_ENUMERATION)
+              new IndexedLoopAnalyser(checkerInput,
+                                    stack,
+                                    rewriter,
+                                    solverContext)
+            else
+              new SymbolicLoopAnalyzer(checkerInput,
+                                       stack,
+                                       rewriter,
+                                       solverContext)
 
-          if (loopAnalyser.checkNotLiveness()) {
+          if (loopAnalyzer.checkNotLiveness()) {
             dumpCounterexample()
-            //TODO (Viktor): think about result processing
-            throw new RuntimeException("Liveness property does not hold!!!")
+            result = Outcome.Error
+            logger.error("Liveness property does not hold")
           } else {
-            throw new RuntimeException("Liveness property always holds!!!")
+            logger.error("Liveness property always holds")
           }
         }
         result
@@ -167,7 +175,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
           logger.error("Check an execution leading to a deadlock state in counterexample.txt")
           dumpCounterexample()
         } else {
-          logger.error("No model found that would describe the deadlock")
+          logger.info("No model found that would describe the deadlock")
         }
         Outcome.Deadlock
 
