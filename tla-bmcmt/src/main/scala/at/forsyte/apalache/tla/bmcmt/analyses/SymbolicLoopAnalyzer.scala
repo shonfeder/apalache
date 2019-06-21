@@ -131,9 +131,9 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
 
   private def buildNotLivenessConstraint(): TlaEx = notLiveness match {
     case OperEx(TlaTempOper.diamond, OperEx(TlaTempOper.box, arg)) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg): _*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg, wrapWithInLoopConditionForAnd): _*)
     case OperEx(TlaTempOper.box, OperEx(TlaTempOper.diamond, arg)) =>
-      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(arg): _*)
+      OperEx(TlaBoolOper.or, buildNotLivenessConditionsForStates(arg, wrapWithInLoopConditionForOr): _*)
     case OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, right))) =>
       OperEx(
         TlaBoolOper.or,
@@ -146,18 +146,18 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
                        ): _*
         )
     case OperEx(TlaTempOper.box, arg) =>
-      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg): _*)
+      OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg, wrapWithInLoopConditionForAnd): _*)
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
 
-  private def buildNotLivenessConditionsForStates(notLiveness: TlaEx): List[TlaEx] = {
+  private def buildNotLivenessConditionsForStates(notLiveness: TlaEx, wrapFunction: (Int, TlaEx) => TlaEx): List[TlaEx] = {
     val notLivenessStateConditions = ListBuffer[TlaEx]()
 
     for (i <- 0 until stateStack.size - 1) {
       val state = stateStack(i)._1
       val stateWithLambda = addLambdaBinding(state)
-      val stateWithExpression = stateWithLambda.setRex(wrapWithInLoopCondition(i, notLiveness))
+      val stateWithExpression = stateWithLambda.setRex(wrapFunction(i, notLiveness))
       val rewrittenExpression = rewrite(stateWithExpression)
       notLivenessStateConditions += rewrittenExpression
     }
@@ -165,8 +165,12 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     notLivenessStateConditions.toList
   }
 
-  private def wrapWithInLoopCondition(index: Int, notLiveness: TlaEx): TlaEx = {
+  private def wrapWithInLoopConditionForAnd(index: Int, notLiveness: TlaEx): TlaEx = {
     OperEx(TlaBoolOper.implies, OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
+  }
+
+  private def wrapWithInLoopConditionForOr(index: Int, notLiveness: TlaEx): TlaEx = {
+    OperEx(TlaBoolOper.and, OperEx(TlaArithOper.le, ValEx(TlaInt(index)), NameEx("lambda")), notLiveness)
   }
 
   private def addLambdaBinding(state: SymbState): SymbState = {
@@ -201,10 +205,10 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def buildWeaklyEnabledCondition(hint: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.and, generateEnabledConditions(hint, wrapWithInLoopCondition): _*)
+    OperEx(TlaBoolOper.and, generateEnabledConditions(hint, wrapWithInLoopConditionForAnd): _*)
   }
 
-  private def generateEnabledConditions(hint: TlaEx, transform: (Int, TlaEx) => TlaEx = (_, it) => it): ListBuffer[TlaEx] = {
+  private def generateEnabledConditions(hint: TlaEx, transform: (Int, TlaEx) => TlaEx): ListBuffer[TlaEx] = {
     val enabledHintsConditions = ListBuffer[TlaEx]()
 
     for (i <- 0 until stateStack.size - 1) {
@@ -225,7 +229,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
       val targetState = stateStack(i)._1
       val sourceState = stateStack(i + 1)._1
       val stateWithLambda = addLambdaBinding(sourceState)
-      val sourceWithAction = addPrimedTargetBinding(stateWithLambda, targetState).setRex(wrapWithInLoopCondition(i, action))
+      val sourceWithAction = addPrimedTargetBinding(stateWithLambda, targetState).setRex(wrapWithInLoopConditionForOr(i, action))
       val rewrittenExpression = rewrite(sourceWithAction)
       takenStateConditions += rewrittenExpression
     }
@@ -233,8 +237,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     for (i <- 0 until stateStack.size - 1) {
       val targetState = stateStack(i)._1
       val sourceState = stateStack.head._1
-      val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper
-                                                                                              .and, getLoopStartsCondition(i), action))
+      val sourceWithAction = addPrimedTargetBinding(sourceState, targetState).setRex(OperEx(TlaBoolOper.and, getLoopStartsCondition(i), action))
       val rewrittenExpression = rewrite(sourceWithAction)
       takenStateConditions += rewrittenExpression
     }
@@ -247,7 +250,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
   }
 
   private def buildStronglyEnabledCondition(hint: TlaEx): TlaEx = {
-    OperEx(TlaBoolOper.or, generateEnabledConditions(hint): _*)
+    OperEx(TlaBoolOper.or, generateEnabledConditions(hint, wrapWithInLoopConditionForOr): _*)
   }
 
   private def buildStrongFairnessConstraint(): TlaEx = {
