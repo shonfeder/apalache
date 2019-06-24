@@ -5,7 +5,7 @@ import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, Binding, CellTheory, Che
 import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx, ValEx}
-import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaFunOper, TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 import at.forsyte.apalache.tla.lir.values.TlaInt
 
@@ -39,7 +39,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     case OperEx(TlaActionOper.stutter, formula, _) =>
       negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
-      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, negateLiveness(left), OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, negateLiveness(right)))))
     case OperEx(TlaOper.eq, args@_*) =>
       OperEx(TlaOper.ne, args: _*)
     case OperEx(TlaBoolOper.forall, value, set, arg) =>
@@ -52,6 +52,8 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
       OperEx(TlaBoolOper.forall, value, set, negateLiveness(arg))
     case OperEx(TlaSetOper.in, value, set) =>
       OperEx(TlaSetOper.notin, value, set)
+    case OperEx(TlaFunOper.app, fun, arg) =>
+      OperEx(TlaBoolOper.not, OperEx(TlaFunOper.app, fun, arg))
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
@@ -148,7 +150,7 @@ class SymbolicLoopAnalyzer(val checkerInput: CheckerInput,
     case OperEx(TlaTempOper.box, arg) =>
       OperEx(TlaBoolOper.and, buildNotLivenessConditionsForStates(arg, wrapWithInLoopConditionForAnd): _*)
     case _ =>
-      throw new RuntimeException("Unhandled pattern")
+      throw new RuntimeException("Unhandled pattern: " + notLiveness)
   }
 
   private def buildNotLivenessConditionsForStates(notLiveness: TlaEx, wrapFunction: (Int, TlaEx) => TlaEx): List[TlaEx] = {
