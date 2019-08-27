@@ -114,7 +114,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT], frexStore: FreeExistentialsSto
           if (loopAnalyzer.checkNotLiveness()) {
             result = Outcome.Error
             dumpCounterexample()
-            logger.error("Liveness property does not hold")
+            logger.error("Liveness property does not hold or loop does not exist")
           }
         }
         result

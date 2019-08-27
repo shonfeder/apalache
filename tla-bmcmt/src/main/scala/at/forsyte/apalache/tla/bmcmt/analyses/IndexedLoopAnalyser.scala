@@ -4,7 +4,7 @@ import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, Binding, CellTheory, Che
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.actions.TlaActionOper
 import at.forsyte.apalache.tla.lir.convenience.tla
-import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaFunOper, TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.temporal.TlaTempOper
 
 import scala.collection.mutable
@@ -35,9 +35,10 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
       tla.not(OperEx(operator, args: _*))
     case OperEx(TlaActionOper.nostutter, formula, _) =>
       negateLiveness(formula)
+    case OperEx(TlaActionOper.stutter, formula, _) =>
+      negateLiveness(formula)
     case OperEx(TlaTempOper.leadsTo, left, right) =>
-      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper
-                                                                                                 .not, right))))
+      OperEx(TlaTempOper.diamond, OperEx(TlaBoolOper.and, left, OperEx(TlaTempOper.box, OperEx(TlaBoolOper.not, right))))
     case OperEx(TlaOper.eq, args@_*) =>
       OperEx(TlaOper.ne, args: _*)
     case OperEx(TlaBoolOper.forall, value, set, arg) =>
@@ -50,6 +51,8 @@ class IndexedLoopAnalyser(val checkerInput: CheckerInput,
       OperEx(TlaBoolOper.forall, value, set, negateLiveness(arg))
     case OperEx(TlaSetOper.in, value, set) =>
       OperEx(TlaSetOper.notin, value, set)
+    case OperEx(TlaFunOper.app, fun, arg) =>
+      OperEx(TlaBoolOper.not, OperEx(TlaFunOper.app, fun, arg))
     case _ =>
       throw new RuntimeException("Unhandled pattern")
   }
