@@ -12,15 +12,6 @@ class ModelCheckerParams(tuningOptions: Map[String, String]) {
   val invFilter: String =
     tuningOptions.getOrElse("search.invariantFilter", "")
 
-  val invariantSplitByTransition: Boolean =
-    tuningOptions.getOrElse("search.invariant.split", "true").toLowerCase == "true"
-
-  val learnTransFromUnsat: Boolean =
-    tuningOptions.getOrElse("search.transition.learnFromUnsat", "").toLowerCase == "true"
-
-  val learnInvFromUnsat: Boolean =
-    tuningOptions.getOrElse("search.invariant.learnFromUnsat", "").toLowerCase == "true"
-
   val transitionTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.transition.timeout", "0")).toLong
 

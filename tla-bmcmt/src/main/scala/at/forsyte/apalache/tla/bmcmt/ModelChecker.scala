@@ -10,7 +10,6 @@ import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir._
-import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import com.typesafe.scalalogging.LazyLogging
@@ -20,8 +19,6 @@ import scala.collection.immutable.SortedMap
 /**
   * A bounded model checker using SMT. The checker itself does not implement a particular search. Instead,
   * it queries a search strategy, e.g., DfsStrategy or BfsStrategy.
-  *
-  * We expect the invariant to be negated and written over prime variables.
   *
   * @author Igor Konnov
   */
@@ -202,10 +199,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
 
     val savedVarTypes = rewriter.typeFinder.getVarTypes // save the variable types before applying the transitions
     val enabled = filterEnabled(startingState, transitionsAndNos)
-    /*
-    enabledList :+= enabled map (_._2) // put it on stack, FIXME: this will not work well with DFS...
-    dumpEnabledMap()
-    */
     // restore the variable types to apply the enabled transitions once again
     rewriter.typeFinder.reset(savedVarTypes)
     enabled
@@ -225,7 +218,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
           List(state) // the final state may contain additional cells, add it
 
         case (tranWithNo, isEnabled) :: tail =>
-          if (!isEnabled && !mcParams.learnTransFromUnsat) {
+          if (!isEnabled) {
             applyTrans(state, tail) // ignore the disabled transition, without any rewriting
           } else {
             val (transition, transitionNo) = tranWithNo
@@ -233,19 +226,8 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
             // note that the constraints are added at the current level, without an additional push
             var (nextState, _) = applyTransition(stepNo, erased, transition, transitionNo, checkForErrors = false)
             rewriter.exprCache.disposeActionLevel() // leave only the constants
-            if (isEnabled && mcParams.learnInvFromUnsat && mcParams.invariantSplitByTransition) {
-              nextState = assumeInvariant(stepNo, nextState)
-            }
-            if (isEnabled) {
-              // collect the variables of the enabled transition
-              nextState +: applyTrans(nextState, tail)
-            } else {
-              assert(mcParams.learnTransFromUnsat)
-              // Do not collect the variables from the disabled transition, but remember that it was disabled.
-              // Note that the constraints are propagated via nextState
-              solverContext.assertGroundExpr(simplifier.simplify(tla.not(nextState.ex)))
-              applyTrans(nextState, tail)
-            }
+            // collect the variables of the enabled transition
+            nextState +: applyTrans(nextState, tail)
           }
       }
 
@@ -262,7 +244,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     } else if (nextStates.lengthCompare(1) == 0) {
       val resultingState = oracleState.setBinding(shiftBinding(lastState.binding, constants))
       solverContext.assertGroundExpr(lastState.ex)
-      if (!mcParams.invariantSplitByTransition) { checkAllInvariants(stepNo, 0, resultingState) }
       stack +:= (resultingState, oracle) // in this case, oracle is always zero
       shiftTypes(constants)
       typesStack = typeFinder.getVarTypes +: typesStack
@@ -301,11 +282,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       finalState = finalState.setBinding(Binding(finalVarBinding ++ constBinding))
       if (debug && !solverContext.sat()) {
         throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", finalState.ex)
-      }
-      // check the invariant, if search invariant.split=false
-      if (!mcParams.invariantSplitByTransition) { checkAllInvariants(stepNo, 0, finalState) }
-      if (mcParams.learnInvFromUnsat && !mcParams.invariantSplitByTransition) {
-        finalState = assumeInvariant(stepNo, finalState)
       }
       // finally, shift the primed variables to non-primed
       finalState = finalState.setBinding(shiftBinding(finalState.binding, constants))
@@ -348,10 +324,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       }
     }
     if (!checkForErrors) {
-      // this was an experimental feature, which did not work nicely
-      // assume no failure occurs
-      //      val failPreds = state.arena.findCellsByType(FailPredT())
-      //      failPreds.map(fp => tla.not(fp.toNameEx)) foreach solverContext.assertGroundExpr
       // just return the state
       (nextState, true)
       // LEVEL + 0
@@ -363,10 +335,8 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       logger.debug("Checking transition feasibility.")
       solverContext.satOrTimeout(mcParams.transitionTimeout) match {
         case Some(true) =>
-          if (mcParams.invariantSplitByTransition) {
-            // check the invariant as soon as one transition has been applied
-            checkAllInvariants(stepNo, transitionNo, nextState)
-          }
+          // check the invariant as soon as one transition has been applied
+          checkAllInvariants(stepNo, transitionNo, nextState)
           // and then forget all these constraints!
           rewriter.pop() // LEVEL + 0
           solverContext.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, rewriter.contextLevel))
@@ -386,33 +356,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
           (nextState, false)
         // LEVEL + 0
       }
-    }
-  }
-
-  private def assumeInvariant(stepNo: Int, state: SymbState): SymbState = {
-    val matchesInvFilter = mcParams.invFilter == "" || stepNo.toString.matches("^" + mcParams.invFilter + "$")
-    if (!matchesInvFilter || checkerInput.invariantsAndNegations.isEmpty) {
-      state
-    } else {
-      // as we have checked the invariant, we assume that it holds
-      val savedEx = state.ex
-      val savedTypes = rewriter.typeFinder.getVarTypes
-      val savedBinding = state.binding
-      // rename x' to x, so we are reasoning about the non-primed variables
-      shiftTypes(constants)
-      var nextState = state.setBinding(shiftBinding(state.binding, constants))
-
-      for (((inv, _), index) <- checkerInput.invariantsAndNegations.zipWithIndex) {
-        typeFinder.inferAndSave(inv)
-        logger.debug(s"Assuming that the invariant $index holds true")
-        nextState = rewriter.rewriteUntilDone(nextState.setRex(inv))
-        // assume that the invariant holds true
-        solverContext.assertGroundExpr(nextState.ex)
-      }
-
-      // restore the expression, the types, and the bindings
-      rewriter.typeFinder.reset(savedTypes) // forget about the types that were used to check the invariant
-      nextState.setRex(savedEx).setBinding(savedBinding)
     }
   }
 
