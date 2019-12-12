@@ -65,8 +65,6 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val profile = options.getOrElse("smt", "prof", false)
     val search = options.getOrElse("checker", "search", "dfs")
     val tuning = options.getOrElse("general", "tuning", Map[String, String]())
-    val checkRuntime =
-      options.getOrElse("checker", "checkRuntime", false)
     val strategy =
       if (search == "bfs") {
         new BfsStrategyStopWatchDecorator(new BfsStrategy(input, stepsBound), filename="bfs.csv")
@@ -77,7 +75,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
 
     val checker: Checker =
         new ModelChecker(typeFinder, hintsStore, changeListener, exprGradeStore, sourceStore,
-          input, strategy, tuning, debug, profile, checkRuntime)
+          input, strategy, tuning, debug, profile)
 
     val outcome = checker.run()
     logger.info("The outcome is: " + outcome)

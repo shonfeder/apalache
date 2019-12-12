@@ -1,8 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import java.io.{FileWriter, PrintWriter, StringWriter}
-
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
+import at.forsyte.apalache.tla.bmcmt.mc.ModelCheckerParams
 import at.forsyte.apalache.tla.bmcmt.rewriter.{ConstSimplifierForSmt, RewriterConfig}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle}
 import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
@@ -32,7 +31,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
                    exprGradeStore: ExprGradeStore, sourceStore: SourceStore, checkerInput: CheckerInput,
                    searchStrategy: SearchStrategy,
                    tuningOptions: Map[String, String],
-                   debug: Boolean = false, profile: Boolean = false, checkRuntime: Boolean = false)
+                   debug: Boolean = false, profile: Boolean = false)
   extends Checker with LazyLogging {
 
   import Checker._
@@ -52,27 +51,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
   rewriter.formulaHintsStore = formulaHintsStore
   rewriter.config = RewriterConfig(tuningOptions)
 
-  private val stepFilters: Seq[String] =
-    tuningOptions.getOrElse("search.transitionFilter", ".*").split(",")
-
-  private val invFilter: String =
-    tuningOptions.getOrElse("search.invariantFilter", "")
-
-  private val invariantSplitByTransition: Boolean =
-    tuningOptions.getOrElse("search.invariant.split", "true").toLowerCase == "true"
-
-  private val learnTransFromUnsat: Boolean =
-    tuningOptions.getOrElse("search.transition.learnFromUnsat", "").toLowerCase == "true"
-
-  private val learnInvFromUnsat: Boolean =
-    tuningOptions.getOrElse("search.invariant.learnFromUnsat", "").toLowerCase == "true"
-
-  private val transitionTimeout: Long =
-    BigInt(tuningOptions.getOrElse("search.transition.timeout", "0")).toLong
-
-  private val invariantTimeout: Long =
-    BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong
-
+  private val mcParams: ModelCheckerParams = new ModelCheckerParams(tuningOptions)
 
   /**
     * A list of transitions that are enabled at every step
@@ -246,7 +225,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
           List(state) // the final state may contain additional cells, add it
 
         case (tranWithNo, isEnabled) :: tail =>
-          if (!isEnabled && !learnTransFromUnsat) {
+          if (!isEnabled && !mcParams.learnTransFromUnsat) {
             applyTrans(state, tail) // ignore the disabled transition, without any rewriting
           } else {
             val (transition, transitionNo) = tranWithNo
@@ -254,14 +233,14 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
             // note that the constraints are added at the current level, without an additional push
             var (nextState, _) = applyTransition(stepNo, erased, transition, transitionNo, checkForErrors = false)
             rewriter.exprCache.disposeActionLevel() // leave only the constants
-            if (isEnabled && learnInvFromUnsat && invariantSplitByTransition) {
+            if (isEnabled && mcParams.learnInvFromUnsat && mcParams.invariantSplitByTransition) {
               nextState = assumeInvariant(stepNo, nextState)
             }
             if (isEnabled) {
               // collect the variables of the enabled transition
               nextState +: applyTrans(nextState, tail)
             } else {
-              assert(learnTransFromUnsat)
+              assert(mcParams.learnTransFromUnsat)
               // Do not collect the variables from the disabled transition, but remember that it was disabled.
               // Note that the constraints are propagated via nextState
               solverContext.assertGroundExpr(simplifier.simplify(tla.not(nextState.ex)))
@@ -283,7 +262,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     } else if (nextStates.lengthCompare(1) == 0) {
       val resultingState = oracleState.setBinding(shiftBinding(lastState.binding, constants))
       solverContext.assertGroundExpr(lastState.ex)
-      if (!invariantSplitByTransition) { checkAllInvariants(stepNo, 0, resultingState) }
+      if (!mcParams.invariantSplitByTransition) { checkAllInvariants(stepNo, 0, resultingState) }
       stack +:= (resultingState, oracle) // in this case, oracle is always zero
       shiftTypes(constants)
       typesStack = typeFinder.getVarTypes +: typesStack
@@ -324,8 +303,8 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", finalState.ex)
       }
       // check the invariant, if search invariant.split=false
-      if (!invariantSplitByTransition) { checkAllInvariants(stepNo, 0, finalState) }
-      if (learnInvFromUnsat && !invariantSplitByTransition) {
+      if (!mcParams.invariantSplitByTransition) { checkAllInvariants(stepNo, 0, finalState) }
+      if (mcParams.learnInvFromUnsat && !mcParams.invariantSplitByTransition) {
         finalState = assumeInvariant(stepNo, finalState)
       }
       // finally, shift the primed variables to non-primed
@@ -355,7 +334,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       // This is a debugging feature that allows us to find incorrect rewriting rules.
       // Disable it in production.
       logger.debug("Finished rewriting. Checking satisfiability of the pushed constraints.")
-      solverContext.satOrTimeout(transitionTimeout) match {
+      solverContext.satOrTimeout(mcParams.transitionTimeout) match {
         case Some(false) =>
           // this is a clear sign of a bug in one of the translation rules
           logger.debug("UNSAT after pushing transition constraints")
@@ -382,9 +361,9 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       solverContext.assertGroundExpr(nextState.ex)
       // check whether this transition violates some assertions
       logger.debug("Checking transition feasibility.")
-      solverContext.satOrTimeout(transitionTimeout) match {
+      solverContext.satOrTimeout(mcParams.transitionTimeout) match {
         case Some(true) =>
-          if (invariantSplitByTransition) {
+          if (mcParams.invariantSplitByTransition) {
             // check the invariant as soon as one transition has been applied
             checkAllInvariants(stepNo, transitionNo, nextState)
           }
@@ -411,7 +390,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
   }
 
   private def assumeInvariant(stepNo: Int, state: SymbState): SymbState = {
-    val matchesInvFilter = invFilter == "" || stepNo.toString.matches("^" + invFilter + "$")
+    val matchesInvFilter = mcParams.invFilter == "" || stepNo.toString.matches("^" + mcParams.invFilter + "$")
     if (!matchesInvFilter || checkerInput.invariantsAndNegations.isEmpty) {
       state
     } else {
@@ -438,13 +417,14 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
   }
 
   private def checkAllInvariants(stepNo: Int, transitionNo: Int, nextState: SymbState): Unit = {
-    val matchesInvFilter = invFilter == "" || stepNo.toString.matches("^" + invFilter + "$")
+    val matchesInvFilter = mcParams.invFilter == "" || stepNo.toString.matches("^" + mcParams.invFilter + "$")
     if (!matchesInvFilter) {
       return // skip the check if this transition should not be checked
     }
 
     // if the previous step was filtered, we cannot use the unchanged optimization
-    val prevMatchesInvFilter = invFilter == "" || (stepNo - 1).toString.matches("^" + invFilter + "$")
+    val prevMatchesInvFilter = mcParams.invFilter == "" ||
+      (stepNo - 1).toString.matches("^" + mcParams.invFilter + "$")
 
     val invNegs = checkerInput.invariantsAndNegations.map(_._2)
     for ((notInv, invNo) <- invNegs.zipWithIndex) {
@@ -477,7 +457,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         .setTheory(BoolTheory())
         .setRex(notInv))
       solverContext.assertGroundExpr(notInvState.ex)
-      solverContext.satOrTimeout(invariantTimeout) match {
+      solverContext.satOrTimeout(mcParams.invariantTimeout) match {
         case Some(true) =>
           // introduce a dummy oracle to hold the transition index, we need it for the counterexample
           val oracle = new MockOracle(transitionNo)
@@ -582,31 +562,11 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
 
   // does the transition number satisfy the given filter at the given step?
   private def stepMatchesFilter(stepNo: Int, transitionNo: Int): Boolean = {
-    if (stepFilters.size <= stepNo) {
+    if (mcParams.stepFilters.size <= stepNo) {
       true // no filter applied
     } else {
-      transitionNo.toString.matches("^%s$".format(stepFilters(stepNo)))
+      transitionNo.toString.matches("^%s$".format(mcParams.stepFilters(stepNo)))
     }
-  }
-
-  private def dumpEnabledMap(): Unit = {
-    val filename = "enabled-map.txt"
-    val writer = new PrintWriter(new FileWriter(filename, false))
-    val transitionsCnt = checkerInput.nextTransitions.size
-    writer.println("The map of enabled transitions:")
-    val hrule = "----%s".format((0 until transitionsCnt map (_ => "-")) mkString "")
-    writer.println(hrule)
-    writer.println("    %s".format(0 until transitionsCnt map (i => ((i / 100) % 10).toString) mkString ""))
-    writer.println("    %s".format(0 until transitionsCnt map (i => ((i / 10) % 10).toString) mkString ""))
-    writer.println("    %s".format(0 until transitionsCnt map (i => (i % 10).toString) mkString ""))
-    writer.println(hrule)
-    for ((enabled, stepNo) <- enabledList.zipWithIndex) {
-      val set = Set(enabled: _*)
-      val line = 0 until transitionsCnt map (i => if (set.contains(i)) "*" else " ") mkString ""
-      writer.println(s"%3d:%s".format(stepNo, line))
-    }
-    writer.println(hrule)
-    writer.close()
   }
 
   private def printRewriterSourceLoc(): Unit = {
