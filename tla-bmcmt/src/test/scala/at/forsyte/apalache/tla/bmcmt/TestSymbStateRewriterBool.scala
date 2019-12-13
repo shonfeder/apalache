@@ -36,7 +36,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("SE-BOOL-FALSE [Cell]: FALSE ~~> $C$0") {
     val ex = ValEx(TlaBool(false))
-    val state = new SymbState(ex, CellTheory(), arena, new Binding)
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         val expected = NameEx("$C$0")
@@ -50,7 +50,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("SE-BOOL-FALSE [Bool]: FALSE ~~> $B$0") {
     val ex = ValEx(TlaBool(false))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(NameEx("$B$0") == nextState.ex)
@@ -62,7 +62,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
   }
 
   test("SE-SET-BOOLEAN: BOOLEAN ~~> c_BOOLEAN") {
-    val state = new SymbState(ValEx(TlaBoolSet), CellTheory(), arena, new Binding)
+    val state = new SymbState(ValEx(TlaBoolSet), CellTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         val expected = NameEx("$C$2")
@@ -76,7 +76,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("SE-BOOL-TRUE [Cell]: TRUE ~~> $C$1") {
     val ex = ValEx(TlaBool(true))
-    val state = new SymbState(ex, CellTheory(), arena, new Binding)
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         val expected = NameEx("$C$1")
@@ -90,7 +90,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("SE-BOOL-TRUE [Bool]: TRUE ~~> $B$1") {
     val ex = ValEx(TlaBool(true))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         val expected = NameEx("$B$1")
@@ -141,7 +141,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val cell = arena.topCell
 
     val ex = OperEx(TlaBoolOper.not, cell.toNameEx)
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
@@ -167,7 +167,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-BOOL-NEG9: ~x ~~> TRUE""") {
     val ex = OperEx(TlaBoolOper.not, NameEx("x"))
-    val binding = new Binding() + ("x" -> arena.cellFalse())
+    val binding = Binding("x" -> arena.cellFalse())
     val state = new SymbState(ex, CellTheory(), arena, binding)
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
@@ -176,7 +176,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-AND1: FALSE /\ TRUE ~~> $B$0""") {
     val ex = OperEx(TlaBoolOper.and, ValEx(TlaBool(false)), ValEx(TlaBool(true)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(NameEx(SolverContext.falseConst) == nextState.ex)
@@ -194,7 +194,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val c2 = arena.topCell
 
     val ex = OperEx(TlaBoolOper.and, c1.toNameEx, c2.toNameEx)
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
@@ -223,7 +223,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-OR4: empty \/ ~~> $B$0""") {
     val ex = OperEx(TlaBoolOper.or)
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(NameEx(SolverContext.falseConst) == nextState.ex)
@@ -236,7 +236,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-AND4: empty /\ ~~> $B$1""") {
     val ex = OperEx(TlaBoolOper.and)
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(NameEx(SolverContext.trueConst) == nextState.ex)
@@ -249,7 +249,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-OR1: FALSE \/ TRUE ~~> $B$1""") {
     val ex = OperEx(TlaBoolOper.or, ValEx(TlaBool(false)), ValEx(TlaBool(true)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(NameEx(SolverContext.trueConst) == nextState.ex)
@@ -267,7 +267,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val right = arena.topCell
 
     val ex = OperEx(TlaBoolOper.or, left.toNameEx, right.toNameEx)
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
@@ -297,7 +297,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val right = arena.topCell
 
     val ex = tla.not(tla.eql(left.toNameEx, right.toNameEx))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -333,7 +333,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
 
   test("""SE-EX2: \E x \in {}: TRUE ~~> FALSE""") {
     val ex = tla.exists(tla.name("x"), tla.enumSet(), tla.bool(true))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val nextState = create().rewriteUntilDone(state)
     assert(NameEx(SolverContext.falseConst) == nextState.ex)
   }
@@ -342,7 +342,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val ex = tla.exists(tla.name("x"),
       tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
       tla.eql(tla.int(2), tla.name("x")))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -363,7 +363,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
       tla.assignPrime(tla.name("y"), tla.name("x"))
     )
     ////
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     assertThrows[NotImplementedError] {
       // TODO: implement multiple assignments in expanded quantifiers
@@ -394,7 +394,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val ex = tla.exists(tla.name("x"),
       tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
       tla.gt(tla.name("x"), tla.int(4)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -416,7 +416,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
         tla.exists(tla.name("x"),
           dynEmpty(tla.enumSet(tla.int(1))),
           tla.gt(tla.name("x"), tla.int(4))))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
 
     val nextState = rewriter.rewriteUntilDone(state)
@@ -435,8 +435,9 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
             tla.assignPrime(tla.name("x"), tla.name("i"))
           )
         ))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
+
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     solverContext.assertGroundExpr(nextState.ex)
@@ -460,12 +461,12 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val rewriter = create()
 
     // rewrite 5 and 9 first, to produce a and b
-    var state = new SymbState(tla.int(5), CellTheory(), arena, new Binding)
+    var state = new SymbState(tla.int(5), CellTheory(), arena, Binding())
     state = rewriter.rewriteUntilDone(state)
     val aCell = state.asCell
     state = rewriter.rewriteUntilDone(state.setRex(tla.int(9)))
     val bCell = state.asCell
-    val binding: Binding = HashMap("a" -> aCell, "b" -> bCell)
+    val binding: Binding = Binding("a" -> aCell, "b" -> bCell)
 
     val nextState = rewriter.rewriteUntilDone(state.setBinding(binding).setRex(ex))
     assert(solverContext.sat())
@@ -478,7 +479,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val ex = tla.forall(tla.name("x"),
       tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
       tla.lt(tla.name("x"), tla.int(10)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -494,7 +495,7 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     val ex = tla.forall(tla.name("x"),
       tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
       tla.gt(tla.name("x"), tla.int(2)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())

@@ -27,14 +27,14 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
     val set = set12
     val assign = OperEx(BmcOper.skolem, tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
 
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat()) // no contradiction introduced
 
     assertTlaExAndRestore(rewriter, nextState)
-    assert(nextState.binding.size == 1)
+    assert(nextState.binding.toMap.size == 1)
     assert(nextState.binding.contains("x'"))
     val boundCell = nextState.binding("x'")
     rewriter.push()
@@ -57,7 +57,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
         tla.assign(y_prime, tla.int(2))
       )
 
-    val state = new SymbState(and, CellTheory(), arena, new Binding)
+    val state = new SymbState(and, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val x_cell = nextState.binding("x'").toNameEx
@@ -81,14 +81,14 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
   test("""SE-IN-ASSIGN1(int): x' \in {} ~~> FALSE""") {
     val assign = OperEx(BmcOper.skolem, tla.exists(boundName, tla.enumSet(), tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case NameEx(name) =>
         assert(CellTheory().hasConst(name))
         assert(arena.cellFalse().toString == name)
-        assert(nextState.binding.isEmpty)
+        assert(nextState.binding.toMap.isEmpty)
 
       case _ =>
         fail("Unexpected rewriting result")
@@ -106,7 +106,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
     val assign = OperEx(BmcOper.skolem,
       tla.exists(boundName, empty(tla.enumSet(tla.int(1))), tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     // no contradiction should be introduced
@@ -119,14 +119,14 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
     val assign = tla.assign(x_prime, tla.int(1))
     val and = tla.and(assign, tla.eql(x_prime, tla.int(1)))
 
-    val state = new SymbState(and, BoolTheory(), arena, new Binding)
+    val state = new SymbState(and, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val boundCell =
       nextState.ex match {
         case NameEx(name) =>
           assert(BoolTheory().hasConst(name))
-          assert(nextState.binding.size == 1)
+          assert(nextState.binding.toMap.size == 1)
           assert(nextState.binding.contains("x'"))
           nextState.binding("x'")
 
@@ -150,7 +150,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
     val assign = OperEx(BmcOper.skolem,
       tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     // no contradiction introduced
@@ -158,7 +158,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
     // it returns true
     assertTlaExAndRestore(rewriter, nextState)
 
-    assert(nextState.binding.size == 1)
+    assert(nextState.binding.toMap.size == 1)
     assert(nextState.binding.contains("x'"))
     val boundCell = nextState.binding("x'")
 
@@ -199,14 +199,14 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, minus, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     // no contradiction introduced
     assert(solverContext.sat())
     assertTlaExAndRestore(rewriter, nextState)
 
-    assert(nextState.binding.size == 1)
+    assert(nextState.binding.toMap.size == 1)
     assert(nextState.binding.contains("x'"))
     val boundCell = nextState.binding("x'")
 
@@ -246,7 +246,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val boundCell =
@@ -254,7 +254,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
         case NameEx(name) =>
           assert(CellTheory().hasConst(name))
           assert(arena.cellTrue().toString == name)
-          assert(nextState.binding.size == 1)
+          assert(nextState.binding.toMap.size == 1)
           assert(nextState.binding.contains("x'"))
           nextState.binding("x'")
 
@@ -309,13 +309,13 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     // no contradiction introduced
     assert(solverContext.sat())
     assertTlaExAndRestore(rewriter, nextState)
-    assert(nextState.binding.size == 1)
+    assert(nextState.binding.toMap.size == 1)
     assert(nextState.binding.contains("x'"))
     val boundCell = nextState.binding("x'")
 
@@ -350,7 +350,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val boundCell =
@@ -358,7 +358,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
         case NameEx(name) =>
           assert(CellTheory().hasConst(name))
           assert(arena.cellTrue().toString == name)
-          assert(nextState.binding.size == 1)
+          assert(nextState.binding.toMap.size == 1)
           assert(nextState.binding.contains("x'"))
           nextState.binding("x'")
 
@@ -397,7 +397,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     // no contradiction introduced
@@ -414,7 +414,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val boundCell =
@@ -422,7 +422,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
         case NameEx(name) =>
           assert(CellTheory().hasConst(name))
           assert(arena.cellTrue().toString == name)
-          assert(nextState.binding.size == 1)
+          assert(nextState.binding.toMap.size == 1)
           assert(nextState.binding.contains("x'"))
           nextState.binding("x'")
 
@@ -438,7 +438,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(rewriter.solverContext.sat())
@@ -453,7 +453,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(rewriter.solverContext.sat())
@@ -471,7 +471,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, set, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -509,7 +509,7 @@ class TestSymbStateRewriterAssignment extends RewriterBase with TestingPredefs {
       OperEx(BmcOper.skolem,
         tla.exists(boundName, recordSet, tla.assign(x_prime, boundName)))
 
-    val state = new SymbState(assign, CellTheory(), arena, new Binding)
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     rewriter.typeFinder.inferAndSave(assign) // trigger type inference manually
     val nextState = rewriter.rewriteUntilDone(state)

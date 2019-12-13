@@ -45,7 +45,7 @@ class AssignmentRule(rewriter: SymbStateRewriter) extends RewritingRule {
         val finalState = nextState
           .setTheory(CellTheory())
           .setRex(state.arena.cellTrue().toNameEx) // just return TRUE
-          .setBinding(nextState.binding + (name + "'" -> rhsCell)) // bind the cell to the name
+          .setBinding(Binding(nextState.binding.toMap + (name + "'" -> rhsCell))) // bind the cell to the name
         rewriter.coerce(finalState, state.theory)
       case _ =>
         throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

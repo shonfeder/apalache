@@ -89,7 +89,7 @@ class MapBase(rewriter: SymbStateRewriter) {
                                    setsAsCells: Seq[ArenaCell],
                                    valuesAsCells: Seq[ArenaCell]): (SymbState, ArenaCell) = {
     // bind the variables to the corresponding cells
-    val newBinding: Binding = varNames.zip(valuesAsCells).foldLeft(state.binding)((m, p) => m + p)
+    val newBinding: Binding = varNames.zip(valuesAsCells).foldLeft(state.binding)((m, p) => Binding(m.toMap + p))
     val mapState = state.setTheory(CellTheory()).setBinding(newBinding).setRex(mapEx)
     var nextState = rewriter.rewriteUntilDone(mapState)
     val mapResultCell = nextState.asCell

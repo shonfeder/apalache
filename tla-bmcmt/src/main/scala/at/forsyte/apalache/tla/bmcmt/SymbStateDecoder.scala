@@ -71,7 +71,7 @@ class SymbStateDecoder(solverContext: SolverContext, rewriter: SymbStateRewriter
   }
 
   def decodeStateVariables(state: SymbState): Map[String, TlaEx] = {
-    state.binding.map(p => (p._1, reverseMapVar(decodeCellToTlaEx(state.arena, p._2), p._1, p._2)))
+    state.binding.toMap.map(p => (p._1, reverseMapVar(decodeCellToTlaEx(state.arena, p._2), p._1, p._2)))
   }
 
   def decodeCellToTlaEx(arena: Arena, cell: ArenaCell): TlaEx = cell.cellType match {

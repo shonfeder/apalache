@@ -25,8 +25,8 @@ class LetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
       val boundState = defs.foldLeft(state) (bindOperator)
       val bodyState = rewriter.rewriteUntilDone(boundState.setTheory(state.theory).setRex(body))
       // forget the bindings that were introduced by let-definitions of this expression
-      val newDefs = (bodyState.binding.keySet -- state.binding.keySet).filter(_.startsWith(LetInRule.namePrefix))
-      val finalBinding = bodyState.binding -- newDefs
+      val newDefs = (bodyState.binding.toMap.keySet -- state.binding.toMap.keySet).filter(_.startsWith(LetInRule.namePrefix))
+      val finalBinding = Binding(bodyState.binding.toMap -- newDefs)
       val finalState = bodyState.setBinding(finalBinding)
       rewriter.coerce(finalState, state.theory)
     case _ =>
@@ -41,7 +41,7 @@ class LetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
 
     val newState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(decl.body))
     val newCell = newState.arena.findCellByNameEx(newState.ex)
-    val newBinding = newState.binding + (LetInRule.namePrefix + decl.name -> newCell)
+    val newBinding = Binding(newState.binding.toMap + (LetInRule.namePrefix + decl.name -> newCell))
     newState.setBinding(newBinding)
   }
 }

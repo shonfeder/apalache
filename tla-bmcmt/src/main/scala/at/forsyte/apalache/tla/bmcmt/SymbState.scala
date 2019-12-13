@@ -68,7 +68,7 @@ class SymbState(val ex: TlaEx,
       }
     }
 
-    binding.keySet.foldLeft(Set[String]())(eachName)
+    binding.toMap.keySet.foldLeft(Set[String]())(eachName)
   }
 
 }

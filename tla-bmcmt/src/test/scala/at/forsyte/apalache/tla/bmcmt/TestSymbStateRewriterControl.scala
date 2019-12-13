@@ -15,7 +15,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.lt(tla.int(5), tla.int(1))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ite, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -39,7 +39,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.lt(tla.int(5), tla.int(1))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ite, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -63,7 +63,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.int(1)
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, IntTheory(), arena, new Binding)
+    val state = new SymbState(ite, IntTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -87,7 +87,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.int(1)
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, IntTheory(), arena, new Binding)
+    val state = new SymbState(ite, IntTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -111,7 +111,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.enumSet(tla.int(2), tla.int(3))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, CellTheory(), arena, new Binding)
+    val state = new SymbState(ite, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -139,7 +139,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val ite = tla.ite(tla.eql(1, 1), tla.enumSet(2), tla.enumSet(1))
     val eq = tla.eql(tla.enumSet(2), ite)
 
-    val state = new SymbState(eq, CellTheory(), arena, new Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -168,7 +168,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.enumSet(tla.int(2), tla.int(3))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, CellTheory(), arena, new Binding)
+    val state = new SymbState(ite, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -195,7 +195,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.int(1)
     val ite = tla.plus(tla.int(1), tla.ite(pred, e1, e2))
 
-    val state = new SymbState(ite, IntTheory(), arena, new Binding)
+    val state = new SymbState(ite, IntTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -217,7 +217,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
   test("""LET A == 1 + 2 IN 1 + A ~~> 4""") {
     val decl = TlaOperDecl("A", List(), tla.plus(1, 2))
     val letIn = tla.letIn(tla.plus(1, tla.appDecl(decl)), decl)
-    val state = new SymbState(letIn, IntTheory(), arena, new Binding)
+    val state = new SymbState(letIn, IntTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.int(4))))
@@ -238,7 +238,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
       arena = Arena.create(solverContext)
       arena = arena.appendCell(IntT())
       val icell = arena.topCell
-      val binding = new Binding + ("i" -> icell)
+      val binding = Binding("i" -> icell)
       val state = new SymbState(caseEx, IntTheory(), arena, binding)
       val rewriter = create()
       val nextState = rewriter.rewriteUntilDone(state)
@@ -283,7 +283,7 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
       arena = Arena.create(solverContext)
       arena = arena.appendCell(IntT())
       val icell = arena.topCell
-      val binding = new Binding + ("i" -> icell)
+      val binding = Binding("i" -> icell)
       val state = new SymbState(caseEx, IntTheory(), arena, binding)
       val rewriter = create()
       val nextState = rewriter.rewriteUntilDone(state)

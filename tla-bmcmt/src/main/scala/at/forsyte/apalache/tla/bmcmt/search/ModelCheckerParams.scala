@@ -1,11 +1,18 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
+import at.forsyte.apalache.tla.bmcmt.CheckerInput
+
 /**
   * A collection of model checker parameters that come from user configurations.
   *
   * @author Igor Konnov
   */
-class ModelCheckerParams(tuningOptions: Map[String, String]) {
+class ModelCheckerParams(checkerInput: CheckerInput, tuningOptions: Map[String, String]) {
+  /**
+    * A set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
+    */
+  val constants = Set(checkerInput.rootModule.constDeclarations.map(_.name): _*)
+
   val stepFilters: Seq[String] =
     tuningOptions.getOrElse("search.transitionFilter", ".*").split(",")
 

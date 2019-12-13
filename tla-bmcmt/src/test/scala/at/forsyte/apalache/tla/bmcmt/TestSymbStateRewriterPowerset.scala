@@ -12,7 +12,7 @@ import org.scalatest.junit.JUnitRunner
 class TestSymbStateRewriterPowerset extends RewriterBase {
   test("""SE-SUBSET1: SUBSET {1, 2, 3} ~~> c_set""") {
     val ex = tla.powSet(tla.enumSet(tla.int(1), tla.int(2), tla.int(3)))
-    val state = new SymbState(ex, CellTheory(), arena, new Binding)
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -35,7 +35,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set12 = tla.enumSet(tla.int(1), tla.int(2))
     val powset = tla.powSet(tla.enumSet(tla.int(1), tla.int(2), tla.int(3)))
     val in = tla.in(set12, powset)
-    val state = new SymbState(in, BoolTheory(), arena, new Binding)
+    val state = new SymbState(in, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -53,7 +53,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set12 = tla.withType(tla.enumSet(), AnnotationParser.toTla(FinSetT(IntT())))
     val powset = tla.powSet(tla.enumSet(tla.int(1), tla.int(2), tla.int(3)))
     val in = tla.in(set12, powset)
-    val state = new SymbState(in, BoolTheory(), arena, new Binding)
+    val state = new SymbState(in, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -70,7 +70,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set1to3 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3))
     val powset = tla.powSet(set1to3)
     val in = tla.in(set1to3, powset)
-    val state = new SymbState(in, BoolTheory(), arena, new Binding)
+    val state = new SymbState(in, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -89,7 +89,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set1to4 = setTo(4)
     val powset = tla.powSet(setTo(3))
     val in = tla.in(set1to4, powset)
-    val state = new SymbState(in, BoolTheory(), arena, new Binding)
+    val state = new SymbState(in, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -106,7 +106,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     // a regression test that failed in the previous versions
     val set = tla.enumSet(tla.int(1), tla.int(2))
     val ex = tla.exists(tla.name("X"), tla.powSet(set), tla.bool(true))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     try {
       val nextState = rewriter.rewriteUntilDone(state)
@@ -136,7 +136,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val ex =
       OperEx(BmcOper.skolem,
         tla.exists(tla.name("X"), tla.powSet(set), tla.bool(true)))
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -158,7 +158,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
       OperEx(BmcOper.skolem,
         tla.exists(tla.name("X"), tla.powSet(set), tla.bool(false)))
 
-    val state = new SymbState(ex, BoolTheory(), arena, new Binding)
+    val state = new SymbState(ex, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -175,7 +175,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
 
   test("""PowSetCtor {1, 2}""") {
     val baseset = tla.enumSet(tla.int(1), tla.int(2))
-    val state = new SymbState(baseset, CellTheory(), arena, new Binding)
+    val state = new SymbState(baseset, CellTheory(), arena, Binding())
     val rewriter = create()
     var nextState = rewriter.rewriteUntilDone(state)
     val baseCell = nextState.asCell

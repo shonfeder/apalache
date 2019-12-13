@@ -94,7 +94,7 @@ class FunCtorRule(rewriter: SymbStateRewriter) extends RewritingRule {
 
         case cell :: tail =>
           val (ts: SymbState, nt: List[TlaEx]) = process(st, tail)
-          val newBinding = ts.binding + (varName -> cell)
+          val newBinding = Binding(ts.binding.toMap + (varName -> cell))
           val cellState = new SymbState(mapEx, CellTheory(), ts.arena, newBinding)
           // add [cell/x]
           val ns = rewriter.rewriteUntilDone(cellState)

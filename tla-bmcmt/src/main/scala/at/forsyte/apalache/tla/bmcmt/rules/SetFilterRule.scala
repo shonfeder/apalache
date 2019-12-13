@@ -35,10 +35,10 @@ class SetFilterRule(rewriter: SymbStateRewriter) extends RewritingRule {
 
         def eachElem(potentialCell: ArenaCell): TlaEx = {
           // add [cell/x]
-          val newBinding = newState.binding + (varName -> potentialCell)
+          val newBinding = Binding(newState.binding.toMap + (varName -> potentialCell))
           val cellState = new SymbState(predEx, BoolTheory(), newState.arena, newBinding)
           val ns = rewriter.rewriteUntilDone(cellState)
-          newState = ns.setBinding(ns.binding - varName) // reset binding
+          newState = ns.setBinding(Binding(ns.binding.toMap - varName)) // reset binding
           ns.ex
         }
 

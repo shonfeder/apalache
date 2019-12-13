@@ -56,7 +56,7 @@ class SymbStateRewriterAuto(val solverContext: SolverContext) extends SymbStateR
     def add(m: Map[String, CellT], c: ArenaCell) = m + (c.toString -> c.cellType)
     val cellTypes = arena.cellMap.values.foldLeft(Map[String, CellT]()) (add)
     def addName(m: Map[String, CellT], p: (String, ArenaCell)) = m + (p._1 -> p._2.cellType)
-    val cellAndBindingTypes = binding.foldLeft(cellTypes) (addName)
+    val cellAndBindingTypes = binding.toMap.foldLeft(cellTypes) (addName)
     // propagate cell types and bindings to the type inference engine
     typeFinder.reset(cellAndBindingTypes)
   }

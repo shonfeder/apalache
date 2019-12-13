@@ -6,18 +6,35 @@ import scala.collection.immutable.HashMap
 
 package object bmcmt {
   /**
-    * Binding variables to memory cells.
+    * Binding variables to memory cells. We keep the number of methods to minimum. If you need all the Map methods,
+    * use toMap and convert the result with Binding(...).
     */
-  type Binding = HashMap[String, ArenaCell]
+  class Binding(val toMap: Map[String, ArenaCell]) {
+    def apply(name: String): ArenaCell = {
+      toMap(name)
+    }
+
+    def ++(other: Binding): Binding = {
+      new Binding(this.toMap ++ other.toMap)
+    }
+
+    def contains(name: String): Boolean = {
+      toMap.contains(name)
+    }
+  }
 
   // a handy companion object
   object Binding {
-    def apply(args: (String, ArenaCell)*): Binding ={
-      HashMap[String, ArenaCell](args :_*)
+    def apply(): Binding = {
+      new Binding(Map.empty)
+    }
+
+    def apply(args: (String, ArenaCell)*): Binding = {
+      new Binding(HashMap[String, ArenaCell](args :_*))
     }
 
     def apply(map: Map[String, ArenaCell]): Binding = {
-      HashMap(map.toSeq :_*)
+      new Binding(HashMap(map.toSeq :_*))
     }
   }
 

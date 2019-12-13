@@ -12,7 +12,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
   test("""SE-TUPLE-CTOR[1-2]: <<1, FALSE, {2}>> ~~> $C$k""") {
     val tuple = TlaFunOper.mkTuple(tla.int(1), tla.bool(false), tla.enumSet(tla.int(2)))
 
-    val state = new SymbState(tuple, CellTheory(), arena, new Binding)
+    val state = new SymbState(tuple, CellTheory(), arena, Binding())
     val nextState = create().rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx @ NameEx(name) =>
@@ -29,7 +29,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
   test("""SE-TPL-ACC[1-2]: <<1, FALSE, {2}>>[2] ~~> $C$k equals FALSE""") {
     val tuple = tla.tuple(tla.int(1), tla.bool(false), tla.enumSet(tla.int(2)))
     val tupleAcc = tla.appFun(tuple, tla.int(2))
-    val state = new SymbState(tupleAcc, CellTheory(), arena, new Binding)
+    val state = new SymbState(tupleAcc, CellTheory(), arena, Binding())
     val nextState = create().rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx @ NameEx(name) =>
@@ -61,7 +61,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val tuple1 = TlaFunOper.mkTuple(tla.int(1), tla.bool(false))
     val tuple2 = TlaFunOper.mkTuple(tla.int(2), tla.bool(true))
 
-    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, new Binding)
+    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, Binding())
     val nextState = create().rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx @ NameEx(name) =>
@@ -79,7 +79,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val tuple1 = TlaFunOper.mkTuple(tla.int(1), tla.bool(false))
     val tuple2 = TlaFunOper.mkTuple(tla.int(2))
 
-    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, new Binding)
+    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, Binding())
     assertThrows[TypeInferenceError] {
       create().rewriteUntilDone(state)
       fail("Expected a type error")
@@ -90,7 +90,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val tuple1 = TlaFunOper.mkTuple(tla.int(1), tla.bool(false))
     val tuple2 = TlaFunOper.mkTuple(tla.bool(true), tla.int(2))
 
-    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, new Binding)
+    val state = new SymbState(tla.enumSet(tuple1, tuple2), CellTheory(), arena, Binding())
     assertThrows[TypeInferenceError] {
       create().rewriteUntilDone(state)
     }
@@ -102,7 +102,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val eq = tla.not(tla.eql(tuple1, tuple2))
 
     val rewriter = create()
-    val state = new SymbState(eq, BoolTheory(), arena, new Binding)
+    val state = new SymbState(eq, BoolTheory(), arena, Binding())
     assertTlaExAndRestore(rewriter, state)
   }
 
@@ -112,7 +112,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val eq = tla.eql(tuple1, tuple2)
 
     val rewriter = create()
-    val state = new SymbState(eq, BoolTheory(), arena, new Binding)
+    val state = new SymbState(eq, BoolTheory(), arena, Binding())
     assertTlaExAndRestore(rewriter, state)
   }
 
@@ -124,7 +124,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     def tup(i: Int, b: Boolean) = tla.tuple(tla.int(i), tla.bool(b))
     val eq = tla.eql(prod, tla.enumSet(tup(1, false), tup(1, true), tup(2, false), tup(2, true)))
 
-    val state = new SymbState(eq, BoolTheory(), arena, new Binding)
+    val state = new SymbState(eq, BoolTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     rewriter.push()
@@ -139,7 +139,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val tuple = TlaFunOper.mkTuple(tla.int(2), tla.bool(false), tla.str("c"))
     val set123 = tla.enumSet(1.to(3) map tla.int :_*)
     val eq = tla.eql(tla.dom(tuple), set123)
-    val state = new SymbState(eq, BoolTheory(), arena, new Binding)
+    val state = new SymbState(eq, BoolTheory(), arena, Binding())
     val rewriter = create()
     assertTlaExAndRestore(rewriter, state)
   }
@@ -147,7 +147,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
   test("""SE-TUPLE-EXCEPT: [ <<1, FALSE>> EXCEPT ![1] = 3 ]""") {
     val tuple = tla.tuple(tla.int(1), tla.bool(false))
     val except = tla.except(tuple, tla.tuple(tla.int(1)), tla.int(3))
-    val state = new SymbState(except, CellTheory(), arena, new Binding)
+    val state = new SymbState(except, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val expectedTuple = tla.tuple(tla.int(3), tla.bool(false))
