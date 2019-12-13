@@ -105,7 +105,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         rewriter.solverContext.assertGroundExpr(nextState.ex)
         // as the initializer was defined over the primed versions of the constants, shift them back to non-primed
         shiftTypes(Set())
-        nextState.setBinding(shiftBinding(nextState.binding, Set()))
+        nextState.setBinding(nextState.binding.shiftBinding(Set()))
       }
 
     val constants = checkerInput.rootModule.constDeclarations.map(_.name)
@@ -171,7 +171,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         // check the borrowed transition
         val state = context.state
         typeFinder.reset(context.types) // set the variable type as they should be at this step
-        val erased = state.setBinding(forgetPrimed(state.binding))
+        val erased = state.setBinding(state.binding.forgetPrimed)
         rewriter.push() // LEVEL + 1
         val (_, isEnabled) = applyOneTransition(context.stepNo, erased, trEx, trNo, checkForErrors = true)
         rewriter.exprCache.disposeActionLevel() // leave only the constants
@@ -203,7 +203,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     // compute the result
     val state = context.state
     typeFinder.reset(context.types) // set the variable type as they should be at this step
-    val stateWithNoPrimes = state.setBinding(forgetPrimed(state.binding))
+    val stateWithNoPrimes = state.setBinding(state.binding.forgetPrimed)
     val result = applyEnabled(context.stepNo, stateWithNoPrimes, enabled)
     // applyEnabled has pushed the state and types on the stack
     assert(result.isDefined)
@@ -246,7 +246,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
           List(state) // the final state may contain additional cells, add it
 
         case (transition, transitionNo) :: tail =>
-          val erased = state.setBinding(forgetPrimed(state.binding))
+          val erased = state.setBinding(state.binding.forgetPrimed)
           // note that the constraints are added at the current level, without an additional push
           val (nextState, _) = applyOneTransition(stepNo, erased, transition, transitionNo, checkForErrors = false)
           rewriter.exprCache.disposeActionLevel() // leave only the constants
@@ -266,7 +266,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     if (statesAfterTransitions.isEmpty) {
       throw new IllegalArgumentException("enabled must be non-empty")
     } else if (statesAfterTransitions.lengthCompare(1) == 0) {
-      val resultingState = oracleState.setBinding(shiftBinding(lastState.binding, mcParams.constants))
+      val resultingState = oracleState.setBinding(lastState.binding.shiftBinding(mcParams.constants))
       solverContext.assertGroundExpr(lastState.ex)
       shiftTypes(mcParams.constants)
       context.push(resultingState, oracle, typeFinder.getVarTypes)
@@ -279,7 +279,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       // for every variable x', pick c_x from { S_1[x'], ..., S_k[x'] }
       //   and require \A i \in { 0.. k-1}. j = i => c_x = S_i[x']
       // Then, the final state binds x' -> c_x for every x' \in Vars'
-      def getAssignedVars(st: SymbState) = forgetNonPrimed(st.binding, Set()).toMap.keySet
+      def getAssignedVars(st: SymbState) = st.binding.forgetNonPrimed(Set()).toMap.keySet
 
       val primedVars = getAssignedVars(statesAfterTransitions.head) // only VARIABLES, not CONSTANTS
       var finalState = oracleState
@@ -310,7 +310,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", finalState.ex)
       }
       // finally, shift the primed variables to non-primed
-      finalState = finalState.setBinding(shiftBinding(finalState.binding, mcParams.constants))
+      finalState = finalState.setBinding(finalState.binding.shiftBinding(mcParams.constants))
       // that is the result of this step
       shiftTypes(mcParams.constants)
       // here we save the transition index, not the oracle, which will be shown to the user
@@ -407,7 +407,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       val savedTypes = rewriter.typeFinder.getVarTypes
       // rename x' to x, so we are reasoning about the non-primed variables
       shiftTypes(mcParams.constants)
-      val shiftedState = nextState.setBinding(shiftBinding(nextState.binding, mcParams.constants))
+      val shiftedState = nextState.setBinding(nextState.binding.shiftBinding(mcParams.constants))
       rewriter.exprCache.disposeActionLevel() // renaming x' to x makes the cache inconsistent, so clean it
       // check the types and the invariant
       checkTypes(notInv)
@@ -514,21 +514,6 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     typeFinder.reset(unprimedTypes)
   }
 
-  // remove non-primed variables and rename primed variables to non-primed
-  private def shiftBinding(binding: Binding, constants: Set[String]): Binding = {
-    Binding(forgetNonPrimed(binding, constants).
-      toMap.map(p => (p._1.stripSuffix("'"), p._2)))
-  }
-
-  // remove primed variables
-  private def forgetPrimed(binding: Binding): Binding = {
-    Binding(binding.toMap.filter(p => !p._1.endsWith("'")))
-  }
-
-  // remove non-primed variables, except the provided constants
-  private def forgetNonPrimed(binding: Binding, constants: Set[String]): Binding = {
-    Binding(binding.toMap.filter(p => p._1.endsWith("'") || constants.contains(p._1)))
-  }
 
   private def printRewriterSourceLoc(): Unit = {
     def getSourceLocation(ex: TlaEx) = {
