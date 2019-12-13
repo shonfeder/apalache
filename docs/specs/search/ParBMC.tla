@@ -44,7 +44,7 @@ BadExes == { <<0, 1, 2, 1, 2>> }
 
 \* a worker's workerState
 WorkerStates ==
-    [type: {"idle", "error", "noerror", "deadlock"}]
+    [type: {"idle", "buggy", "bugfree"}]
         \cup
         \* the process is checking, whether a transition tr is feasible
     [type: {"exploring"}, tr: Transitions]
@@ -61,14 +61,14 @@ VARIABLES
     (* a set of sequences of enabled transitions that should be checked separately,
        owing to the timeouts *)
     slowPrefixes,       
-    (*  { "idle", "exploring", "mining", "error", "noerror", "deadlock" } *)
+    (*  { "idle", "exploring", "proving", "buggy", "bugfree" } *)
     workerState,
     (* a function Transitions -> { "new", "borrowed", "enabled", "disabled", "timeout" } *)
-    runningTrans,
+    transitionStatus,
     (* a set of prefixes, for which the invariants should be checked *)
     unsafePrefixes
     
-vars == <<depth, runningPrefix, slowPrefixes, workerState, runningTrans, unsafePrefixes>>    
+vars == <<depth, runningPrefix, slowPrefixes, workerState, transitionStatus, unsafePrefixes>>    
 
 \* Transform the sequences of sets into a set of sequences.
 \* This operator constructs an overapproximation of the execution space.
@@ -96,7 +96,7 @@ Init ==
     /\ runningPrefix = <<{0}>>
     /\ depth = 1
     /\ workerState = [w \in Workers |-> [type |-> "idle"]]
-    /\ runningTrans = [t \in Transitions |-> "new"] \* check the transitions for the first step
+    /\ transitionStatus = [t \in Transitions |-> "new"] \* check the transitions for the first step
     /\ unsafePrefixes = {<<{0}>>}    \* check the invariant for the initial workerState
     /\ slowPrefixes = {}    \* there are no slow prefixes yet
 
@@ -104,8 +104,8 @@ Init ==
 BorrowTransition(w) ==
     /\ workerState[w].type = "idle"
     /\ \E tr \in Transitions:
-        /\ runningTrans[tr] = "new"
-        /\ runningTrans' = [runningTrans EXCEPT ![tr] = "borrowed"]
+        /\ transitionStatus[tr] = "new"
+        /\ transitionStatus' = [transitionStatus EXCEPT ![tr] = "borrowed"]
         /\ workerState' = [workerState EXCEPT ![w] = [type |-> "exploring", tr |-> tr]]
     /\ UNCHANGED <<depth, runningPrefix, slowPrefixes, unsafePrefixes>>
         
@@ -116,7 +116,7 @@ CheckOneTransition(w) ==
         \* in the context of the prefixes
     /\ \E outcome \in { "enabled", "disabled", "timeout" }:
           \* the SMT solver checked satisfiabilty and returned: sat, unsat, or timeout
-        /\ runningTrans' = [runningTrans EXCEPT ![workerState[w].tr] = outcome]
+        /\ transitionStatus' = [transitionStatus EXCEPT ![workerState[w].tr] = outcome]
         /\ workerState' = [workerState EXCEPT ![w] = [type |-> "idle"]]
         /\  IF outcome = "enabled"
             THEN unsafePrefixes' = unsafePrefixes \cup { Append(runningPrefix, {workerState[w].tr}) } 
@@ -129,22 +129,22 @@ StartProving(w) ==
     /\ \E prefix \in unsafePrefixes:
         /\ workerState' = [workerState EXCEPT ![w] = [type |-> "proving", prefix |-> prefix]]
         /\ unsafePrefixes' = unsafePrefixes \ {prefix}
-    /\ UNCHANGED <<depth, runningPrefix, runningTrans, slowPrefixes>>
+    /\ UNCHANGED <<depth, runningPrefix, transitionStatus, slowPrefixes>>
     
 \* try to prove or disprove the invariant for a given prefix    
 ProveInvariant(w) ==
     /\ workerState[w].type = "proving"
     /\ LET newState ==  
          IF SMT(workerState[w].prefix) = "sat"
-         THEN [type |-> "error"]
+         THEN [type |-> "buggy"]
          ELSE [type |-> "idle"]
        IN
        workerState' = [workerState EXCEPT ![w] = newState]
-    /\ UNCHANGED <<depth, runningPrefix, runningTrans, slowPrefixes, unsafePrefixes>>
+    /\ UNCHANGED <<depth, runningPrefix, transitionStatus, slowPrefixes, unsafePrefixes>>
     
 \* find transitions that timed out and add them to the slow prefixes    
 FindSlowPrefixes ==
-    LET timedOut == {tr \in Transitions: runningTrans[tr] = "timeout"} IN
+    LET timedOut == {tr \in Transitions: transitionStatus[tr] = "timeout"} IN
         IF timedOut = {}
         THEN slowPrefixes
         ELSE slowPrefixes \cup { Append(runningPrefix, {tr}): tr \in timedOut }
@@ -153,15 +153,15 @@ FindSlowPrefixes ==
 IncreaseDepth == 
     /\ depth + 1 <= MAX_DEPTH
         \* there is no deadlock
-    /\ \E tr \in Transitions: runningTrans[tr] = "enabled"
+    /\ \E tr \in Transitions: transitionStatus[tr] = "enabled"
         \* for every transition at the current depth, we know whether it is enabled or disabled
-    /\ \A tr \in Transitions: runningTrans[tr] \in { "enabled", "disabled", "timeout" }
+    /\ \A tr \in Transitions: transitionStatus[tr] \in { "enabled", "disabled", "timeout" }
     /\ slowPrefixes' = FindSlowPrefixes \* postpone slow transitions for future checks
     /\ depth' = depth + 1
-    /\ runningTrans' = [t \in Transitions |-> "new"]
+    /\ transitionStatus' = [t \in Transitions |-> "new"]
     /\ UNCHANGED <<unsafePrefixes, workerState>>
         \* extend the prefix with the enabled transitions
-    /\  LET enabled == {tr \in Transitions: runningTrans[tr] = "enabled"} IN
+    /\  LET enabled == {tr \in Transitions: transitionStatus[tr] = "enabled"} IN
             \* continue exploring the fast enabled transitions
         runningPrefix' = Append(runningPrefix, enabled)
 
@@ -175,8 +175,8 @@ SwitchSlowPrefix ==
         THEN { "disabled", "timeout" }
         ELSE { "enabled", "disabled", "timeout" }
        IN
-       \A tr \in Transitions: runningTrans[tr] \in ToCheck
-    /\ runningTrans' = [t \in Transitions |-> "new"]
+       \A tr \in Transitions: transitionStatus[tr] \in ToCheck
+    /\ transitionStatus' = [t \in Transitions |-> "new"]
     /\ UNCHANGED <<unsafePrefixes, workerState>>
     /\ LET slow == FindSlowPrefixes IN
         /\ slowPrefixes' = slow
@@ -187,26 +187,27 @@ SwitchSlowPrefix ==
     
 \* No progress is possible. This is not a deadlock, as we split the execution space.
 WhenAllDisabledButNotFinished ==
-    /\ \A tr \in Transitions: runningTrans[tr] = "disabled"
-    /\ runningTrans' = [t \in Transitions |-> "new"]
+    /\ \A tr \in Transitions: transitionStatus[tr] = "disabled"
+    /\ transitionStatus' = [t \in Transitions |-> "new"]
     /\ UNCHANGED <<slowPrefixes, unsafePrefixes, workerState>>
     /\ \E oneSlowPrefix \in slowPrefixes:
         /\ runningPrefix' = oneSlowPrefix
         /\ depth' = 1 + Len(oneSlowPrefix)
     
 \* report no error as there all invariants hold true and the maximum depth has been reached
-FinishNoError ==
+FinishBugFree ==
     /\ unsafePrefixes = {}
     /\ slowPrefixes = {}
-    /\ \/ \A tr \in Transitions: runningTrans[tr] = "disabled" 
+    /\ \A w \in Workers: workerState[w].type = "idle"
+    /\ \/ \A tr \in Transitions: transitionStatus[tr] = "disabled" 
        \/ /\ depth = MAX_DEPTH
-          /\ \A tr \in Transitions: runningTrans[tr] \in { "enabled", "disabled" }
-    /\ workerState' = [w \in Workers |-> [type |-> "noerror"]]
-    /\ UNCHANGED <<depth, runningPrefix, runningTrans, slowPrefixes, unsafePrefixes>>
+          /\ \A tr \in Transitions: transitionStatus[tr] \in { "enabled", "disabled" }
+    /\ workerState' = [w \in Workers |-> [type |-> "bugfree"]]
+    /\ UNCHANGED <<depth, runningPrefix, transitionStatus, slowPrefixes, unsafePrefixes>>
 
 \* is the search finished
 Finished ==
-    /\ \A w \in Workers: workerState[w].type \in { "noerror", "error", "deadlock" }
+    /\ \A w \in Workers: workerState[w].type \in { "bugfree", "buggy" }
     /\ UNCHANGED vars
 
 \* The next step of the search
@@ -214,7 +215,7 @@ Next ==
     \/ IncreaseDepth
     \/ SwitchSlowPrefix
     \/ WhenAllDisabledButNotFinished
-    \/ FinishNoError
+    \/ FinishBugFree
     \/ Finished
     \/ \E w \in Workers:
         \/ BorrowTransition(w)
@@ -224,10 +225,10 @@ Next ==
     
 (********************************** PROPERTIES ****************************)
 NeverNoError ==
-    \A w \in Workers: workerState[w].type /= "noerror"
+    \A w \in Workers: workerState[w].type /= "bugfree"
 
 NeverError ==
-    \A w \in Workers: workerState[w].type /= "error"
+    \A w \in Workers: workerState[w].type /= "buggy"
 
 NeverDeadlock ==
     \A w \in Workers: workerState[w].type /= "deadlock"
@@ -237,5 +238,5 @@ NeverParallel ==
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Dec 11 21:39:00 CET 2019 by igor
+\* Last modified Fri Dec 13 14:09:55 CET 2019 by igor
 \* Created Tue Dec 03 12:38:47 CET 2019 by igor
