@@ -7,7 +7,9 @@ import at.forsyte.apalache.tla.bmcmt.CheckerInput
   *
   * @author Igor Konnov
   */
-class ModelCheckerParams(checkerInput: CheckerInput, tuningOptions: Map[String, String]) {
+class ModelCheckerParams(checkerInput: CheckerInput,
+                         tuningOptions: Map[String, String] = Map(),
+                         val debug: Boolean = true) {
   /**
     * A set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
     */

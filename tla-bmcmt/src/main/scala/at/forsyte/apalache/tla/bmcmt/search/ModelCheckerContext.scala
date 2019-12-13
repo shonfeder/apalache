@@ -1,8 +1,11 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
-import at.forsyte.apalache.tla.bmcmt.SymbState
+import java.io.{FileWriter, PrintWriter}
+
+import at.forsyte.apalache.tla.bmcmt.{SolverContext, SymbState, SymbStateDecoder, SymbStateRewriter}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.bmcmt.types.CellT
+import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
+import at.forsyte.apalache.tla.lir.io.UTFPrinter
 
 import scala.collection.immutable.SortedMap
 
@@ -12,7 +15,9 @@ import scala.collection.immutable.SortedMap
   *
   * @author Igor Konnov
   */
-class ModelCheckerContext {
+class ModelCheckerContext(val typeFinder: TypeFinder[CellT],
+                          val solver: SolverContext,
+                          val rewriter: SymbStateRewriter) {
   /**
     * A hyperpath that is collected during the search.
     */
@@ -61,6 +66,22 @@ class ModelCheckerContext {
     stateStack +:= state
     oracleStack +:= oracle
     typesStack +:= types
+  }
+
+  def dumpCounterexample(filename: String): Unit = {
+    val writer = new PrintWriter(new FileWriter(filename, false))
+    for (((state, oracle), i) <- stateStack.reverse.zip(oracleStack.reverse).zipWithIndex) {
+      val decoder = new SymbStateDecoder(solver, rewriter)
+      val transition = oracle.evalPosition(solver, state)
+      writer.println(s"State $i (from transition $transition):")
+      writer.println("--------")
+      val binding = decoder.decodeStateVariables(state)
+      for (name <- binding.keys.toSeq.sorted) { // sort the keys
+        writer.println("%-15s ->  %s".format(name, UTFPrinter.apply(binding(name))))
+      }
+      writer.println("========\n")
+    }
+    writer.close()
   }
 
 }
