@@ -4,7 +4,6 @@ import at.forsyte.apalache.infra.passes.{Pass, PassOptions}
 import at.forsyte.apalache.tla.assignments.ModuleAdapter
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
-import at.forsyte.apalache.tla.bmcmt.search.{BfsStrategy, BfsStrategyStopWatchDecorator, DfsStrategy}
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.NullEx
@@ -65,17 +64,10 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val profile = options.getOrElse("smt", "prof", false)
     val search = options.getOrElse("checker", "search", "dfs")
     val tuning = options.getOrElse("general", "tuning", Map[String, String]())
-    val strategy =
-      if (search == "bfs") {
-        new BfsStrategyStopWatchDecorator(new BfsStrategy(input, stepsBound), filename="bfs.csv")
-      } else {
-        val random = tuning.getOrElse("search.randomDfs", "")
-        new DfsStrategy(input, stepsBound, random.toLowerCase.equals("true"))
-      }
 
     val checker: Checker =
         new ModelChecker(typeFinder, hintsStore, changeListener, exprGradeStore, sourceStore,
-          input, strategy, tuning, debug, profile)
+          input, stepsBound, tuning, debug, profile)
 
     val outcome = checker.run()
     logger.info("The outcome is: " + outcome)

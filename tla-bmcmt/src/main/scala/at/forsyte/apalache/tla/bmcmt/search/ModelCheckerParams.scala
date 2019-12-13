@@ -1,4 +1,4 @@
-package at.forsyte.apalache.tla.bmcmt.mc
+package at.forsyte.apalache.tla.bmcmt.search
 
 /**
   * A collection of model checker parameters that come from user configurations.
@@ -17,5 +17,14 @@ class ModelCheckerParams(tuningOptions: Map[String, String]) {
 
   val invariantTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong
+
+  // does the transition number satisfy the given filter at the given step?
+  def stepMatchesFilter(stepNo: Int, transitionNo: Int): Boolean = {
+    if (stepFilters.size <= stepNo) {
+      true // no filter applied
+    } else {
+      transitionNo.toString.matches("^%s$".format(stepFilters(stepNo)))
+    }
+  }
 
 }

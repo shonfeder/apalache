@@ -447,25 +447,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     }
   }
 
-  /*
-  // this is the old implementation that used uninterpreted functions
-  private def getOrMkInPred(setType: CellT, elemType: CellT): FuncDecl = {
-    val name = s"in_${elemType.signature}_${setType.signature}"
-    val funDecl = funDecls.get(name)
-    if (funDecl.isDefined) {
-      funDecl.get._1
-    } else {
-      val elemSort = getOrMkCellSort(elemType)
-      val setSort = getOrMkCellSort(setType)
-      val newDecl = z3context.mkFuncDecl(name,
-        Array[Sort](elemSort, setSort), z3context.getBoolSort)
-      funDecls += (name -> (newDecl, level))
-      log(s"(declare-fun $name ($elemSort $setSort) Bool)") // log declaration
-      newDecl
-    }
-  }
-  */
-
   private def getInPred(setName: String, setT: CellT, elemName: String, elemT: CellT): Expr = {
     val name = s"in_${elemT.signature}${elemName}_${setT.signature}$setName"
 

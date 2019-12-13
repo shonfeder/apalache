@@ -1,11 +1,11 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import java.io.{FileWriter, PrintWriter, StringWriter}
+
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
-import at.forsyte.apalache.tla.bmcmt.mc.ModelCheckerParams
-import at.forsyte.apalache.tla.bmcmt.rewriter.{ConstSimplifierForSmt, RewriterConfig}
-import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle}
-import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy
-import at.forsyte.apalache.tla.bmcmt.search.SearchStrategy._
+import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle}
+import at.forsyte.apalache.tla.bmcmt.search._
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
 import at.forsyte.apalache.tla.imp.src.SourceStore
@@ -14,11 +14,12 @@ import at.forsyte.apalache.tla.lir.io.UTFPrinter
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.collection.immutable.SortedMap
+import scala.collection.immutable.HashMap
 
 /**
-  * A bounded model checker using SMT. The checker itself does not implement a particular search. Instead,
-  * it queries a search strategy, e.g., DfsStrategy or BfsStrategy.
+  * <p>A bounded model checker using SMT. The checker implements symbolic breadth-first search with splitting.
+  * The TLA+ specification of the search algorithm is available in `./docs/specs/search/ParBMC.tla`.
+  * </p>
   *
   * @author Igor Konnov
   */
@@ -26,7 +27,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
                    formulaHintsStore: FormulaHintsStore,
                    changeListener: ChangeListener,
                    exprGradeStore: ExprGradeStore, sourceStore: SourceStore, checkerInput: CheckerInput,
-                   searchStrategy: SearchStrategy,
+                   stepsBound: Int,
                    tuningOptions: Map[String, String],
                    debug: Boolean = false, profile: Boolean = false)
   extends Checker with LazyLogging {
@@ -35,14 +36,11 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
 
   class CancelSearchException(val outcome: Outcome.Value) extends Exception
 
-  /**
-    * A stack of the symbolic states that might constitute a counterexample (the last state is on top).
-    */
-  private var stack: List[(SymbState, Oracle)] = List()
-  private var typesStack: Seq[SortedMap[String, CellT]] = Seq()
+  private var workerState: WorkerState = IdleState()
+
   private val solverContext: SolverContext = new Z3SolverContext(debug, profile)
-  // TODO: figure out why the preprocessor slows down invariant checking. Most likely, there is a bug.
-  //      new PreproSolverContext(new Z3SolverContext(debug, profile))
+
+  private val context = new ModelCheckerContext()
 
   private val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
   rewriter.formulaHintsStore = formulaHintsStore
@@ -51,9 +49,9 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
   private val mcParams: ModelCheckerParams = new ModelCheckerParams(tuningOptions)
 
   /**
-    * A list of transitions that are enabled at every step
+    * The status of the transitions that have to explored
     */
-  private var enabledList: Seq[Seq[Int]] = Seq()
+  private var transitionStatus: Map[Int, (TlaEx, TransitionStatus)] = Map()
 
   /**
     * A set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
@@ -72,9 +70,13 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     val outcome =
       try {
         val initConstState = initializeConstants(dummyState)
-        stack +:= (initConstState, new MockOracle(0))
-        typesStack +:= typeFinder.getVarTypes // the type of CONSTANTS have been computed already
-        applySearchStrategy()
+        // push state 0 -- the state after initializing the parameters
+        context.push(initConstState, new MockOracle(0), typeFinder.getVarTypes)
+
+        val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+        transitionStatus = HashMap(statuses :_*)
+
+        searchLoop()
       } catch {
         case _: CancelSearchException =>
           Outcome.Error
@@ -120,137 +122,163 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     newState
   }
 
-  private def applySearchStrategy(): Outcome.Value = {
-    searchStrategy.getCommand match {
-      case Finish() => Outcome.NoError // done
-
-      case FinishOnDeadlock() =>
-        logger.error(s"Deadlock detected.")
-        if (solverContext.sat()) {
-          logger.error("Check an execution leading to a deadlock state in counterexample.txt")
-          dumpCounterexample()
-        } else {
-          logger.error("No model found that would describe the deadlock")
-        }
-        Outcome.Deadlock
-
-      case BacktrackOnce() =>
-        rewriter.pop()
-        logger.debug("Backtracking to level %d".format(rewriter.contextLevel))
-        stack = stack.tail
-        typesStack = typesStack.tail
-        searchStrategy.registerResponse(Backtracked())
-        applySearchStrategy()
-
-      case NextStep(stepNo: Int, transitionNos: Seq[Int], popContext: Boolean) =>
-        def filter(trs: Seq[TlaEx]): Seq[(TlaEx, Int)] = {
-          trs.zipWithIndex filter (p => transitionNos.contains(p._2))
-        }
-
-        assert(rewriter.contextLevel == stepNo)
-        val (state, _) = stack.head
-        val types = typesStack.head
-        typeFinder.reset(types) // set the variable type as they should be at this step
-
-        val transitions =
-          if (stepNo == 0) filter(checkerInput.initTransitions) else filter(checkerInput.nextTransitions)
-
-        // make the step
-        val transWithEnabled = findEnabledOrBugs(stepNo, state, transitions.toList)
-        val enabledExists = transWithEnabled.exists(_._2)
-        if (!enabledExists) {
-          // no push here, as the transition is disabled
-          searchStrategy.registerResponse(SearchStrategy.NextStepDisabled())
-        } else {
-          rewriter.push() // this is needed for backtracking, LEVEL + 1
-          val result = applyEnabled(stepNo, state, transWithEnabled)
-          assert(result.isDefined)
-          searchStrategy.registerResponse(SearchStrategy.NextStepFired())
-        }
-
-        applySearchStrategy() // next step
-    }
-  }
-
-  private def findEnabledOrBugs(stepNo: Int, startingState: SymbState,
-                                transitionsAndNos: List[(TlaEx, Int)]): List[((TlaEx, Int), Boolean)] = {
-    // find all the feasible transitions and check the invariant for each transition
-    logger.info("Step %d, level %d: checking if %d transition(s) are enabled and violate the invariant"
-      .format(stepNo, rewriter.contextLevel, transitionsAndNos.length))
-
-    def filterEnabled(state: SymbState, ts: List[(TlaEx, Int)]): List[((TlaEx, Int), Boolean)] = {
-      ts match {
-        case List() => List()
-
-        case tranWithNo :: tail =>
-          val (transition, transitionNo) = tranWithNo
-          if (!stepMatchesFilter(stepNo, transitionNo)) {
-            filterEnabled(state, tail) // just skip this transition
-          } else {
-            val erased = state.setBinding(forgetPrimed(state.binding))
-            rewriter.push() // LEVEL + 1
-            val (nextState, isEnabled) = applyTransition(stepNo, erased, transition, transitionNo, checkForErrors = true)
-            rewriter.exprCache.disposeActionLevel() // leave only the constants
-            rewriter.pop() // forget all the constraints that were generated by the transition, LEVEL + 0
-            (tranWithNo, isEnabled) +: filterEnabled(state, tail)
-          }
+  /**
+    * The search is running in the loop until the worker has reached a final state.
+    *
+    * @return the outcome of the search
+    */
+  private def searchLoop(): Outcome.Value = {
+    // this is the choice of actions
+    var allFinished = false
+    while (!workerState.isFinished) {
+      // try to apply one of the actions, similar to what we see in the TLA+ spec
+      val appliedAction = borrowTransition() || checkOneTransition() || increaseDepth() || finishBugFree()
+      if (!appliedAction) {
+        // no action applicable, the worker waits and then continues
+        Thread.sleep(100)
       }
     }
 
-    val savedVarTypes = rewriter.typeFinder.getVarTypes // save the variable types before applying the transitions
-    val enabled = filterEnabled(startingState, transitionsAndNos)
-    // restore the variable types to apply the enabled transitions once again
-    rewriter.typeFinder.reset(savedVarTypes)
-    enabled
+    workerState match {
+      case BugFreeState() => Outcome.NoError
+      case BuggyState() => Outcome.Error
+      case _ => throw new CheckerException("A worker in an unexpected state upon finishing: " + workerState, NullEx)
+    }
   }
 
+  /**
+    * Try to borrow a transition for feasibility checking.
+    */
+  private def borrowTransition(): Boolean = {
+    // TODO: place a lock around transitionStatus
+    if (workerState != IdleState()) {
+      return false
+    }
+    transitionStatus.find { _._2._2 == NewTransition() } match {
+      case Some((no, (ex, _))) =>
+        transitionStatus += (no -> (ex, BorrowedTransition()))
+        workerState = ExploringState(no, ex)
+        true
+
+      case None => false
+    }
+  }
+
+  private def checkOneTransition(): Boolean = {
+    workerState match {
+      case ExploringState(trNo, trEx) if !mcParams.stepMatchesFilter(context.stepNo, trNo) =>
+        // the transition does not match the filter, skip
+        transitionStatus += (trNo -> (trEx, DisabledTransition()))
+        workerState = IdleState()
+        true
+
+      case ExploringState(trNo, trEx) =>
+        // check the borrowed transition
+        val state = context.state
+        typeFinder.reset(context.types) // set the variable type as they should be at this step
+        val erased = state.setBinding(forgetPrimed(state.binding))
+        rewriter.push() // LEVEL + 1
+        val (_, isEnabled) = applyOneTransition(context.stepNo, erased, trEx, trNo, checkForErrors = true)
+        rewriter.exprCache.disposeActionLevel() // leave only the constants
+        rewriter.pop() // forget all the constraints that were generated by the transition, LEVEL + 0
+        typeFinder.reset(context.types)
+        // TODO: place a lock around transitionStatus
+        // TODO: handle timeouts!
+        val newStatus = if (isEnabled) EnabledTransition() else DisabledTransition()
+        transitionStatus += (trNo -> (trEx, newStatus))
+        workerState = IdleState()
+        // TODO: schedule invariant checking (happening in applyTransition now...)
+        true // the action ran successfully
+
+      case _ => false
+    }
+  }
+
+  private def increaseDepth(): Boolean = {
+    val reachedCeiling = context.stepNo >= stepsBound
+    val enabled = transitionStatus.collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
+    val allUnexplored = transitionStatus forall { _._2._2.isExplored }
+    if (reachedCeiling || enabled.isEmpty || !allUnexplored) {
+      return false
+    }
+    // TODO: handle slow prefixes
+    // add next transitions to explore
+    val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+    transitionStatus = HashMap(statuses :_*)
+    // compute the result
+    val state = context.state
+    typeFinder.reset(context.types) // set the variable type as they should be at this step
+    val stateWithNoPrimes = state.setBinding(forgetPrimed(state.binding))
+    val result = applyEnabled(context.stepNo, stateWithNoPrimes, enabled)
+    // applyEnabled has pushed the state and types on the stack
+    assert(result.isDefined)
+    true
+  }
+
+  private def finishBugFree(): Boolean = {
+    val allIdle = workerState == IdleState()
+    val allDisabled = transitionStatus.valuesIterator.forall(_._2 == DisabledTransition())
+    val allEnabledOrDisabled =
+      transitionStatus.valuesIterator.forall {
+        case (_, EnabledTransition()) | (_, DisabledTransition()) => true
+        case _ => false
+      }
+    // TODO: check unsafePrefixes
+    // TODO: check slowPrefixes
+    if (allIdle && (allDisabled || (allEnabledOrDisabled && context.stepNo == stepsBound))) {
+      workerState = BugFreeState()
+      true
+    } else {
+      false
+    }
+  }
+
+  // TODO: add StartProving
+  // TODO: add ProveInvariant
+  // TODO: add FindSlowPrefixes
+  // TODO: add WhenAllDisabledButNotFinished
+
   private def applyEnabled(stepNo: Int, startingState: SymbState,
-                           transWithEnabled: List[((TlaEx, Int), Boolean)]): Option[SymbState] = {
+                           transitionsWithIndex: List[(TlaEx, Int)]): Option[SymbState] = {
     // second, apply the enabled transitions and collect their effects
     logger.info("Step %d, level %d: collecting %d enabled transition(s)"
-      .format(stepNo, rewriter.contextLevel, transWithEnabled.count(_._2)))
-    assert(transWithEnabled.nonEmpty)
-    val simplifier = new ConstSimplifierForSmt()
+      .format(stepNo, rewriter.contextLevel, transitionsWithIndex.size))
+    assert(transitionsWithIndex.nonEmpty)
 
-    def applyTrans(state: SymbState, ts: List[((TlaEx, Int), Boolean)]): List[SymbState] =
+    def applyTrans(state: SymbState, ts: List[(TlaEx, Int)]): List[SymbState] =
       ts match {
         case List() =>
           List(state) // the final state may contain additional cells, add it
 
-        case (tranWithNo, isEnabled) :: tail =>
-          if (!isEnabled) {
-            applyTrans(state, tail) // ignore the disabled transition, without any rewriting
-          } else {
-            val (transition, transitionNo) = tranWithNo
-            val erased = state.setBinding(forgetPrimed(state.binding))
-            // note that the constraints are added at the current level, without an additional push
-            var (nextState, _) = applyTransition(stepNo, erased, transition, transitionNo, checkForErrors = false)
-            rewriter.exprCache.disposeActionLevel() // leave only the constants
-            // collect the variables of the enabled transition
-            nextState +: applyTrans(nextState, tail)
-          }
+        case (transition, transitionNo) :: tail =>
+          val erased = state.setBinding(forgetPrimed(state.binding))
+          // note that the constraints are added at the current level, without an additional push
+          val (nextState, _) = applyOneTransition(stepNo, erased, transition, transitionNo, checkForErrors = false)
+          rewriter.exprCache.disposeActionLevel() // leave only the constants
+          // collect the variables of the enabled transition
+          nextState +: applyTrans(nextState, tail)
       }
 
-    val nextAndLastStates = applyTrans(startingState, transWithEnabled)
-    val lastState = nextAndLastStates.last
-    val nextStates = nextAndLastStates.slice(0, nextAndLastStates.length - 1)
+    val producedStates = applyTrans(startingState, transitionsWithIndex)
+    // the last state contains the latest arena
+    val lastState = producedStates.last
+    val statesAfterTransitions = producedStates.slice(0, producedStates.length - 1)
 
-    val picker = new CherryPick(rewriter)
     // pick an index j \in { 0..k } of the fired transition
-    val (oracleState, oracle) = picker.oracleFactory.newDefaultOracle(lastState, nextStates.length)
+    val picker = new CherryPick(rewriter)
+    val (oracleState, oracle) = picker.oracleFactory.newDefaultOracle(lastState, statesAfterTransitions.length)
 
-    if (nextStates.isEmpty) {
+    if (statesAfterTransitions.isEmpty) {
       throw new IllegalArgumentException("enabled must be non-empty")
-    } else if (nextStates.lengthCompare(1) == 0) {
+    } else if (statesAfterTransitions.lengthCompare(1) == 0) {
       val resultingState = oracleState.setBinding(shiftBinding(lastState.binding, constants))
       solverContext.assertGroundExpr(lastState.ex)
-      stack +:= (resultingState, oracle) // in this case, oracle is always zero
       shiftTypes(constants)
-      typesStack = typeFinder.getVarTypes +: typesStack
+      context.push(resultingState, oracle, typeFinder.getVarTypes)
       Some(resultingState)
     } else {
       // if oracle = i, then the ith transition is enabled
-      solverContext.assertGroundExpr(oracle.caseAssertions(oracleState, nextStates.map(_.ex)))
+      solverContext.assertGroundExpr(oracle.caseAssertions(oracleState, statesAfterTransitions.map(_.ex)))
 
       // glue the computed states S_0, ..., S_k together:
       // for every variable x', pick c_x from { S_1[x'], ..., S_k[x'] }
@@ -258,11 +286,14 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       // Then, the final state binds x' -> c_x for every x' \in Vars'
       def getAssignedVars(st: SymbState) = forgetNonPrimed(st.binding, Set()).keySet
 
-      val primedVars = getAssignedVars(nextStates.head) // only VARIABLES, not CONSTANTS
+      val primedVars = getAssignedVars(statesAfterTransitions.head) // only VARIABLES, not CONSTANTS
       var finalState = oracleState
-      if (nextStates.exists(getAssignedVars(_) != primedVars)) {
-        val index = nextStates.indexWhere(getAssignedVars(_) != primedVars)
-        val otherSet = getAssignedVars(nextStates(index))
+      if (statesAfterTransitions.exists(getAssignedVars(_) != primedVars)) {
+        // TODO: we should not throw an exception here, but ignore the transition that does not have all assignments.
+        // The reason is that the assignment solver guarantees that every transition has the assignments.
+        // The only case when this situation may happen is when the rewriter uses short-circuiting logic.
+        val index = statesAfterTransitions.indexWhere(getAssignedVars(_) != primedVars)
+        val otherSet = getAssignedVars(statesAfterTransitions(index))
         val diff = otherSet.union(primedVars).diff(otherSet.intersect(primedVars))
         val msg =
           "[Step %d] Next states 0 and %d disagree on the set of assigned variables: %s"
@@ -271,7 +302,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       }
 
       def pickVar(x: String): ArenaCell = {
-        val toPickFrom = nextStates map (_.binding(x))
+        val toPickFrom = statesAfterTransitions map (_.binding(x))
         finalState = picker.pickByOracle(finalState,
           oracle, toPickFrom, finalState.arena.cellFalse().toNameEx) // no else case
         finalState.asCell
@@ -286,19 +317,18 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       // finally, shift the primed variables to non-primed
       finalState = finalState.setBinding(shiftBinding(finalState.binding, constants))
       // that is the result of this step
-      stack +:= (finalState, oracle)
-      // here we save the transition index, not the oracle, which will be shown to the user
       shiftTypes(constants)
-      typesStack = typeFinder.getVarTypes +: typesStack
+      // here we save the transition index, not the oracle, which will be shown to the user
+      context.push(finalState, oracle, typeFinder.getVarTypes)
       Some(finalState)
     }
   }
 
   // This method adds constraints right in the current context, without doing push
-  private def applyTransition(stepNo: Int, state: SymbState, transition: TlaEx,
+  private def applyOneTransition(stepNo: Int, state: SymbState, transition: TlaEx,
                               transitionNo: Int, checkForErrors: Boolean): (SymbState, Boolean) = {
-    logger.debug("Step #%d, transition #%d, SMT context level %d."
-      .format(stepNo, transitionNo, rewriter.contextLevel))
+    logger.debug("Step #%d, transition #%d, SMT context level %d, checking error %b."
+      .format(stepNo, transitionNo, rewriter.contextLevel, checkForErrors))
     logger.debug("Finding types of the variables...")
     checkTypes(transition)
     solverContext.log("; ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d {"
@@ -335,6 +365,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
       logger.debug("Checking transition feasibility.")
       solverContext.satOrTimeout(mcParams.transitionTimeout) match {
         case Some(true) =>
+          // TODO: this should be a separate step
           // check the invariant as soon as one transition has been applied
           checkAllInvariants(stepNo, transitionNo, nextState)
           // and then forget all these constraints!
@@ -404,7 +435,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
         case Some(true) =>
           // introduce a dummy oracle to hold the transition index, we need it for the counterexample
           val oracle = new MockOracle(transitionNo)
-          stack = (notInvState, oracle) +: stack
+          context.push(notInvState, oracle, typeFinder.getVarTypes)
           val filename = dumpCounterexample()
           logger.error(s"Invariant is violated at depth $stepNo. Check the counterexample in $filename")
           if (debug) {
@@ -427,10 +458,11 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     }
   }
 
+  // TODO: move to ModelCheckerContext
   private def dumpCounterexample(): String = {
     val filename = "counterexample.txt"
     val writer = new PrintWriter(new FileWriter(filename, false))
-    for (((state, oracle), i) <- stack.reverse.zipWithIndex) {
+    for (((state, oracle), i) <- context.stateStack.reverse.zip(context.oracleStack.reverse).zipWithIndex) {
       val decoder = new SymbStateDecoder(solverContext, rewriter)
       val transition = oracle.evalPosition(solverContext, state)
       writer.println(s"State $i (from transition $transition):")
@@ -503,17 +535,7 @@ class ModelChecker(typeFinder: TypeFinder[CellT],
     binding.filter(p => p._1.endsWith("'") || constants.contains(p._1))
   }
 
-  // does the transition number satisfy the given filter at the given step?
-  private def stepMatchesFilter(stepNo: Int, transitionNo: Int): Boolean = {
-    if (mcParams.stepFilters.size <= stepNo) {
-      true // no filter applied
-    } else {
-      transitionNo.toString.matches("^%s$".format(mcParams.stepFilters(stepNo)))
-    }
-  }
-
   private def printRewriterSourceLoc(): Unit = {
-    //    def getSourceLocation(ex: TlaEx) = sourceStore.find(ex.ID)
     def getSourceLocation(ex: TlaEx) = {
       val sourceLocator: SourceLocator = SourceLocator(
         sourceStore.makeSourceMap,
