@@ -44,8 +44,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val nextTrans = List(mkAssign("x", 2))
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List.empty)
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 0, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 0, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -58,8 +57,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List.empty)
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 0, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 0, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -71,8 +69,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List.empty)
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 0, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 0, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -85,8 +82,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List.empty)
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 1, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 1, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -108,8 +104,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // We only check that the checker works in presence of hints.
     hintsStore.store.put(nextTrans.head.ID, FormulaHintsStore.HighAnd())
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 1, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 1, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -131,8 +126,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
 
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 2, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 2, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -152,8 +146,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
 
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 2, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 2, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -169,8 +162,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List())
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 1, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 1, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -183,8 +175,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List())
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -200,8 +191,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List())
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -216,8 +206,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -233,8 +222,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
     val tuning = Map("search.invariant.learnFromUnsat" -> "true")
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, tuning, false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, tuning, false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -250,8 +238,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
     val tuning = Map("search.invariant.split" -> "false")
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, tuning, false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, tuning, false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -266,8 +253,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -284,8 +270,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 3, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 3, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -302,8 +287,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 2, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 2, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -320,8 +304,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // initialize the model checker
     // We require the invariant to be checked only after the second step. So we will miss invariant violation.
     val tuning = Map("search.invariantFilter" -> "2")
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, tuning, false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, tuning, false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -337,8 +320,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List())
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 3, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 3, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -385,8 +367,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, List(init), List(next1, next2), None, List((inv, tla.not(inv))))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 2, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 2, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -403,8 +384,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List())
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((tla.not(notInv), notInv)))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput, new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -430,8 +410,8 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val dummyModule = new TlaModule("root", List(TlaConstDecl("N"), TlaVarDecl("x")))
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, Some(cInit), List((tla.not(notInv), notInv)))
     // initialize the model checker
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, Map(), false))
+    val checker = new ModelChecker(checkerInput,
+      new ModelCheckerParams(checkerInput, stepsBound = 10, Map(), false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -449,26 +429,10 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // initialize the model checker
     val filter = "0,0,0,0,0,0,0,0,0,0,0" // execute initTrans once and trans1 10 times
     val tuning = Map("search.transitionFilter" -> filter)
-    val checker = new ModelChecker(context, changeListener, sourceStore, checkerInput,
-      stepsBound = 10, new ModelCheckerParams(checkerInput, tuning, false))
+    val checker = new ModelChecker(checkerInput,
+      new ModelCheckerParams(checkerInput, stepsBound = 10, tuning, false), context, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
-  }
-
-  ////////////////////////////////////////////////////////////////////
-  // copied from TestSanyImporter
-  private def expectSingleModule(expectedRootName: String, rootName: String,
-                                 modules: Map[String, TlaModule]): TlaModule = {
-    assert(expectedRootName == rootName)
-    assert(1 <= modules.size)
-    val root = modules.get(rootName)
-    root match {
-      case Some(mod) =>
-        mod
-
-      case None =>
-        fail("Module " + rootName + " not found")
-    }
   }
 
   private def mkAssign(name: String, value: Int) =

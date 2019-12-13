@@ -8,6 +8,7 @@ import at.forsyte.apalache.tla.bmcmt.CheckerInput
   * @author Igor Konnov
   */
 class ModelCheckerParams(checkerInput: CheckerInput,
+                         val stepsBound: Int,
                          tuningOptions: Map[String, String] = Map(),
                          val debug: Boolean = true) {
   /**

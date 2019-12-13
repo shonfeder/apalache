@@ -73,10 +73,10 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     rewriter.config = RewriterConfig(tuning)
 
     val context = new ModelCheckerContext(typeFinder, solverContext, rewriter)
-    val params = new ModelCheckerParams(input, tuning, debug)
+    val params = new ModelCheckerParams(input, stepsBound, tuning, debug)
 
     val checker: Checker =
-        new ModelChecker(context, changeListener, sourceStore, input, stepsBound, params)
+        new ModelChecker(input, params, context, changeListener, sourceStore)
 
     val outcome = checker.run()
     logger.info("The outcome is: " + outcome)

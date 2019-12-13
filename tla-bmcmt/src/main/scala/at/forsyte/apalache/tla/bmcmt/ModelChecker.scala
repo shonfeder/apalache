@@ -20,12 +20,11 @@ import scala.collection.immutable.HashMap
   *
   * @author Igor Konnov
   */
-class ModelChecker(context: ModelCheckerContext,
+class ModelChecker(checkerInput: CheckerInput,
+                   params: ModelCheckerParams,
+                   context: ModelCheckerContext,
                    changeListener: ChangeListener,
-                   sourceStore: SourceStore,
-                   checkerInput: CheckerInput,
-                   stepsBound: Int,
-                   params: ModelCheckerParams)
+                   sourceStore: SourceStore)
   extends Checker with LazyLogging {
 
   import Checker._
@@ -176,7 +175,7 @@ class ModelChecker(context: ModelCheckerContext,
   }
 
   private def increaseDepth(): Boolean = {
-    val reachedCeiling = context.stepNo >= stepsBound
+    val reachedCeiling = context.stepNo >= params.stepsBound
     val enabled = transitionStatus.collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
     val allUnexplored = transitionStatus forall { _._2._2.isExplored }
     if (reachedCeiling || enabled.isEmpty || !allUnexplored) {
@@ -206,7 +205,7 @@ class ModelChecker(context: ModelCheckerContext,
       }
     // TODO: check unsafePrefixes
     // TODO: check slowPrefixes
-    if (allIdle && (allDisabled || (allEnabledOrDisabled && context.stepNo == stepsBound))) {
+    if (allIdle && (allDisabled || (allEnabledOrDisabled && context.stepNo == params.stepsBound))) {
       workerState = BugFreeState()
       true
     } else {
