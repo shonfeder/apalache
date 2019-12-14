@@ -30,7 +30,7 @@ import scala.collection.immutable.{Map, SortedMap}
   * @author Igor Konnov
   */
 @Singleton
-class TrivialTypeFinder extends TypeFinder[CellT] with TransformationListener {
+class TrivialTypeFinder extends TypeFinder[CellT] with TransformationListener with Serializable {
   private var varTypes: SortedMap[String, CellT] = SortedMap()
   private var typeAnnotations: Map[UID, CellT] = Map()
   private var errors: Seq[TypeInferenceError] = Seq()

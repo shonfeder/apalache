@@ -18,7 +18,7 @@ import scala.collection.immutable.SortedMap
   */
 class ModelCheckerContext(val typeFinder: TypeFinder[CellT],
                           val solver: SolverContext,
-                          val rewriter: SymbStateRewriter) {
+                          val rewriter: SymbStateRewriter) extends Serializable {
   /**
     * A hyperpath that is collected during the search.
     */

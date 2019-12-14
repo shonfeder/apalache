@@ -5,7 +5,7 @@ package at.forsyte.apalache.tla.bmcmt.rewriter
   *
   * @author Igor Konnov
   */
-class RewriterConfig {
+class RewriterConfig extends Serializable {
   /**
     * If true, translate 'or' and 'and' into 'if-then-else'.
     */

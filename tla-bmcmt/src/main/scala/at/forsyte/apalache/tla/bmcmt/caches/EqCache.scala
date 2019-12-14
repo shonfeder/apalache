@@ -24,7 +24,7 @@ object EqCache {
   *
   * @author Igor Konnov
   */
-class EqCache(val falseConst: TlaEx, val trueConst: TlaEx) extends StackableContext {
+class EqCache(val falseConst: TlaEx, val trueConst: TlaEx) extends StackableContext with Serializable {
   /**
     * The current context level, see StackableContext.
     */

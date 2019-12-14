@@ -14,7 +14,7 @@ import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
   *
   * @author Igor Konnov
   */
-class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableContext {
+class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableContext with Serializable {
   type SourceT = (String, Theory)
   type TargetT = String
 

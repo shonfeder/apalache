@@ -12,7 +12,7 @@ import at.forsyte.apalache.tla.lir.convenience.tla
   * @author Igor Konnov
   */
 class IntRangeCache(solverContext: SolverContext, intValueCache: IntValueCache)
-  extends AbstractCache[Arena, (Int, Int), ArenaCell] {
+  extends AbstractCache[Arena, (Int, Int), ArenaCell] with Serializable {
 
   /**
     * Create a set a..b.

@@ -34,7 +34,8 @@ import scala.collection.mutable
   */
 class SymbStateRewriterImpl(val solverContext: SolverContext,
                             val typeFinder: TypeFinder[CellT],
-                            val exprGradeStore: ExprGradeStore = new ExprGradeStoreImpl()) extends SymbStateRewriter {
+                            val exprGradeStore: ExprGradeStore = new ExprGradeStoreImpl())
+    extends SymbStateRewriter with Serializable {
   /**
     * We collect the sequence of expressions in the rewriting process,
     * in order to diagnose an error when an exception occurs. The latest expression in on top.
@@ -85,6 +86,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
   val exprCache = new ExprCache(exprGradeStore)
 
   private val coercion = new CoercionWithCache(this)
+  @transient
   private val substRule = new SubstRule(this)
 
   /**
@@ -112,12 +114,14 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
   /**
     * Statistics listener
     */
+  @transient
   val statListener: RuleStatListener = new RuleStatListener()
   solverContext.setSmtListener(statListener) // subscribe to the SMT solver
 
   // A nice way to guess the candidate rules by looking at the expression key.
   // We use simple expressions to generate the keys.
   // For each key, there is a short list of rules that may be applicable.
+  @transient
   private val ruleLookupTable: Map[String, List[RewritingRule]] = Map(
     // the order is only important to improve readability
 
