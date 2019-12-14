@@ -12,7 +12,7 @@ object ArenaCell {
   *
   * @author Igor Konnov
   */
-class ArenaCell(val id: Int, val cellType: CellT) extends Comparable[ArenaCell] {
+class ArenaCell(val id: Int, val cellType: CellT) extends Comparable[ArenaCell] with Serializable {
   override def toString: String = {
     "%s%d".format(CellTheory().namePrefix, id)
   }

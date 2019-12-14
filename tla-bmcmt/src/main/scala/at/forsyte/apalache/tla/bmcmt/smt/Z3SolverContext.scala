@@ -304,16 +304,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     }
   }
 
-  private def getCellFun(cellName: String): FuncDecl = {
-    val funName = s"fun$cellName"
-    val funDecl = funDecls.get(funName)
-    if (funDecl.isDefined) {
-      funDecl.get._1
-    } else {
-      throw new SmtEncodingException(s"A function associated with cell $cellName is not declared", NullEx)
-    }
-  }
-
   /**
     * Push SMT context
     */

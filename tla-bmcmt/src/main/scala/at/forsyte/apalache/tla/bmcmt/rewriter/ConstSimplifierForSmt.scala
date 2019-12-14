@@ -160,9 +160,6 @@ class ConstSimplifierForSmt {
     case OperEx(TlaBoolOper.not, OperEx(TlaOper.ne, lhs, rhs)) =>
       OperEx(TlaOper.eq, lhs, rhs)
 
-    case OperEx(TlaBoolOper.not, OperEx(TlaOper.eq, lhs, rhs)) =>
-      OperEx(TlaOper.ne, lhs, rhs)
-
     case OperEx(TlaBoolOper.implies, ValEx(TlaBool(left)), ValEx(TlaBool(right))) =>
       ValEx(TlaBool(!left || right))
 

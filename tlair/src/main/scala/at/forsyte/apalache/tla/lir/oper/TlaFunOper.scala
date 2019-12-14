@@ -10,22 +10,23 @@ abstract class TlaFunOper extends TlaOper {
 }
 
 object TlaFunOper {
+
   /**
     * A function constructor like the one for the records: [ k_1 |-> v_1, ..., k_n |-> v_n ].
     * The order of the arguments is: (k_1, v_1, ..., k_n, v_n).
     * Note that in case of records, k_1, ..., k_n are strings, that is, ValEx(TlaStr(...)), not NameEx.
     */
-  val enum = new TlaFunOper {
+  object enum extends TlaFunOper {
     override def arity: OperArity = new OperArity( k => k >= 2 && k % 2 == 0 )
     override val name: String = "fun-enum"
     override val precedence: (Int, Int) = (16, 16) // as the function application
   }
 
   /**
-    Define a tuple by listing its elements, i.e., < e_1, ..., e_k >.
+  Define a tuple by listing its elements, i.e., < e_1, ..., e_k >.
     One can use enum to achieve the same effect.
     */
-  val tuple = new TlaFunOper {
+  object tuple extends TlaFunOper {
     override val arity = AnyArity()
     override val name = "<<...>>"
     override val precedence: (Int, Int) = (16, 16) // as the function application
@@ -46,14 +47,14 @@ object TlaFunOper {
     * A function application, e.g., f[e].
     * The order of the arguments is: (f, e).
     */
-  val app = new TlaFunOper {
+  object app extends TlaFunOper {
     override val arity: OperArity = FixedArity(2)
     override val name: String = "fun-app"
     override val precedence: (Int, Int) = (16, 16)
   }
 
   /** DOMAIN f */
-  val domain = new TlaFunOper {
+  object domain extends TlaFunOper {
     override val arity: OperArity = FixedArity(1)
     override val name: String = "DOMAIN"
     override val precedence: (Int, Int) = (9, 9)
@@ -69,7 +70,7 @@ object TlaFunOper {
     * The arguments are always an odd-length list
     * of the following structure: body, x_1, R_1, ..., x_k, R_k.
     */
-  val funDef = new TlaFunOper {
+  object funDef extends TlaFunOper {
     override def arity: OperArity = new OperArity( k => k >= 3 && k % 2 == 1 )
     override val name: String = "fun-def"
     override val precedence: (Int, Int) = (16, 16) // as the function application
@@ -84,7 +85,7 @@ object TlaFunOper {
     * tuples of arbitrary length. This is the design choice that comes from SANY.
     * When you write f[<<1>>] in TLA+, expect to deal with (except (tuple (tuple 1))) here.
     */
-  val except = new TlaFunOper {
+  object except extends TlaFunOper {
     override def arity: OperArity = new OperArity( k => k >= 3 && k % 2 == 1 )
     override val name: String = "EXCEPT"
     override val precedence: (Int, Int) = (16, 16) // as the function application

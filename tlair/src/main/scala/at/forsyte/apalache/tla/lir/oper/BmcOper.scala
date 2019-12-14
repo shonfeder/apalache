@@ -15,7 +15,7 @@ object BmcOper {
   /**
     * A type annotation of an expression with another expression that encodes a type.
     */
-  val withType: BmcOper = new BmcOper {
+  object withType extends BmcOper {
     override def name: String = "BMC!<:"
     override def arity: OperArity = FixedArity(2)
     override val precedence: (Int, Int) = (100, 100)

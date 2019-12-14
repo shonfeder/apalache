@@ -201,16 +201,6 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
   override def introIntConst(): String = context.introIntConst()
 
   /**
-    * Introduce an uninterpreted function associated with a cell.
-    *
-    * @param domainType a type of the domain
-    * @param resultType a type of the result
-    * @return the name of the new function (declared in SMT)
-    */
-  override def declareCellFun(cellName: String, domainType: types.CellT, resultType: types.CellT): Unit =
-    context.declareCellFun(cellName, domainType, resultType)
-
-  /**
     * Write a message to the log file. This is helpful to debug the SMT encoding.
     *
     * @param message message text, call-by-name

@@ -69,15 +69,6 @@ trait SolverContext extends StackableContext {
     */
   def introIntConst(): String
 
-  /**
-    * Introduce an uninterpreted function associated with a cell.
-    *
-    * @param domainType a type of the domain
-    * @param resultType a type of the result
-    * @return the name of the new function (declared in SMT)
-    */
-  def declareCellFun(cellName: String, domainType: CellT, resultType: CellT): Unit
-
     /**
     * Assert that a Boolean TLA+ expression holds true.
     *
