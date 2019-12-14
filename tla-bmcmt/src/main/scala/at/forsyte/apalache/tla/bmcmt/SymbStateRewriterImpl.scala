@@ -6,6 +6,7 @@ import at.forsyte.apalache.tla.bmcmt.caches._
 import at.forsyte.apalache.tla.bmcmt.profiler.RuleStatListener
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
 import at.forsyte.apalache.tla.bmcmt.rules._
+import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla

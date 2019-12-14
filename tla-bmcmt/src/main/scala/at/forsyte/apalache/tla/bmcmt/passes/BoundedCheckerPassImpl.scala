@@ -6,6 +6,7 @@ import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
 import at.forsyte.apalache.tla.bmcmt.search._
+import at.forsyte.apalache.tla.bmcmt.smt.{SolverContext, Z3SolverContext}
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.NullEx

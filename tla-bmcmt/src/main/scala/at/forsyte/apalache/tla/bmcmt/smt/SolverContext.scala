@@ -1,7 +1,8 @@
-package at.forsyte.apalache.tla.bmcmt
+package at.forsyte.apalache.tla.bmcmt.smt
 
 import at.forsyte.apalache.tla.bmcmt.profiler.SmtListener
 import at.forsyte.apalache.tla.bmcmt.types.CellT
+import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, StackableContext}
 import at.forsyte.apalache.tla.lir.TlaEx
 
 /**

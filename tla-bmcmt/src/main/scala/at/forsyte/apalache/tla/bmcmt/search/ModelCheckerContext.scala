@@ -2,8 +2,9 @@ package at.forsyte.apalache.tla.bmcmt.search
 
 import java.io.{FileWriter, PrintWriter}
 
-import at.forsyte.apalache.tla.bmcmt.{SolverContext, SymbState, SymbStateDecoder, SymbStateRewriter}
+import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
+import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
 

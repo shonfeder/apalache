@@ -1,7 +1,8 @@
-package at.forsyte.apalache.tla.bmcmt
+package at.forsyte.apalache.tla.bmcmt.smt
 
 import java.io.{File, PrintWriter}
 
+import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.profiler.{IdleSmtListener, SmtListener}
 import at.forsyte.apalache.tla.bmcmt.rewriter.ConstSimplifierForSmt
 import at.forsyte.apalache.tla.bmcmt.types.{BoolT, CellT, FailPredT, IntT}
