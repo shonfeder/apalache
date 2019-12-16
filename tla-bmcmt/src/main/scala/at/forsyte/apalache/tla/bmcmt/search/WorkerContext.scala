@@ -1,10 +1,10 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
-import java.io.{FileWriter, PrintWriter}
+import java.io._
 
 import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
+import at.forsyte.apalache.tla.bmcmt.smt.{RecordingZ3SolverContext, SolverContext}
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
 
@@ -16,13 +16,15 @@ import scala.collection.immutable.SortedMap
   *
   * @author Igor Konnov
   */
-class ModelCheckerContext(val typeFinder: TypeFinder[CellT],
-                          val solver: SolverContext,
-                          val rewriter: SymbStateRewriter) extends Serializable {
+class WorkerContext(var rank: Int,
+                    val typeFinder: TypeFinder[CellT],
+                    val solver: SolverContext,
+                    val rewriter: SymbStateRewriter,
+                    initNode: HyperTree) extends Serializable {
   /**
-    * A hyperpath that is collected during the search.
+    * The position in the search tree that the worker is exploring.
     */
-  var runningPath: HyperPath = Seq()
+  var activeNode: HyperTree = initNode
 
   /**
     * A stack of the symbolic states that might constitute a counterexample (the last state is on top).
@@ -69,6 +71,19 @@ class ModelCheckerContext(val typeFinder: TypeFinder[CellT],
     typesStack +:= types
   }
 
+  def saveToFile(file: File): Unit = {
+    val fos = new FileOutputStream(file, false)
+    val oos = new ObjectOutputStream(fos)
+    try {
+      oos.writeObject(WorkerContext.getClass.getName)
+      oos.writeObject(this)
+      oos.flush()
+    } finally {
+      oos.close()
+      fos.close()
+    }
+  }
+
   def dumpCounterexample(filename: String): Unit = {
     val writer = new PrintWriter(new FileWriter(filename, false))
     for (((state, oracle), i) <- stateStack.reverse.zip(oracleStack.reverse).zipWithIndex) {
@@ -85,4 +100,25 @@ class ModelCheckerContext(val typeFinder: TypeFinder[CellT],
     writer.close()
   }
 
+}
+
+object WorkerContext {
+  def load(file: File, newRank: Int): WorkerContext = {
+    val fis = new FileInputStream(file)
+    val ois = new ObjectInputStream(fis)
+    try {
+      val className = ois.readObject().asInstanceOf[String]
+      if (className != WorkerContext.getClass.getName) {
+        throw new IOException("Corrupted serialized file: " + file)
+      } else {
+        val context = ois.readObject().asInstanceOf[WorkerContext]
+//        context.solver.asInstanceOf[RecordingZ3SolverContext].replayLog()
+        context.rank = newRank
+        context
+      }
+    } finally {
+      ois.close()
+      fis.close()
+    }
+  }
 }

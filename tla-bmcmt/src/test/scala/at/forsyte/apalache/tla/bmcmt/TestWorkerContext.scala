@@ -2,24 +2,27 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
-import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, ExprGradeStoreImpl}
-import at.forsyte.apalache.tla.bmcmt.search.ModelCheckerContext
+import at.forsyte.apalache.tla.bmcmt.analyses.ExprGradeStoreImpl
+import at.forsyte.apalache.tla.bmcmt.rules.aux.MockOracle
+import at.forsyte.apalache.tla.bmcmt.search.{HyperTransition, HyperTree, WorkerContext}
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
+import at.forsyte.apalache.tla.bmcmt.types.IntT
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.bmcmt.types.{IntT, TypeFinder}
 import at.forsyte.apalache.tla.lir.convenience.tla
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.collection.immutable.SortedMap
 
 @RunWith(classOf[JUnitRunner])
-class TestModelCheckerContext extends FunSuite {
+class TestWorkerContext extends FunSuite {
+
   test("write and read") {
     val solver = new RecordingZ3SolverContext(false, false)
     val typeFinder = new TrivialTypeFinder()
     val rewriter = new SymbStateRewriterImpl(solver, typeFinder, new ExprGradeStoreImpl)
-    val mcContext = new ModelCheckerContext(typeFinder, solver, rewriter)
+    val workerContext = new WorkerContext(rank = 1, typeFinder, solver, rewriter, HyperTree(HyperTransition(0)))
     var arena = Arena.create(solver).appendCell(IntT())
     val x = arena.topCell
     var state = new SymbState(tla.eql(x.toNameEx, tla.int(42)), CellTheory(), arena, Binding())
@@ -28,10 +31,12 @@ class TestModelCheckerContext extends FunSuite {
     assert(solver.sat())
     assert(solver.evalGroundExpr(x.toNameEx) == tla.int(42))
 
+    workerContext.push(state, new MockOracle(0), SortedMap())
+
     // save the object
     val arrayStream = new ByteArrayOutputStream()
     val oos = new ObjectOutputStream(arrayStream)
-    oos.writeObject(mcContext)
+    oos.writeObject(workerContext)
     oos.close()
     // update the context
     solver.assertGroundExpr(tla.gt(x.toNameEx, tla.int(1000)))
@@ -39,9 +44,13 @@ class TestModelCheckerContext extends FunSuite {
     val inputStream = new ObjectInputStream(new ByteArrayInputStream(arrayStream.toByteArray))
 
     // read the object
-    val restoredMcContext = inputStream.readObject().asInstanceOf[ModelCheckerContext]
+    val restoredContext = inputStream.readObject().asInstanceOf[WorkerContext]
     // the restored context should be satisfiable
-    assert(restoredMcContext.solver.sat())
-    assert(restoredMcContext.solver.evalGroundExpr(x.toNameEx) == tla.int(42))
+    assert(restoredContext.solver.sat())
+    assert(restoredContext.solver.evalGroundExpr(x.toNameEx) == tla.int(42))
+    state = restoredContext.state
+    state = restoredContext.rewriter.rewriteUntilDone(state.setRex(tla.not(tla.eql(x.toNameEx, tla.int(42)))))
+    restoredContext.solver.assertGroundExpr(state.ex)
+    assert(!restoredContext.solver.sat())
   }
 }

@@ -6,7 +6,7 @@ import scala.collection.immutable.HashMap
   * Binding variables to memory cells. We keep the number of methods to minimum. If you need all the Map methods,
   * use toMap and convert the result with Binding(...).
   */
-class Binding(val toMap: Map[String, ArenaCell]) {
+class Binding(val toMap: Map[String, ArenaCell]) extends Serializable {
   def apply(name: String): ArenaCell = {
     toMap(name)
   }

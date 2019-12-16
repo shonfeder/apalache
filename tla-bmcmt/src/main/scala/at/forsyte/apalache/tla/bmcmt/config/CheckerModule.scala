@@ -34,8 +34,6 @@ class CheckerModule extends AbstractModule {
       .to(classOf[FormulaHintsStoreImpl])
     bind(classOf[ExprGradeStore])
       .to(classOf[ExprGradeStoreImpl])
-    bind(new TypeLiteral[TypeFinder[CellT]] {})
-      .to(classOf[TrivialTypeFinder])   // using a trivial type finder
 
     // transformation tracking
     // TODO: the binding of TransformationListener should disappear in the future

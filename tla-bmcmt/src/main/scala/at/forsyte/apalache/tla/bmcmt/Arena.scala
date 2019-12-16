@@ -63,8 +63,7 @@ class Arena private(val solverContext: SolverContext,
                     val cellMap: Map[String, ArenaCell],
                     private val hasEdges: Map[ArenaCell, List[ArenaCell]],
                     private val domEdges: Map[ArenaCell, ArenaCell],
-                    private val cdmEdges: Map[ArenaCell, ArenaCell]
-                   ) {
+                    private val cdmEdges: Map[ArenaCell, ArenaCell]) extends Serializable {
   // TODO: remove solverContext from Arena!
   /**
     * A fixed cell that equals to false in the Boolean theory.

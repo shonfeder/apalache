@@ -9,7 +9,7 @@ import at.forsyte.apalache.tla.lir.TlaEx
   *
   * @author Igor Konnov
   */
-trait Oracle {
+trait Oracle extends Serializable {
   /**
     * Produce an expression that states that the oracle values equals to the given integer position.
     * The actual implementation may be different from an integer comparison.

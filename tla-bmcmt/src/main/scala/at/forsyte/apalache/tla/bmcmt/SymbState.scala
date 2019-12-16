@@ -12,7 +12,7 @@ import at.forsyte.apalache.tla.lir.TlaEx
 class SymbState(val ex: TlaEx,
                 val theory: Theory,
                 val arena: Arena,
-                val binding: Binding) {
+                val binding: Binding) extends Serializable {
 
   def setRex(nex: TlaEx): SymbState = {
     new SymbState(nex, theory, arena, binding)

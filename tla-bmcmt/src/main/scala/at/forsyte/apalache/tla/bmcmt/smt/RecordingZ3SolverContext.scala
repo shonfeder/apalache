@@ -27,26 +27,26 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
   private var solver = new Z3SolverContext(debug, profile)
 
   /**
-    * The sequence of logs, one per context, reversed.
+    * The sequence of logs, one per context, except the last log, which is maintained in lastLog.
     */
-  private var logStackRev: List[List[Record]] = List()
+  private var logStack: List[List[Record]] = List()
 
   /**
-    * The top log, reversed.
+    * The current log.
     */
-  private var topLogRev: List[Record] = List()
+  private var lastLog: List[Record] = List()
 
   /**
-    * De-serialize the context log by smashing SMT contexts.
+    * Deserialize the context log by smashing SMT contexts. Defining custom serialization for Serializable.
     * @param ois object input stream
     */
   private def readObject(ois: ObjectInputStream): Unit = {
     val totalSize = ois.readObject().asInstanceOf[Int]
-    topLogRev = List[Record]()
+    lastLog = List[Record]()
     solver = new Z3SolverContext(debug, profile)
     for (_ <- 1.to(totalSize)) {
       val record = ois.readObject().asInstanceOf[Record]
-      topLogRev = record :: topLogRev
+      lastLog = lastLog :+ record
 
       record match {
         case DeclareCellRecord(cell) => solver.declareCell(cell)
@@ -56,23 +56,42 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
         case AssertGroundExprRecord(ex) => solver.assertGroundExpr(ex)
       }
     }
-    logStackRev = List()
+    logStack = List()
   }
 
   /**
-    * Serialize the context log
+    * Serialize the context log. Defining custom serialization for Serializable.
     * @param oos object output stream
     */
   private def writeObject(oos: ObjectOutputStream): Unit = {
-    val totalSize = logStackRev.map(_.size).sum + topLogRev.size
+    val totalSize = logStack.map(_.size).sum + lastLog.size
     oos.writeObject(totalSize)
-    for (logPerContext <- logStackRev.reverse) {
+    for (logPerContext <- logStack) {
       for (record <- logPerContext) {
         oos.writeObject(record)
       }
     }
-    for (record <- topLogRev.reverse) {
+    for (record <- lastLog) {
       oos.writeObject(record)
+    }
+  }
+
+  def replayLog(): Unit = {
+    def applyRecord: Record => Unit = {
+      case DeclareCellRecord(cell) => solver.declareCell(cell)
+      case DeclareInPredRecord(set, elem) => solver.declareInPredIfNeeded(set, elem)
+      case IntroBoolConstRecord() => solver.introBoolConst()
+      case IntroIntConstRecord() => solver.introIntConst()
+      case AssertGroundExprRecord(ex) => solver.assertGroundExpr(ex)
+    }
+
+    for (logPerContext <- logStack) {
+      for (record <- logPerContext) {
+        applyRecord(record)
+      }
+    }
+    for (record <- lastLog) {
+      applyRecord(record)
     }
   }
 
@@ -81,8 +100,8 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     */
   override def push(): Unit = {
     solver.push()
-    logStackRev = topLogRev :: logStackRev
-    topLogRev = List()
+    logStack = logStack :+ lastLog
+    lastLog = List()
   }
 
   /**
@@ -91,8 +110,8 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     */
   override def pop(): Unit = {
     solver.pop()
-    topLogRev = logStackRev.head
-    logStackRev = logStackRev.tail
+    lastLog = logStack.last
+    logStack = logStack.dropRight(1)
   }
 
   /**
@@ -102,9 +121,9 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     */
   override def pop(n: Int): Unit = {
     solver.pop(n)
-    logStackRev = logStackRev.drop(n - 1)
-    topLogRev = logStackRev.head
-    logStackRev = logStackRev.tail
+    logStack = logStack.dropRight(n - 1) // n - 1 in logStack + 1 in lastLog
+    lastLog = logStack.last
+    logStack = logStack.dropRight(1)
   }
 
   /**
@@ -121,7 +140,7 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param cell a (previously undeclared) cell
     */
   override def declareCell(cell: ArenaCell): Unit = {
-    topLogRev = DeclareCellRecord(cell) :: topLogRev
+    lastLog = lastLog :+ DeclareCellRecord(cell)
     solver.declareCell(cell)
   }
 
@@ -134,7 +153,7 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param elem a set element
     */
   override def declareInPredIfNeeded(set: ArenaCell, elem: ArenaCell): Unit = {
-    topLogRev = DeclareInPredRecord(set, elem) :: topLogRev
+    lastLog = lastLog :+ DeclareInPredRecord(set, elem)
     solver.declareInPredIfNeeded(set, elem)
   }
 
@@ -155,7 +174,7 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @return the name of a new constant
     */
   override def introBoolConst(): String = {
-    topLogRev = IntroBoolConstRecord() :: topLogRev
+    lastLog = lastLog :+ IntroBoolConstRecord()
     solver.introBoolConst()
   }
 
@@ -187,7 +206,7 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @return the name of a new constant
     */
   override def introIntConst(): String = {
-    topLogRev = IntroIntConstRecord() :: topLogRev
+    lastLog = lastLog :+ IntroIntConstRecord()
     solver.introIntConst()
   }
 
@@ -197,7 +216,7 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param ex a simplified TLA+ expression over cells
     */
   override def assertGroundExpr(ex: TlaEx): Unit = {
-    topLogRev = AssertGroundExprRecord(ex) :: topLogRev
+    lastLog = lastLog :+ AssertGroundExprRecord(ex)
     solver.assertGroundExpr(ex)
   }
 

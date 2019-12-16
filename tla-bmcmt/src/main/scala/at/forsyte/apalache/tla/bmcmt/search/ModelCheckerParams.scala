@@ -1,16 +1,19 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
+import java.io.File
+
 import at.forsyte.apalache.tla.bmcmt.CheckerInput
 
 /**
-  * A collection of model checker parameters that come from user configurations.
+  * A collection of model checker parameters that come from the user configuration.
   *
   * @author Igor Konnov
   */
 class ModelCheckerParams(checkerInput: CheckerInput,
                          val stepsBound: Int,
+                         val saveDirectory: File,
                          tuningOptions: Map[String, String] = Map(),
-                         val debug: Boolean = true) {
+                         val debug: Boolean) {
   /**
     * A set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
     */

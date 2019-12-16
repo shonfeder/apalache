@@ -16,6 +16,9 @@ class CheckCmd extends Command(name = "check",
   var search: String = opt[String](
     name = "search", default = "bfs",
     description = "search type (dfs or bfs), default: bfs")
+  var nworkers: Int = opt[Int](
+    name = "nworkers", default = 1,
+    description = "the number of parallel workers, default: 1")
   var cinit: String = opt[String](
     name = "cinit", default = "",
     description = "the name of an operator that initializes CONSTANTS, default: None")

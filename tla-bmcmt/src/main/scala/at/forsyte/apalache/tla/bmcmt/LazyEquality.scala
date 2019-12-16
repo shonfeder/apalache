@@ -16,7 +16,7 @@ import at.forsyte.apalache.tla.lir.{NameEx, NullEx, TlaEx}
   */
 class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Serializable {
   @transient
-  private val simplifier = new ConstSimplifierForSmt
+  private lazy val simplifier = new ConstSimplifierForSmt
 
   private val eqCache = new EqCache(NameEx(SolverContext.falseConst),
     NameEx(SolverContext.trueConst))

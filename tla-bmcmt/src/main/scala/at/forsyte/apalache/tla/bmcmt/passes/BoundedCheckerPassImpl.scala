@@ -1,13 +1,15 @@
 package at.forsyte.apalache.tla.bmcmt.passes
 
+import java.nio.file.Path
+
 import at.forsyte.apalache.infra.passes.{Pass, PassOptions}
 import at.forsyte.apalache.tla.assignments.ModuleAdapter
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
 import at.forsyte.apalache.tla.bmcmt.search._
-import at.forsyte.apalache.tla.bmcmt.smt.{SolverContext, Z3SolverContext}
-import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
+import at.forsyte.apalache.tla.bmcmt.smt.{RecordingZ3SolverContext, SolverContext}
+import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.NullEx
 import at.forsyte.apalache.tla.lir.storage.ChangeListener
@@ -24,7 +26,6 @@ import com.typesafe.scalalogging.LazyLogging
   * @author Igor Konnov
   */
 class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
-                                        typeFinder: TypeFinder[CellT],
                                         hintsStore: FormulaHintsStore,
                                         exprGradeStore: ExprGradeStore,
                                         sourceStore: SourceStore,
@@ -62,26 +63,48 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val invariantsAndNegations = vcInvs.zip(vcNotInvs)
 
     val input = new CheckerInput(module, initTrans.toList, nextTrans.toList, cinitP, invariantsAndNegations.toList)
+    val nworkers = options.getOrElse("checker", "nworkers", 1)
     val stepsBound = options.getOrElse("checker", "length", 10)
-    val debug = options.getOrElse("general", "debug", false)
-    val profile = options.getOrElse("smt", "prof", false)
     val tuning = options.getOrElse("general", "tuning", Map[String, String]())
+    val debug = options.getOrElse("general", "debug", false)
+    val saveDir = options.getOrError("io", "outdir").asInstanceOf[Path].toFile
 
-    val solverContext: SolverContext = new Z3SolverContext(debug, profile)
+    val sharedState = new SharedSearchState()
+    val params = new ModelCheckerParams(input, stepsBound, saveDir, tuning, debug)
 
+    def createCheckerThread(rank: Int): Thread = {
+      new Thread {
+        override def run(): Unit = {
+          val checker = createModelChecker(rank, sharedState, params, input, tuning)
+          val outcome = checker.run()
+          logger.info("Worker %d: The outcome is %s".format(rank, outcome))
+        }
+      }
+    }
+
+    // run the threads and join
+    val workerThreads = 1.to(nworkers) map createCheckerThread
+    workerThreads.foreach(_.start())
+    workerThreads.foreach(_.join())
+
+    sharedState.workerStates.values.forall(_ == BugFreeState())
+  }
+
+  private def createModelChecker(rank: Int,
+                                 sharedState: SharedSearchState,
+                                 params: ModelCheckerParams,
+                                 input: CheckerInput,
+                                 tuning: Map[String, String]): ModelChecker = {
+    val profile = options.getOrElse("smt", "prof", false)
+    val solverContext: SolverContext = new RecordingZ3SolverContext(params.debug, profile)
+
+    val typeFinder = new TrivialTypeFinder
     val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
     rewriter.config = RewriterConfig(tuning)
+    val context = new WorkerContext(rank, typeFinder, solverContext, rewriter, sharedState.activeNode)
 
-    val context = new ModelCheckerContext(typeFinder, solverContext, rewriter)
-    val params = new ModelCheckerParams(input, stepsBound, tuning, debug)
-
-    val checker: Checker =
-        new ModelChecker(input, params, context, changeListener, sourceStore)
-
-    val outcome = checker.run()
-    logger.info("The outcome is: " + outcome)
-    outcome == Checker.Outcome.NoError
+    new ModelChecker(input, params, sharedState, context, changeListener, sourceStore)
   }
 
   /**

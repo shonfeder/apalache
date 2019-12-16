@@ -87,7 +87,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
 
   private val coercion = new CoercionWithCache(this)
   @transient
-  private val substRule = new SubstRule(this)
+  private lazy val substRule = new SubstRule(this)
 
   /**
     * The store that contains formula hints. By default, empty.
@@ -100,11 +100,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
   private var messages: mutable.Map[Int, String] = new mutable.HashMap()
 
   /**
-    * Introduce failure predicate to do runtime checks
-    */
-  var introFailures: Boolean = true
-
-  /**
     * Get the current context level, that is the difference between the number of pushes and pops made so far.
     *
     * @return the current level, always non-negative.
@@ -113,16 +108,18 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
 
   /**
     * Statistics listener
+    *
+    * TODO: remove this listener, as it does not seem to be compatible with serialization.
     */
   @transient
-  val statListener: RuleStatListener = new RuleStatListener()
+  lazy val statListener: RuleStatListener = new RuleStatListener()
   solverContext.setSmtListener(statListener) // subscribe to the SMT solver
 
   // A nice way to guess the candidate rules by looking at the expression key.
   // We use simple expressions to generate the keys.
   // For each key, there is a short list of rules that may be applicable.
   @transient
-  private val ruleLookupTable: Map[String, List[RewritingRule]] = Map(
+  lazy val ruleLookupTable: Map[String, List[RewritingRule]] = { Map(
     // the order is only important to improve readability
 
     // substitution
@@ -276,7 +273,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
       -> List(new TlcRule(this)),
     key(OperEx(TlcOper.atat, NameEx("fun"), NameEx("pair")))  // @@
       -> List(new TlcRule(this))
-  ) ///// ADD YOUR RULES ABOVE
+  ) } ///// ADD YOUR RULES ABOVE
 
 
   /**
