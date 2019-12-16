@@ -28,7 +28,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
 
   var level: Int = 0
   var nBoolConsts: Int = 0 // the solver introduces Boolean constants internally
-  var nIntConsts: Int = 0
   private val z3context: Context = new Context()
   private val z3solver = z3context.mkSolver()
   private val simplifier = new ConstSimplifierForSmt()
@@ -220,33 +219,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     if (debug) {
       logWriter.println(message)
     }
-  }
-
-  /**
-    * Get the names of the active integers constants (not the cells of type BoolT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of int constant that are active in the current context
-    */
-  override def getIntConsts: Iterable[String] = {
-    val intTheory = IntTheory()
-    constCache.keys filter intTheory.hasConst
-  }
-
-  /**
-    * Introduce a new integer constant.
-    *
-    * @return the name of a new constant
-    */
-  override def introIntConst(): String = {
-    val name = "%s%d".format(IntTheory().namePrefix, nIntConsts)
-    smtListener.onIntroSmtConst(name)
-    log(s";; declare int $name")
-    log(s"(declare-const $name Int)")
-    nIntConsts += 1
-    val const = z3context.mkConst(name, z3context.getIntSort)
-    constCache += (name -> (const, IntT(), level))
-    name
   }
 
   /**

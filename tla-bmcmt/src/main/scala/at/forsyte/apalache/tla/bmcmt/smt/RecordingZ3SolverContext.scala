@@ -15,7 +15,6 @@ object RecordingZ3SolverContext {
 
   case class DeclareCellRecord(cell: ArenaCell) extends Record with Serializable
   case class DeclareInPredRecord(set: ArenaCell, elem: ArenaCell) extends Record with Serializable
-  case class IntroIntConstRecord() extends Record with Serializable
   case class AssertGroundExprRecord(ex: TlaEx) extends Record with Serializable
 }
 
@@ -50,7 +49,6 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
       record match {
         case DeclareCellRecord(cell) => solver.declareCell(cell)
         case DeclareInPredRecord(set, elem) => solver.declareInPredIfNeeded(set, elem)
-        case IntroIntConstRecord() => solver.introIntConst()
         case AssertGroundExprRecord(ex) => solver.assertGroundExpr(ex)
       }
     }
@@ -78,7 +76,6 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     def applyRecord: Record => Unit = {
       case DeclareCellRecord(cell) => solver.declareCell(cell)
       case DeclareInPredRecord(set, elem) => solver.declareInPredIfNeeded(set, elem)
-      case IntroIntConstRecord() => solver.introIntConst()
       case AssertGroundExprRecord(ex) => solver.assertGroundExpr(ex)
     }
 
@@ -161,28 +158,6 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     */
   override def checkConsistency(arena: Arena): Unit = {
     solver.checkConsistency(arena)
-  }
-
-  /**
-    * Get the names of the active integer constants (not the cells of type IntT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of integer constants that are active in the current context
-    */
-  override def getIntConsts: Iterable[String] = {
-    solver.getIntConsts
-  }
-
-  /**
-    * Introduce a new integer constant.
-    *
-    * WARNING: this method is obsolete and will be removed in the future. Just introduce a cell of type IntT().
-    *
-    * @return the name of a new constant
-    */
-  override def introIntConst(): String = {
-    lastLog = lastLog :+ IntroIntConstRecord()
-    solver.introIntConst()
   }
 
   /**

@@ -23,7 +23,6 @@ class AssignmentRule(rewriter: SymbStateRewriter) extends RewritingRule {
   override def isApplicable(state: SymbState): Boolean = {
     def isUnbound(name: String) =
       (!CellTheory().hasConst(name)
-        && !IntTheory().hasConst(name)
         && !state.binding.contains(name + "'"))
 
     state.ex match {

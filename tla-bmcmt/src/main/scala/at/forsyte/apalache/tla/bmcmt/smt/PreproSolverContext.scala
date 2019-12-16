@@ -171,21 +171,6 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
   override def checkConsistency(arena: Arena): Unit = context.checkConsistency(arena)
 
   /**
-    * Get the names of the active integer constants (not the cells of type IntT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of integer constants that are active in the current context
-    */
-  def getIntConsts: Iterable[String] = context.getIntConsts
-
-  /**
-    * Introduce a new integer constant.
-    *
-    * @return the name of a new constant
-    */
-  override def introIntConst(): String = context.introIntConst()
-
-  /**
     * Write a message to the log file. This is helpful to debug the SMT encoding.
     *
     * @param message message text, call-by-name

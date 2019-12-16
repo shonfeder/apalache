@@ -69,27 +69,4 @@ package object bmcmt {
 
     override def toString: String = "Cell"
   }
-
-  /**
-    * A theory of integers. This theory is obsolete and will be removed soon,
-    * as we are now using cells of type IntT().
-    */
-  case class IntTheory() extends Theory {
-    /**
-      * The prefix of all integer constants.
-      */
-    val namePrefix = "$Z$"
-
-    /**
-      * Check whether a constant is named after the theory naming convention.
-      *
-      * @param name a constant name
-      * @return if the name follows the naming conventions of this theory.
-      */
-    override def hasConst(name: String): Boolean = {
-      name.startsWith(namePrefix)
-    }
-
-    override def toString: String = "Int"
-  }
 }

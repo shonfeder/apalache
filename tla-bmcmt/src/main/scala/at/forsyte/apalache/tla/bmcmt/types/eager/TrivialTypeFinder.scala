@@ -1,7 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.types.eager
 
 import at.forsyte.apalache.tla.bmcmt.types._
-import at.forsyte.apalache.tla.bmcmt.{ArenaCell, IntTheory}
+import at.forsyte.apalache.tla.bmcmt.ArenaCell
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.values.{TlaBoolSet, TlaIntSet, TlaNatSet}
@@ -282,12 +282,7 @@ class TrivialTypeFinder extends TypeFinder[CellT] with TransformationListener wi
       case NameEx(name) =>
         var result = varTypes.get(name)
         if (result.isEmpty) {
-          // TODO: this is a temporary solution until the moment we have eliminated BoolTheory and IntTheory
-          if (IntTheory().hasConst(name)) {
-            result = Some(IntT())
-          } else {
-            addError(new TypeInferenceError(expr, "Failed to find type of variable " + name))
-          }
+          addError(new TypeInferenceError(expr, "Failed to find type of variable " + name))
         }
         result
 

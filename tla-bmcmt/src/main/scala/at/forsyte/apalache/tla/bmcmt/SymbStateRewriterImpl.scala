@@ -287,10 +287,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
       case NameEx(name) if CellTheory().hasConst(name) =>
         Done(coerce(state.setTheory(CellTheory()), state.theory))
 
-      // TODO: to be removed soon
-      case NameEx(name) if IntTheory().hasConst(name) =>
-        Done(coerce(state.setTheory(IntTheory()), state.theory))
-
       case NameEx(name) =>
         if (substRule.isApplicable(state)) {
           statListener.enterRule(substRule.getClass.getSimpleName)

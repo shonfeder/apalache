@@ -49,18 +49,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-EQ1: $Z$i = $Z$j ~~> $B$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val state = new SymbState(OperEx(TlaOper.eq, NameEx(leftInt), NameEx(rightInt)),
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val state = new SymbState(OperEx(TlaOper.eq, leftInt, rightInt),
       CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case predEx@NameEx(name) =>
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(22))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(22))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(22))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(22))))
         rewriter.push()
         solverContext.assertGroundExpr(predEx)
         assert(solverContext.sat())
@@ -70,7 +72,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
         assert(!solverContext.sat())
         rewriter.pop()
         rewriter.pop()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(1981))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(1981))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaBoolOper.not, predEx))
         assert(solverContext.sat())
@@ -225,18 +227,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-CMP1: ~($Z$i = $Z$j) ~~> $B$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val state = new SymbState(tla.not(tla.eql(tla.name(leftInt), tla.name(rightInt))),
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val state = new SymbState(tla.not(tla.eql(leftInt, rightInt)),
       CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case predEx@NameEx(name) =>
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(22))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(22))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(22))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(22))))
         rewriter.push()
         solverContext.assertGroundExpr(predEx)
         assert(!solverContext.sat())
@@ -246,7 +250,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
         assert(solverContext.sat())
         rewriter.pop()
         rewriter.pop()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(1981))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(1981))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaBoolOper.not, predEx))
         assert(!solverContext.sat())
@@ -260,20 +264,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[+]: $Z$i + $Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.plus, NameEx(leftInt), NameEx(rightInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.plus, leftInt, rightInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(1981))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(1981))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(36))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(36))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(2017))))
         assert(solverContext.sat())
@@ -288,20 +292,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[-]: $Z$i - $Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.minus, NameEx(leftInt), NameEx(rightInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.minus, leftInt, rightInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(2017))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(2017))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(36))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(36))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(1981))))
         assert(solverContext.sat())
@@ -316,17 +320,16 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[-.]: -$Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.uminus, NameEx(leftInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.uminus, leftInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(2017))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(2017))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(-2017))))
         assert(solverContext.sat())
@@ -341,20 +344,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[*]: $Z$i * $Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.mult, NameEx(leftInt), NameEx(rightInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.mult, leftInt, rightInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(7))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(7))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(4))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(4))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(28))))
         assert(solverContext.sat())
@@ -369,20 +372,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[/]: $Z$i / $Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.div, NameEx(leftInt), NameEx(rightInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.div, leftInt, rightInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(30))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(30))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(4))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(4))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(7))))
         assert(solverContext.sat())
@@ -397,20 +400,20 @@ class TestSymbStateRewriterInt extends RewriterBase {
   }
 
   test("SE-INT-ARITH1[%]: $Z$i % $Z$j ~~> $Z$k") {
-    val leftInt = solverContext.introIntConst()
-    val rightInt = solverContext.introIntConst()
-    val expr = OperEx(TlaArithOper.mod, NameEx(leftInt), NameEx(rightInt))
-    val state = new SymbState(expr, IntTheory(), arena, Binding())
+    arena = arena.appendCell(IntT())
+    val leftInt = arena.topCell.toNameEx
+    arena = arena.appendCell(IntT())
+    val rightInt = arena.topCell.toNameEx
+    val expr = OperEx(TlaArithOper.mod, leftInt, rightInt)
+    val state = new SymbState(expr, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case result @ NameEx(name) =>
-        assert(IntTheory().hasConst(name))
-        assert(IntTheory() == state.theory)
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(leftInt), ValEx(TlaInt(30))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, leftInt, ValEx(TlaInt(30))))
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, NameEx(rightInt), ValEx(TlaInt(7))))
+        solverContext.assertGroundExpr(OperEx(TlaOper.eq, rightInt, ValEx(TlaInt(7))))
         rewriter.push()
         solverContext.assertGroundExpr(OperEx(TlaOper.eq, result, ValEx(TlaInt(2))))
         assert(solverContext.sat())

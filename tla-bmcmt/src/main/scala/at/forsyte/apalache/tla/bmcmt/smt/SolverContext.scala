@@ -34,23 +34,6 @@ trait SolverContext extends StackableContext {
     */
   def checkConsistency(arena: Arena): Unit
 
-  /**
-    * Get the names of the active integer constants (not the cells of type IntT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of integer constants that are active in the current context
-    */
-  def getIntConsts: Iterable[String]
-
-  /**
-    * Introduce a new integer constant.
-    *
-    * WARNING: this method is obsolete and will be removed in the future. Just introduce a cell of type IntT().
-    *
-    * @return the name of a new constant
-    */
-  def introIntConst(): String
-
     /**
     * Assert that a Boolean TLA+ expression holds true.
     *

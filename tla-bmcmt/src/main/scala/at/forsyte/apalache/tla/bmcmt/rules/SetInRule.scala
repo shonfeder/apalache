@@ -18,7 +18,6 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     state.ex match {
       case OperEx(TlaSetOper.in, NameEx(name), _) =>
         (CellTheory().hasConst(name)
-          || IntTheory().hasConst(name)
           || state.binding.contains(name))
 
       case OperEx(TlaSetOper.in, _, _) =>

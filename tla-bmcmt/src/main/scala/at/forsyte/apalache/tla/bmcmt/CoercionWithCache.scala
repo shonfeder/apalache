@@ -14,6 +14,7 @@ import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
   *
   * @author Igor Konnov
   */
+// TODO: remove, not needed anymore
 class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableContext with Serializable {
   type SourceT = (String, Theory)
   type TargetT = String
@@ -28,51 +29,7 @@ class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableC
 
 
   def coerce(state: SymbState, targetTheory: Theory): SymbState = {
-    // if the expression is a constant, find its theory
-    val exTheory =
-      if (IntTheory().hasNameEx(state.ex)) {
-        IntTheory()
-      } else if (CellTheory().hasNameEx(state.ex)) {
-        CellTheory()
-      } else {
-        state.theory // not a constant, assume the state theory
-      }
-
-    if (targetTheory == exTheory) {
-      // nothing to do
-      state.setTheory(targetTheory)
-    } else {
-      val name = state.ex match {
-        case NameEx(n) => n
-        case _ => throw new RewriterException("Expected NameEx, found: " + state.ex, state.ex)
-      }
-
-      val cachedValue = cache.get((name, targetTheory))
-      if (cachedValue.isDefined) {
-        val cachedEx = NameEx(cachedValue.get._1)
-        state.setTheory(targetTheory).setRex(cachedEx)
-      } else {
-        val targetState =
-          (exTheory, targetTheory) match {
-            case (CellTheory(), IntTheory()) =>
-              cellToInt(state)
-
-            case (IntTheory(), CellTheory()) =>
-              intToCell(state)
-
-            case _ =>
-              throw new RewriterException("Coercion from %s to %s is not allowed".format(state.theory, targetTheory), state.ex)
-          }
-
-        val targetName = targetState.ex match {
-          case NameEx(n) => n
-          case _ => throw new RewriterException("Expected NameEx, found: " + targetState.ex, targetState.ex)
-        }
-
-        cache = cache + ((name, targetTheory) -> (targetName, level))
-        targetState
-      }
-    }
+    state
   }
 
   /**
@@ -113,35 +70,5 @@ class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableC
   override def dispose(): Unit = {
     cache = Map()
     level = 0
-  }
-
-  private def intToCell(state: SymbState): SymbState = {
-    state.ex match {
-      case NameEx(name) if IntTheory().hasConst(name) =>
-        val newArena = state.arena.appendCell(IntT())
-        val newCell = newArena.topCell
-        val equiv = OperEx(TlaOper.eq, NameEx(name), newCell.toNameEx)
-        stateRewriter.solverContext.assertGroundExpr(equiv)
-        state.setArena(newArena)
-          .setRex(newCell.toNameEx)
-          .setTheory(CellTheory())
-
-      case _ =>
-        throw new InvalidTlaExException("Expected an integer predicate, found: " + state.ex, state.ex)
-    }
-  }
-
-  private def cellToInt(state: SymbState): SymbState = {
-    state.ex match {
-      case NameEx(name) if CellTheory().hasConst(name) =>
-        val intConst = stateRewriter.solverContext.introIntConst()
-        val equiv = OperEx(TlaOper.eq, NameEx(name), NameEx(intConst))
-        stateRewriter.solverContext.assertGroundExpr(equiv)
-        state.setRex(NameEx(intConst))
-          .setTheory(IntTheory())
-
-      case _ =>
-        throw new InvalidTlaExException("Expected an integer predicate, found: " + state.ex, state.ex)
-    }
   }
 }
