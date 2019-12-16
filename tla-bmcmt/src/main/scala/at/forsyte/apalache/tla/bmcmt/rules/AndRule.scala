@@ -28,7 +28,6 @@ class AndRule(rewriter: SymbStateRewriter) extends RewritingRule {
   }
 
   override def apply(state: SymbState): SymbState = {
-    val falseConst = SolverContext.falseConst
     simplifier.simplifyShallow(state.ex) match {
       case OperEx(TlaBoolOper.and, args@_*) =>
         val finalState =
@@ -40,7 +39,7 @@ class AndRule(rewriter: SymbStateRewriter) extends RewritingRule {
             def toIte(es: Seq[TlaEx]): TlaEx = {
               es match {
                 case Seq(last) => last
-                case hd +: tail => tla.ite(hd, toIte(tail), NameEx(falseConst))
+                case hd +: tail => tla.ite(hd, toIte(tail), state.arena.cellFalse().toNameEx)
               }
             }
 

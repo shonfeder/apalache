@@ -30,9 +30,7 @@ class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableC
   def coerce(state: SymbState, targetTheory: Theory): SymbState = {
     // if the expression is a constant, find its theory
     val exTheory =
-      if (BoolTheory().hasNameEx(state.ex)) {
-        BoolTheory()
-      } else if (IntTheory().hasNameEx(state.ex)) {
+      if (IntTheory().hasNameEx(state.ex)) {
         IntTheory()
       } else if (CellTheory().hasNameEx(state.ex)) {
         CellTheory()
@@ -56,14 +54,8 @@ class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableC
       } else {
         val targetState =
           (exTheory, targetTheory) match {
-            case (CellTheory(), BoolTheory()) =>
-              cellToBool(state)
-
             case (CellTheory(), IntTheory()) =>
               cellToInt(state)
-
-            case (BoolTheory(), CellTheory()) =>
-              boolToCell(state)
 
             case (IntTheory(), CellTheory()) =>
               intToCell(state)
@@ -121,59 +113,6 @@ class CoercionWithCache(val stateRewriter: SymbStateRewriter) extends StackableC
   override def dispose(): Unit = {
     cache = Map()
     level = 0
-  }
-
-  private def boolToCell(state: SymbState): SymbState = {
-    state.ex match {
-      case NameEx(name) if BoolTheory().hasConst(name) =>
-        if (name == SolverContext.falseConst) {
-          // $B$0 -> $C$0
-          state.setRex(state.arena.cellFalse().toNameEx)
-            .setTheory(CellTheory())
-        } else if (name == SolverContext.trueConst) {
-          // $B$1 -> $C$1
-          state.setRex(state.arena.cellTrue().toNameEx)
-            .setTheory(CellTheory())
-        } else {
-          // the general case
-          val newArena = state.arena.appendCell(BoolT())
-          val newCell = newArena.topCell
-          // just compare the constants directly, as both of them have type Bool
-          val equiv = OperEx(TlaBoolOper.equiv, NameEx(name), newCell.toNameEx)
-          stateRewriter.solverContext.assertGroundExpr(equiv)
-          state.setArena(newArena)
-            .setRex(newCell.toNameEx)
-            .setTheory(CellTheory())
-        }
-
-      case _ =>
-        throw new InvalidTlaExException("Expected a Boolean predicate, found: " + state.ex, state.ex)
-    }
-  }
-
-  private def cellToBool(state: SymbState): SymbState = {
-    state.ex match {
-      case NameEx(name) if CellTheory().hasConst(name) =>
-        if (name == state.arena.cellFalse().toString) {
-          // $C$0 -> $B$0
-          state.setRex(NameEx(SolverContext.falseConst))
-            .setTheory(BoolTheory())
-        } else if (name == state.arena.cellTrue().toString) {
-          // $C$1 -> $B$1
-          state.setRex(NameEx(SolverContext.trueConst))
-            .setTheory(BoolTheory())
-        } else {
-          // general case
-          val pred = stateRewriter.solverContext.introBoolConst()
-          // just compare the constants directly, as both of them have type Bool
-          val equiv = OperEx(TlaBoolOper.equiv, NameEx(pred), NameEx(name))
-          stateRewriter.solverContext.assertGroundExpr(equiv)
-          state.setRex(NameEx(pred)).setTheory(BoolTheory())
-        }
-
-      case _ =>
-        throw new InvalidTlaExException("Expected a cell, found: " + state.ex, state.ex)
-    }
   }
 
   private def intToCell(state: SymbState): SymbState = {

@@ -24,7 +24,7 @@ object EqCache {
   *
   * @author Igor Konnov
   */
-class EqCache(val falseConst: TlaEx, val trueConst: TlaEx) extends StackableContext with Serializable {
+class EqCache() extends StackableContext with Serializable {
   /**
     * The current context level, see StackableContext.
     */
@@ -61,10 +61,10 @@ class EqCache(val falseConst: TlaEx, val trueConst: TlaEx) extends StackableCont
   def toTla(left: ArenaCell, right: ArenaCell, cacheResult: CacheEntry): TlaEx =
     cacheResult match {
       case FalseEntry() =>
-        falseConst
+        tla.bool(false)
 
       case TrueEntry() =>
-        trueConst
+        tla.bool(true)
 
       case EqEntry() =>
         tla.eql(left.toNameEx, right.toNameEx)

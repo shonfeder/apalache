@@ -27,7 +27,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   private val logWriter: PrintWriter = initLog()
 
   var level: Int = 0
-  var nBoolConsts: Int = 0 // the first three cells are reserved for: false and true
+  var nBoolConsts: Int = 0 // the solver introduces Boolean constants internally
   var nIntConsts: Int = 0
   private val z3context: Context = new Context()
   private val z3solver = z3context.mkSolver()
@@ -55,11 +55,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     */
   private val constCache: mutable.Map[String, (Expr, CellT, Int)] =
     new mutable.HashMap[String, (Expr, CellT, Int)]
-
-  val falseConst: String = introBoolConst() // introduce $B$0
-  val trueConst: String = introBoolConst()  // introduce $B$1
-  assertGroundExpr(NameEx(trueConst))
-  assertGroundExpr(OperEx(TlaBoolOper.not, NameEx(falseConst)))
 
   /**
     * Sometimes, we lose a fresh arena in the rewriting rules. As this situation is very hard to debug,
@@ -225,33 +220,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     if (debug) {
       logWriter.println(message)
     }
-  }
-
-  /**
-    * Introduce a new Boolean constant.
-    *
-    * @return the name of a new constant
-    */
-  override def introBoolConst(): String = {
-    val name = "%s%d".format(BoolTheory().namePrefix, nBoolConsts)
-    smtListener.onIntroSmtConst(name)
-    log(s";; declare bool $name")
-    log(s"(declare-const $name Bool)")
-    nBoolConsts += 1
-    val const = z3context.mkConst(name, z3context.getBoolSort)
-    constCache += (name -> (const, BoolT(), level))
-    name
-  }
-
-  /**
-    * Get the names of the active Boolean constants (not the cells of type BoolT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of Boolean constant that are active in the current context
-    */
-  override def getBoolConsts: Iterable[String] = {
-    val boolTheory = BoolTheory()
-    constCache.keys filter boolTheory.hasConst
   }
 
   /**
@@ -492,25 +460,15 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         z3context.mkNot(toExpr(OperEx(TlaOper.eq, lhs, rhs)).asInstanceOf[BoolExpr])
 
       case OperEx(TlaBoolOper.and, es@_*) =>
-        if (es.size < 1000) {
-          val newEs = es.map(e => toExpr(e).asInstanceOf[BoolExpr])
-          z3context.mkAnd(newEs: _*)
-        } else {
-          // use Tseitin to produce many short clauses, as our clauses sometimes contain thousands of literals
-          tseitinAnd(es)
-        }
+        val newEs = es.map(e => toExpr(e).asInstanceOf[BoolExpr])
+        z3context.mkAnd(newEs: _*)
 
       case OperEx(TlaBoolOper.or, es@_*) =>
-        if (es.size < 1000) {
-          val mapped_es = es map toExpr
-          // check the assertion before casting, to make debugging easier
-          assert(mapped_es.forall(e => e.isInstanceOf[BoolExpr]))
-          val cast_es = mapped_es.map(_.asInstanceOf[BoolExpr])
-          z3context.mkOr(cast_es: _*)
-        } else {
-          // use Tseitin to produce many short clauses, as our clauses sometimes contain thousands of literals
-          tseitinOr(es)
-        }
+        val mapped_es = es map toExpr
+        // check the assertion before casting, to make debugging easier
+        assert(mapped_es.forall(e => e.isInstanceOf[BoolExpr]))
+        val cast_es = mapped_es.map(_.asInstanceOf[BoolExpr])
+        z3context.mkOr(cast_es: _*)
 
       case OperEx(TlaBoolOper.implies, lhs, rhs) =>
         val lhsZ3 = toExpr(lhs).asInstanceOf[BoolExpr]
@@ -635,75 +593,5 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         throw new InvalidTlaExException("Unexpected arithmetic expression: " + ex, ex)
     }
 
-  }
-
-  private def tseitinOr(es: Seq[TlaEx]): BoolExpr = {
-    def processOr(in: BoolExpr, form: BoolExpr, out: BoolExpr): BoolExpr = {
-      log(s";; Tseitin of OR for $form")
-      z3solver.add(z3context.mkOr(in, form, z3context.mkNot(out)))
-      z3solver.add(z3context.mkOr(z3context.mkNot(in), out))
-      z3solver.add(z3context.mkOr(z3context.mkNot(form), out))
-      out
-    }
-
-    def each(past: BoolExpr, oneEx: TlaEx): BoolExpr = {
-      oneEx match {
-        case ValEx(TlaBool(false)) =>
-          past
-
-        case ValEx(TlaBool(true)) =>
-          z3context.mkTrue()
-
-        case NameEx(_) =>
-          // just a Boolean constant
-          val out = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          processOr(past, toExpr(oneEx).asInstanceOf[BoolExpr], out)
-
-        case _ =>
-          // a complex expression, introduce a Boolean constant
-          val pred = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          z3solver.add(z3context.mkIff(pred, toExpr(oneEx).asInstanceOf[BoolExpr]))
-          val out = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          processOr(past, pred, out)
-      }
-    }
-
-    es.foldLeft(z3context.mkFalse())(each)
-  }
-
-  private def tseitinAnd(es: Seq[TlaEx]): BoolExpr = {
-    def not = z3context.mkNot _
-
-    def processAnd(in: BoolExpr, form: BoolExpr, out: BoolExpr): BoolExpr = {
-      log(s";; Tseitin of AND for $form")
-      z3solver.add(z3context.mkOr(not(in), not(form), out))
-      z3solver.add(z3context.mkOr(in, not(out)))
-      z3solver.add(z3context.mkOr(form, not(out)))
-      out
-    }
-
-    def each(past: BoolExpr, oneEx: TlaEx): BoolExpr = {
-      oneEx match {
-        case ValEx(TlaBool(true)) =>
-          past
-
-        case ValEx(TlaBool(false)) =>
-          z3context.mkFalse()
-
-        case NameEx(_) =>
-          // just a Boolean constant
-          val out = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          processAnd(past, toExpr(oneEx).asInstanceOf[BoolExpr], out)
-
-        case _ =>
-          // a complex expression, introduce a Boolean constant
-          val pred = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          z3solver.add(z3context.mkIff(pred, toExpr(oneEx).asInstanceOf[BoolExpr]))
-          val out = constCache(introBoolConst())._1.asInstanceOf[BoolExpr]
-          processAnd(past, pred, out)
-      }
-    }
-
-    es.foldLeft(z3context.mkTrue())(each)
   }
 }

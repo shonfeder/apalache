@@ -16,7 +16,7 @@ class ConstSimplifierForSmt {
   def isFalseConst(ex: TlaEx): Boolean = {
     ex match {
       case ValEx(TlaBool(false)) => true
-      case NameEx(name) => name == SolverContext.falseConst || name == Arena.falseName
+      case NameEx(name) => name == Arena.falseName
       case _ => false
     }
   }
@@ -24,7 +24,7 @@ class ConstSimplifierForSmt {
   def isTrueConst(ex: TlaEx): Boolean = {
     ex match {
       case ValEx(TlaBool(true)) => true
-      case NameEx(name) => name == SolverContext.trueConst || name == Arena.trueName
+      case NameEx(name) => name == Arena.trueName
       case _ => false
     }
   }

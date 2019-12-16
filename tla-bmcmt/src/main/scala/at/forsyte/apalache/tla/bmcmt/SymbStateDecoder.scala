@@ -60,11 +60,6 @@ class SymbStateDecoder(solverContext: SolverContext, rewriter: SymbStateRewriter
       writer.println("Equiv. class: {%s}".format(cls.mkString(", ")))
     }
 
-    for (name <- solverContext.getBoolConsts) {
-      val value = solverContext.evalGroundExpr(NameEx(name))
-      writer.println(s"$name = $value")
-    }
-
     for (name <- solverContext.getIntConsts) {
       val value = solverContext.evalGroundExpr(NameEx(name))
       writer.println(s"$name = $value")

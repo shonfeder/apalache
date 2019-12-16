@@ -35,7 +35,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set12 = tla.enumSet(tla.int(1), tla.int(2))
     val powset = tla.powSet(tla.enumSet(tla.int(1), tla.int(2), tla.int(3)))
     val in = tla.in(set12, powset)
-    val state = new SymbState(in, BoolTheory(), arena, Binding())
+    val state = new SymbState(in, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -53,7 +53,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set12 = tla.withType(tla.enumSet(), AnnotationParser.toTla(FinSetT(IntT())))
     val powset = tla.powSet(tla.enumSet(tla.int(1), tla.int(2), tla.int(3)))
     val in = tla.in(set12, powset)
-    val state = new SymbState(in, BoolTheory(), arena, Binding())
+    val state = new SymbState(in, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -70,7 +70,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set1to3 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3))
     val powset = tla.powSet(set1to3)
     val in = tla.in(set1to3, powset)
-    val state = new SymbState(in, BoolTheory(), arena, Binding())
+    val state = new SymbState(in, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -89,7 +89,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val set1to4 = setTo(4)
     val powset = tla.powSet(setTo(3))
     val in = tla.in(set1to4, powset)
-    val state = new SymbState(in, BoolTheory(), arena, Binding())
+    val state = new SymbState(in, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -106,7 +106,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     // a regression test that failed in the previous versions
     val set = tla.enumSet(tla.int(1), tla.int(2))
     val ex = tla.exists(tla.name("X"), tla.powSet(set), tla.bool(true))
-    val state = new SymbState(ex, BoolTheory(), arena, Binding())
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     val rewriter = create()
     try {
       val nextState = rewriter.rewriteUntilDone(state)
@@ -136,12 +136,11 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     val ex =
       OperEx(BmcOper.skolem,
         tla.exists(tla.name("X"), tla.powSet(set), tla.bool(true)))
-    val state = new SymbState(ex, BoolTheory(), arena, Binding())
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case predEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         rewriter.push()
         solverContext.assertGroundExpr(predEx)
         assert(solverContext.sat())
@@ -158,12 +157,11 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
       OperEx(BmcOper.skolem,
         tla.exists(tla.name("X"), tla.powSet(set), tla.bool(false)))
 
-    val state = new SymbState(ex, BoolTheory(), arena, Binding())
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case predEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         rewriter.push()
         solverContext.assertGroundExpr(predEx)
         assertUnsatOrExplain(rewriter, nextState)

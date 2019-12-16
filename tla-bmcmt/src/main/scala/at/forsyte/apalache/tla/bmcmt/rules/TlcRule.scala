@@ -30,8 +30,8 @@ class TlcRule(rewriter: SymbStateRewriter) extends RewritingRule {
       case OperEx(TlcOper.print, _, _)
            | OperEx(TlcOper.printT, _) =>
         val finalState = state
-          .setRex(NameEx(SolverContext.trueConst))
-          .setTheory(BoolTheory())
+          .setRex(state.arena.cellTrue().toNameEx)
+          .setTheory(CellTheory())
         rewriter.coerce(finalState, state.theory)
 
       case OperEx(TlcOper.assert, value, ValEx(TlaStr(message))) =>
@@ -75,7 +75,7 @@ class TlcRule(rewriter: SymbStateRewriter) extends RewritingRule {
   }
 
   private def rewriteAssert(state: SymbState, value: TlaEx, message: String) = {
-    val valueState = rewriter.rewriteUntilDone(state.setRex(value).setTheory(BoolTheory()))
+    val valueState = rewriter.rewriteUntilDone(state.setRex(value).setTheory(CellTheory()))
     // introduce a new failure predicate
     var arena = state.arena.appendCell(FailPredT())
     val failPred = arena.topCell
@@ -86,8 +86,8 @@ class TlcRule(rewriter: SymbStateRewriter) extends RewritingRule {
     // return isReachable. If there is a model M s.t. M |= isReachable, then M |= failPred allows us
     // to check, whether the assertion is violated or not
     val finalState = valueState.setArena(arena)
-      .setRex(NameEx(SolverContext.trueConst)) // if you need a value of a type different from bool, use TypedAssert
-      .setTheory(BoolTheory())
+      .setRex(state.arena.cellTrue().toNameEx) // if you need a value of a type different from bool, use TypedAssert
+      .setTheory(CellTheory())
     rewriter.coerce(finalState, state.theory)
   }
 }

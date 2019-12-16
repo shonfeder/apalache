@@ -171,21 +171,6 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
   override def checkConsistency(arena: Arena): Unit = context.checkConsistency(arena)
 
   /**
-    * Introduce a new Boolean constant.
-    *
-    * @return the name of a new constant
-    */
-  override def introBoolConst(): String = context.introBoolConst()
-
-  /**
-    * Get the names of the active Boolean constants (not the cells of type BoolT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of Boolean constant that are active in the current context
-    */
-  override def getBoolConsts: Iterable[String] = context.getBoolConsts
-
-  /**
     * Get the names of the active integer constants (not the cells of type IntT).
     * This method is used for debugging purposes and may be slow.
     *

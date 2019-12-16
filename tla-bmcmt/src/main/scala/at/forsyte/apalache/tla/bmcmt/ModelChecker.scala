@@ -227,7 +227,8 @@ class ModelChecker(val checkerInput: CheckerInput,
       val savefile = new File(params.saveDirectory, "%d.ser".format(context.activeNode.id))
       context.saveToFile(savefile)
       // recover the context from the file, as it will smash the SMT context
-      context = WorkerContext.load(savefile, context.rank)
+      // TODO: uncomment!
+//      context = WorkerContext.load(savefile, context.rank)
       assert(result.isDefined)
       true
     } else {
@@ -356,7 +357,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.solver.log("; ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d {"
       .format(stepNo, context.rewriter.contextLevel, transitionNo))
     logger.debug("Worker %d: Applying rewriting rules...".format(context.rank))
-    var nextState = context.rewriter.rewriteUntilDone(state.setTheory(BoolTheory()).setRex(transition))
+    var nextState = context.rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(transition))
     context.rewriter.flushStatistics()
     if (checkForErrors && params.debug) {
       // This is a debugging feature that allows us to find incorrect rewriting rules.
@@ -453,7 +454,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     } else {
       context.rewriter.push()
       val notInvState = context.rewriter.rewriteUntilDone(nextState
-        .setTheory(BoolTheory())
+        .setTheory(CellTheory())
         .setRex(notInv))
       context.solver.assertGroundExpr(notInvState.ex)
       context.solver.satOrTimeout(params.invariantTimeout) match {

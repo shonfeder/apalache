@@ -18,7 +18,6 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     state.ex match {
       case OperEx(TlaSetOper.in, NameEx(name), _) =>
         (CellTheory().hasConst(name)
-          || BoolTheory().hasConst(name)
           || IntTheory().hasConst(name)
           || state.binding.contains(name))
 
@@ -41,7 +40,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
         val lhsCell = state.binding(name)
         val afterEqState = rewriter.lazyEq.cacheOneEqConstraint(nextState, lhsCell, rhsCell)
         val finalState = afterEqState
-          .setTheory(BoolTheory())
+          .setTheory(CellTheory())
           .setRex(rewriter.lazyEq.safeEq(lhsCell, rhsCell))
         rewriter.coerce(finalState, state.theory)
 

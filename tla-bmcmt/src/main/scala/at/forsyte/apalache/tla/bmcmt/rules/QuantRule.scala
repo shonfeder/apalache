@@ -4,7 +4,7 @@ import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.implicitConversions._
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, OracleHelper}
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
-import at.forsyte.apalache.tla.bmcmt.types.{FinFunSetT, FinSetT, IntT, PowSetT}
+import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.values.{TlaIntSet, TlaNatSet}
@@ -114,11 +114,11 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
         // 'exists' over an empty set always returns false, while 'forall' returns true
         val constResult =
           if (isExists)
-            SolverContext.falseConst
+            setState.arena.cellFalse()
           else
-            SolverContext.trueConst
+            setState.arena.cellTrue()
 
-        setState.setTheory(BoolTheory()).setRex(NameEx(constResult))
+        setState.setTheory(CellTheory()).setRex(constResult.toNameEx)
       } else {
         def mkPair(elemCell: ArenaCell): (Binding, TlaEx) = {
           val newBinding = Binding(setState.binding.toMap + (boundVar -> elemCell))
@@ -127,7 +127,7 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
 
         // rewrite p[c_i/x] for every c_i \in boundingSet
         val (predState: SymbState, predEs: Seq[TlaEx]) =
-          rewriter.rewriteBoundSeqUntilDone(setState.setTheory(BoolTheory()), setCells.map(mkPair))
+          rewriter.rewriteBoundSeqUntilDone(setState.setTheory(CellTheory()), setCells.map(mkPair))
 
         val nonEmpty = tla.or(setCells.map(tla.in(_, set)): _*)
         val empty = tla.and(setCells.map(c => tla.not(tla.in(c, set))): _*)
@@ -140,7 +140,8 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
           tla.or(tla.not(tla.in(elemAndPred._1, set)), elemAndPred._2)
         }
 
-        val pred = NameEx(rewriter.solverContext.introBoolConst())
+        var finalState = predState.updateArena(_.appendCell(BoolT()))
+        val pred = finalState.arena.topCell
         val iff =
           if (isExists) {
             // \E x \in S: p holds iff nonEmpty /\ \/_i (p[c_i/x] /\ c_i \in set)
@@ -154,7 +155,7 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
 
         rewriter.solverContext.assertGroundExpr(iff)
 
-        predState.setRex(pred)
+        finalState.setRex(pred)
           .setTheory(CellTheory())
           .setBinding(Binding(predState.binding.toMap - boundVar)) // forget the binding to x, but not the other bindings!
       }
@@ -201,7 +202,7 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
     val setCells = setState.arena.getHas(set)
     if (setCells.isEmpty) {
       // \E x \in {}... is FALSE
-      setState.setTheory(CellTheory()).setRex(NameEx(SolverContext.falseConst))
+      setState.setTheory(CellTheory()).setRex(setState.arena.cellFalse().toNameEx)
     } else {
       skolemExistsInStaticallyNonEmptySet(setState, boundVar, predEx, set, setCells)
     }
@@ -221,17 +222,18 @@ class QuantRule(rewriter: SymbStateRewriter) extends RewritingRule with LazyLogg
     var nextState = oracleState
     OracleHelper.assertOraclePicksSetMembers(rewriter, nextState, oracle, set, setCells)
     // pick an arbitrary witness according to the oracle
-    nextState = pickRule.pickByOracle(nextState, oracle, setCells, nextState.arena.cellTrue)
+    nextState = pickRule.pickByOracle(nextState, oracle, setCells, nextState.arena.cellTrue())
     val pickedCell = nextState.asCell
     // enforce that the witness satisfies the predicate
     val extendedBinding = Binding(nextState.binding.toMap + (boundVar -> pickedCell))
     // predState.ex contains the predicate applied to the witness
     nextState = rewriter.rewriteUntilDone(nextState
-      .setTheory(BoolTheory()).setRex(predEx).setBinding(extendedBinding))
+      .setTheory(CellTheory()).setRex(predEx).setBinding(extendedBinding))
     val predWitness = nextState.ex
 
     // \E x \in S: p holds iff predWitness /\ S /= {}
-    val exPred = NameEx(rewriter.solverContext.introBoolConst())
+    nextState = nextState.updateArena(_.appendCell(BoolT()))
+    val exPred = nextState.arena.topCell
     val setNonEmpty = tla.not(oracle.whenEqualTo(nextState, setCells.size))
     val iff = tla.equiv(exPred, tla.and(setNonEmpty, predWitness))
     rewriter.solverContext.assertGroundExpr(iff)

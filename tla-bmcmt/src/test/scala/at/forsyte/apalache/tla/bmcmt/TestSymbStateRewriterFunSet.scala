@@ -121,14 +121,13 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val codomain = tla.powSet(tla.enumSet(tla.bool(false), tla.bool(true)))
     val funset = tla.funSet(domain, codomain)
     val fun = tla.funDef(tla.enumSet(tla.eql(tla.name("x"), tla.int(1))),
-      tla.name("x"),
-      domain)
-    val state = new SymbState(tla.in(fun, funset), BoolTheory(), arena, Binding())
+                         tla.name("x"),
+                         domain)
+    val state = new SymbState(tla.in(fun, funset), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.push()
         solverContext.assertGroundExpr(nextState.ex)
         assert(solverContext.sat())
@@ -147,9 +146,9 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val codomain = tla.enumSet(tla.int(3), tla.int(4))
     val funset = tla.funSet(domain, codomain)
     val fun = tla.funDef(tla.int(3),
-      tla.name("x"),
-      domain)
-    val state = new SymbState(tla.in(fun, funset), BoolTheory(), arena, Binding())
+                         tla.name("x"),
+                         domain)
+    val state = new SymbState(tla.in(fun, funset), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -170,9 +169,9 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val codomain = tla.enumSet(tla.int(3), tla.int(4))
     val funset = tla.funSet(domain2, codomain)
     val fun = tla.funDef(tla.int(3),
-      tla.name("x"),
-      domain1)
-    val state = new SymbState(tla.in(fun, funset), BoolTheory(), arena, Binding())
+                         tla.name("x"),
+                         domain1)
+    val state = new SymbState(tla.in(fun, funset), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -185,9 +184,9 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val codomain = tla.powSet(tla.enumSet(tla.bool(false)))
     val funset = tla.funSet(domain, codomain)
     val fun = tla.funDef(tla.enumSet(tla.bool(true)),
-      tla.name("x"),
-      domain)
-    val state = new SymbState(tla.in(fun, funset), BoolTheory(), arena, Binding())
+                         tla.name("x"),
+                         domain)
+    val state = new SymbState(tla.in(fun, funset), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -200,9 +199,9 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val codomain = tla.powSet(tla.enumSet(tla.bool(false), tla.bool(true)))
     val funset = tla.funSet(domain, codomain)
     val fun = tla.funDef(tla.enumSet(tla.bool(true)),
-      tla.name("x"),
-      domain)
-    val state = new SymbState(tla.in(fun, funset), BoolTheory(), arena, Binding())
+                         tla.name("x"),
+                         domain)
+    val state = new SymbState(tla.in(fun, funset), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())

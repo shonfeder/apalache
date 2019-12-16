@@ -33,7 +33,7 @@ class RewriterBase extends FunSuite with BeforeAndAfterEach {
   }
 
   protected def assumeTlaEx(rewriter: SymbStateRewriter, state: SymbState): SymbState = {
-    val nextState = rewriter.rewriteUntilDone(state.setTheory(BoolTheory()))
+    val nextState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
     solverContext.assertGroundExpr(nextState.ex)
     assert(solverContext.sat())
     nextState
@@ -41,7 +41,7 @@ class RewriterBase extends FunSuite with BeforeAndAfterEach {
 
   protected def assertTlaExAndRestore(rewriter: SymbStateRewriter, state: SymbState): Unit = {
     rewriter.push()
-    val nextState = rewriter.rewriteUntilDone(state.setTheory(BoolTheory()))
+    val nextState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()))
     assert(solverContext.sat())
     rewriter.push()
     solverContext.assertGroundExpr(nextState.ex)

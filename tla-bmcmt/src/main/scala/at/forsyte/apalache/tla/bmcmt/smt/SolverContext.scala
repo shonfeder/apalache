@@ -1,7 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.smt
 
 import at.forsyte.apalache.tla.bmcmt.profiler.SmtListener
-import at.forsyte.apalache.tla.bmcmt.types.CellT
 import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, StackableContext}
 import at.forsyte.apalache.tla.lir.TlaEx
 
@@ -34,23 +33,6 @@ trait SolverContext extends StackableContext {
     * @param arena an arena
     */
   def checkConsistency(arena: Arena): Unit
-
-  /**
-    * Introduce a new Boolean constant.
-    *
-    * WARNING: this method is obsolete and will be removed in the future. Just introduce a cell of type BoolT().
-    *
-    * @return the name of a new constant
-    */
-  def introBoolConst(): String
-
-  /**
-    * Get the names of the active Boolean constants (not the cells of type BoolT).
-    * This method is used for debugging purposes and may be slow.
-    *
-    * @return a list of Boolean constants that are active in the current context
-    */
-  def getBoolConsts: Iterable[String]
 
   /**
     * Get the names of the active integer constants (not the cells of type IntT).
@@ -115,20 +97,3 @@ trait SolverContext extends StackableContext {
     */
   def setSmtListener(listener: SmtListener): Unit
 }
-
-object SolverContext {
-  /**
-    * Get the name of the reserved Boolean constant that is always false
-    * (useful to avoid messing with the keywords).
-    * @return the name (typically, $B$0)
-    */
-  val falseConst = "$B$0"
-
-  /**
-    * Get the name of the reserved Boolean constant that is always false
-    * (useful to avoid messing with the keywords).
-    * @return the name (typically, $B$1)
-    */
-  val trueConst = "$B$1"
-}
-

@@ -70,25 +70,6 @@ package object bmcmt {
     override def toString: String = "Cell"
   }
 
-  case class BoolTheory() extends Theory {
-    /**
-      * The prefix of all Boolean constants.
-      */
-    val namePrefix = "$B$"
-
-    /**
-      * Check whether a constant is named after the theory naming convention.
-      *
-      * @param name a constant name
-      * @return if the name follows the naming conventions of this theory.
-      */
-    override def hasConst(name: String): Boolean = {
-      name.startsWith(namePrefix)
-    }
-
-    override def toString: String = "Bool"
-  }
-
   /**
     * A theory of integers. This theory is obsolete and will be removed soon,
     * as we are now using cells of type IntT().

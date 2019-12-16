@@ -77,7 +77,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val fun = OperEx(TlaFunOper.funDef, mapping, NameEx("x"), set)
     val eq = tla.eql(tla.appFun(fun, tla.int(1)), tla.enumSet())
 
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -277,10 +277,9 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     }
     rewriter.push()
     val appEq = tla.eql(nextState.ex, tla.enumSet(tla.int(1), tla.int(3)))
-    val eqState = nextState.setRex(appEq).setTheory(BoolTheory())
+    val eqState = nextState.setRex(appEq).setTheory(CellTheory())
     create().rewriteUntilDone(eqState).ex match {
       case eqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(eqEx)
         assert(solverContext.sat())
 
@@ -289,10 +288,10 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     }
     rewriter.pop()
     val appNeq = tla.not(tla.eql(nextState.ex, tla.enumSet(tla.int(1), tla.int(3))))
-    val neqState = nextState.setRex(appNeq).setTheory(BoolTheory())
+    val neqState = nextState.setRex(appNeq).setTheory(CellTheory())
     rewriter.rewriteUntilDone(neqState).ex match {
       case eqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
+        assert(CellTheory().hasConst(name))
         solverContext.assertGroundExpr(eqEx)
         assert(!solverContext.sat())
 
@@ -315,12 +314,11 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
   test("""SE-FUN-EQ4: [y \in BOOLEAN |-> ~y] = [x \in BOOLEAN |-> ~x]""") {
     val fun1 = tla.funDef(tla.not(tla.name("y")), tla.name("y"), ValEx(TlaBoolSet))
     val fun2 = tla.funDef(tla.not(tla.name("x")), tla.name("x"), ValEx(TlaBoolSet))
-    val state = new SymbState(tla.eql(fun1, fun2), BoolTheory(), arena, Binding())
+    val state = new SymbState(tla.eql(fun1, fun2), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         rewriter.push()
         solverContext.assertGroundExpr(membershipEx)
         assert(solverContext.sat())
@@ -338,12 +336,11 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
   test("""SE-FUN-NE: ~([y \in BOOLEAN |-> ~y] = [x \in BOOLEAN |-> ~x])""") {
     val fun1 = tla.funDef(tla.not(tla.name("y")), tla.name("y"), ValEx(TlaBoolSet))
     val fun2 = tla.funDef(tla.not(tla.name("x")), tla.name("x"), ValEx(TlaBoolSet))
-    val state = new SymbState(tla.not(tla.eql(fun1, fun2)), BoolTheory(), arena, Binding())
+    val state = new SymbState(tla.not(tla.eql(fun1, fun2)), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         val failureOccurs = tla.or(nextState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
         rewriter.push()
@@ -361,12 +358,11 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
   test("""SE-FUN-NE: ~([y \in BOOLEAN |-> ~y] = [x \in BOOLEAN |-> x])""") {
     val fun1 = tla.funDef(tla.not(tla.name("y")), tla.name("y"), ValEx(TlaBoolSet))
     val fun2 = tla.funDef(tla.name("x"), tla.name("x"), ValEx(TlaBoolSet))
-    val state = new SymbState(tla.not(tla.eql(fun1, fun2)), BoolTheory(), arena, Binding())
+    val state = new SymbState(tla.not(tla.eql(fun1, fun2)), CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         val failureOccurs = tla.or(nextState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
         rewriter.push()
@@ -412,10 +408,9 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     }
     rewriter.push()
     val appEq = tla.eql(nextState.ex, boolNegFun)
-    val eqState = rewriter.rewriteUntilDone(nextState.setRex(appEq).setTheory(BoolTheory()))
+    val eqState = rewriter.rewriteUntilDone(nextState.setRex(appEq).setTheory(CellTheory()))
     eqState.ex match {
       case eqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(eqEx)
         val isSat = solverContext.sat()
         assert(isSat)
@@ -426,10 +421,9 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     rewriter.pop()
     rewriter.push()
     val appNeq = tla.not(tla.eql(nextState.ex, boolNegFun))
-    val neqState = rewriter.rewriteUntilDone(nextState.setRex(appNeq).setTheory(BoolTheory()))
+    val neqState = rewriter.rewriteUntilDone(nextState.setRex(appNeq).setTheory(CellTheory()))
     neqState.ex match {
       case neqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(neqEx)
         val failureOccurs = tla.or(neqState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -449,12 +443,11 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val iteFunElem = tla.appFun(iteFun, tla.int(1))
     val iteFunElemNe11 = tla.not(tla.eql(iteFunElem, tla.int(11)))
 
-    val state = new SymbState(iteFunElemNe11, BoolTheory(), arena, Binding())
+    val state = new SymbState(iteFunElemNe11, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case resFunEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(resFunEx)
         val failureOccurs = tla.or(nextState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -494,7 +487,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val exceptFun = nextState.asCell
 
     val resFun1Ne11 = tla.not(tla.eql(tla.appFun(nextState.ex, tla.int(1)), tla.int(11)))
-    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(BoolTheory()))
+    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(CellTheory()))
 
     // compare
     rewriter.push()
@@ -502,7 +495,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     // make sure that not equals gives us sat
     cmpState.ex match {
       case neqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
+        assert(CellTheory().hasConst(name))
         solverContext.assertGroundExpr(neqEx)
         /*
         // not using failure predicates anymore
@@ -545,7 +538,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val exceptFun = nextState.arena.findCellByNameEx(nextState.ex)
 
     val resFun1Ne11 = tla.not(tla.eql(tla.appFun(nextState.ex, tla.int(1)), tla.int(11)))
-    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(BoolTheory()))
+    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(CellTheory()))
 
     // compare
     rewriter.push()
@@ -553,7 +546,6 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     // make sure that not equals gives us sat
     cmpState.ex match {
       case neqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(neqEx)
         val failureOccurs = tla.or(cmpState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -593,7 +585,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val exceptFun = nextState.arena.findCellByNameEx(nextState.ex)
 
     val resFun1Ne11 = tla.not(tla.eql(tla.appFun(nextState.ex, tla.int(1)), tla.int(11)))
-    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(BoolTheory()))
+    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(CellTheory()))
 
     // compare
     rewriter.push()
@@ -601,7 +593,6 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     // make sure that not equals gives us sat
     cmpState.ex match {
       case neqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(neqEx)
         val failureOccurs = tla.or(cmpState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -641,7 +632,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val exceptFun = nextState.arena.findCellByNameEx(nextState.ex)
 
     val resFun1Ne11 = tla.not(tla.eql(tla.appFun(nextState.ex, tla.str("a")), tla.int(11)))
-    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(BoolTheory()))
+    val cmpState = rewriter.rewriteUntilDone(nextState.setRex(resFun1Ne11).setTheory(CellTheory()))
 
     // compare
     rewriter.push()
@@ -649,7 +640,6 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     // make sure that not equals gives us sat
     cmpState.ex match {
       case neqEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         solverContext.assertGroundExpr(neqEx)
         val failureOccurs = tla.or(cmpState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
         solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -674,7 +664,7 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val rewriter = new SymbStateRewriterImpl(solverContext, typeFinder)
     typeFinder.inferAndSave(exists)
 
-    val state = new SymbState(exists, BoolTheory(), arena, Binding())
+    val state = new SymbState(exists, CellTheory(), arena, Binding())
     val nextState = rewriter.rewriteUntilDone(state)
     val failureOccurs = tla.or(nextState.arena.findCellsByType(FailPredT()).map(_.toNameEx): _*)
     solverContext.assertGroundExpr(tla.not(failureOccurs))
@@ -706,12 +696,11 @@ class TestSymbStateRewriterFun extends RewriterBase with TestingPredefs {
     val ex = tla.letIn(app,
       tla.declOp("X", tla.cap(tla.enumSet(1, 2), tla.enumSet(2))))
 
-    val state = new SymbState(ex, BoolTheory(), arena, Binding())
+    val state = new SymbState(ex, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case membershipEx@NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
         assert(solverContext.sat()) // it should be sat
         rewriter.push()
         val failPreds = nextState.arena.findCellsByType(FailPredT())

@@ -226,7 +226,7 @@ class TestSymbStateRewriterRecord extends RewriterBase {
       tla.enumFun(tla.str("n"), tla.int(i), tla.str("b"), tla.bool(b))
     val eq = tla.eql(prod, tla.enumSet(rec(1, false), rec(1, true), rec(2, false), rec(2, true)))
 
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     rewriter.push()
@@ -246,7 +246,7 @@ class TestSymbStateRewriterRecord extends RewriterBase {
     val expectedRecordT = FinSetT(RecordT(SortedMap("n" -> IntT(), "b" -> BoolT())))
     val annotated = tla.withType(prod, AnnotationParser.toTla(expectedRecordT))
 
-    val state = new SymbState(annotated, BoolTheory(), arena, Binding())
+    val state = new SymbState(annotated, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val cell = nextState.arena.findCellByNameEx(nextState.ex)
@@ -260,7 +260,7 @@ class TestSymbStateRewriterRecord extends RewriterBase {
     val prod = tla.recSet(tla.str("n"), set12, tla.str("b"), setBool)
     val assign = tla.in(tla.prime(tla.name("x")), prod)
 
-    val state = new SymbState(assign, BoolTheory(), arena, Binding())
+    val state = new SymbState(assign, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val inInt =

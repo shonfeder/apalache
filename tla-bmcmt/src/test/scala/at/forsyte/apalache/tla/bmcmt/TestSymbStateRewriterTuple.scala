@@ -102,7 +102,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val eq = tla.not(tla.eql(tuple1, tuple2))
 
     val rewriter = create()
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     assertTlaExAndRestore(rewriter, state)
   }
 
@@ -112,7 +112,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val eq = tla.eql(tuple1, tuple2)
 
     val rewriter = create()
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     assertTlaExAndRestore(rewriter, state)
   }
 
@@ -124,7 +124,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     def tup(i: Int, b: Boolean) = tla.tuple(tla.int(i), tla.bool(b))
     val eq = tla.eql(prod, tla.enumSet(tup(1, false), tup(1, true), tup(2, false), tup(2, true)))
 
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     rewriter.push()
@@ -139,7 +139,7 @@ class TestSymbStateRewriterTuple extends RewriterBase {
     val tuple = TlaFunOper.mkTuple(tla.int(2), tla.bool(false), tla.str("c"))
     val set123 = tla.enumSet(1.to(3) map tla.int :_*)
     val eq = tla.eql(tla.dom(tuple), set123)
-    val state = new SymbState(eq, BoolTheory(), arena, Binding())
+    val state = new SymbState(eq, CellTheory(), arena, Binding())
     val rewriter = create()
     assertTlaExAndRestore(rewriter, state)
   }

@@ -24,28 +24,26 @@ class OrRule(rewriter: SymbStateRewriter) extends RewritingRule {
   }
 
   override def apply(state: SymbState): SymbState = {
-    val falseConst = SolverContext.falseConst
-    val trueConst = SolverContext.trueConst
     val simplfier = new ConstSimplifierForSmt()
     simplfier.simplifyShallow(state.ex) match {
       case OperEx(TlaBoolOper.or, args@_*) =>
         val finalState =
           if (args.isEmpty) {
             // empty disjunction is always false
-            state.setRex(NameEx(falseConst)).setTheory(BoolTheory())
+            state.setRex(state.arena.cellFalse().toNameEx).setTheory(CellTheory())
           } else {
             // use short-circuiting on state-level expressions (like in TLC)
             def toIte(es: Seq[TlaEx]): TlaEx = {
               es match {
                 case Seq(last) => last
-                case hd +: tail => tla.ite(hd, NameEx(trueConst), toIte(tail))
+                case hd +: tail => tla.ite(hd, state.arena.cellTrue().toNameEx, toIte(tail))
               }
             }
 
             val newState =
               if (rewriter.config.shortCircuit) {
                 // create a chain of IF-THEN-ELSE expressions and rewrite them
-                state.setRex(toIte(args)).setTheory(BoolTheory())
+                state.setRex(toIte(args)).setTheory(CellTheory())
               } else {
                 // simply translate to a disjunction
                 var nextState = state.updateArena(_.appendCell(BoolT()))

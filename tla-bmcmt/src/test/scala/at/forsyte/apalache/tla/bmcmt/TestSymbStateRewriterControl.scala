@@ -16,12 +16,12 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.lt(tla.int(5), tla.int(1))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, BoolTheory(), arena, Binding())
+    val state = new SymbState(ite, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case res @ NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
+        assert(CellTheory().hasConst(name))
         rewriter.push()
         solverContext.assertGroundExpr(res)
         assert(solverContext.sat())
@@ -40,12 +40,12 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
     val e2 = tla.lt(tla.int(5), tla.int(1))
     val ite = tla.ite(pred, e1, e2)
 
-    val state = new SymbState(ite, BoolTheory(), arena, Binding())
+    val state = new SymbState(ite, CellTheory(), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
       case res @ NameEx(name) =>
-        assert(BoolTheory().hasConst(name))
+        assert(CellTheory().hasConst(name))
         rewriter.push()
         solverContext.assertGroundExpr(tla.not(res))
         assert(solverContext.sat())
@@ -120,11 +120,11 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
         assert(CellTheory().hasConst(name))
         assert(solverContext.sat())
         rewriter.push()
-        val eqState = rewriter.rewriteUntilDone(nextState.setTheory(BoolTheory()).setRex(tla.eql(res, e2)))
+        val eqState = rewriter.rewriteUntilDone(nextState.setTheory(CellTheory()).setRex(tla.eql(res, e2)))
         solverContext.assertGroundExpr(eqState.ex)
         assert(solverContext.sat())
         rewriter.pop()
-        val neqState = rewriter.rewriteUntilDone(nextState.setTheory(BoolTheory()).setRex(tla.eql(res, e1)))
+        val neqState = rewriter.rewriteUntilDone(nextState.setTheory(CellTheory()).setRex(tla.eql(res, e1)))
         solverContext.assertGroundExpr(neqState.ex)
         assert(!solverContext.sat())
 
@@ -177,11 +177,11 @@ class TestSymbStateRewriterControl extends RewriterBase with TestingPredefs {
         assert(CellTheory().hasConst(name))
         assert(solverContext.sat())
         rewriter.push()
-        val eqState = rewriter.rewriteUntilDone(nextState.setTheory(BoolTheory()).setRex(tla.eql(res, e1)))
+        val eqState = rewriter.rewriteUntilDone(nextState.setTheory(CellTheory()).setRex(tla.eql(res, e1)))
         solverContext.assertGroundExpr(eqState.ex)
         assert(solverContext.sat())
         rewriter.pop()
-        val neqState = rewriter.rewriteUntilDone(nextState.setTheory(BoolTheory()).setRex(tla.eql(res, e2)))
+        val neqState = rewriter.rewriteUntilDone(nextState.setTheory(CellTheory()).setRex(tla.eql(res, e2)))
         solverContext.assertGroundExpr(neqState.ex)
         assert(!solverContext.sat())
 
