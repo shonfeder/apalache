@@ -231,7 +231,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
       eqCache.put(left, right, EqCache.EqEntry())
 
       // recover the original expression and theory
-      rewriter.coerce(rightToLeft.setRex(state.ex), state.theory)
+      rightToLeft.setRex(state.ex)
     }
   }
 
@@ -270,7 +270,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
     val rightElems = state.arena.getHas(right)
     if (leftElems.isEmpty) {
       // SE-SUBSETEQ1
-      state.setRex(state.arena.cellTrue()).setTheory(CellTheory())
+      state.setRex(state.arena.cellTrue())
     } else if (rightElems.isEmpty) {
       // SE-SUBSETEQ2
       def notIn(le: ArenaCell) = {
@@ -280,7 +280,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
       val newState = state.updateArena(_.appendCell(BoolT()))
       val pred = newState.arena.topCell
       rewriter.solverContext.assertGroundExpr(tla.eql(pred, tla.and(leftElems.map(notIn): _*)))
-      newState.setRex(pred).setTheory(CellTheory())
+      newState.setRex(pred)
     } else {
       // SE-SUBSETEQ3
       var newState = cacheEqConstraints(state, leftElems cross rightElems) // cache all the equalities
@@ -311,7 +311,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
       newState = newState.updateArena(_.appendCell(BoolT()))
       val pred = newState.arena.topCell
       rewriter.solverContext.assertGroundExpr(tla.eql(pred, forEachNotInOrExists))
-      newState.setTheory(CellTheory()).setRex(pred)
+      newState.setRex(pred)
     }
   }
 
@@ -362,7 +362,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
     eqCache.put(leftFun, rightFun, EqCache.EqEntry())
 
     // restore the original expression and theory
-    rewriter.coerce(relEq.setRex(state.ex), state.theory)
+    relEq.setRex(state.ex)
   }
 
   private def mkRecordEq(state: SymbState, leftRec: ArenaCell, rightRec: ArenaCell): SymbState = {
@@ -405,7 +405,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
     eqCache.put(leftRec, rightRec, EqCache.EqEntry())
 
     // restore the original expression and theory
-    rewriter.coerce(newState.setRex(state.ex), state.theory)
+    newState.setRex(state.ex)
   }
 
   private def mkTupleEq(state: SymbState, left: ArenaCell, right: ArenaCell): SymbState = {
@@ -429,7 +429,7 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
       eqCache.put(left, right, EqCache.EqEntry())
 
       // restore the original expression and theory
-      rewriter.coerce(newState.setRex(state.ex), state.theory)
+      newState.setRex(state.ex)
     }
   }
 
@@ -458,6 +458,6 @@ class LazyEquality(rewriter: SymbStateRewriter) extends StackableContext with Se
     eqCache.put(left, right, EqCache.EqEntry())
 
     // restore the original expression and theory
-    rewriter.coerce(nextState.setRex(state.ex), state.theory)
+    nextState.setRex(state.ex)
   }
 }

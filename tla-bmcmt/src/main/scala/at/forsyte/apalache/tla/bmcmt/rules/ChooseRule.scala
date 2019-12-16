@@ -35,11 +35,11 @@ class ChooseRule(rewriter: SymbStateRewriter) extends RewritingRule {
         def solverAssert = rewriter.solverContext.assertGroundExpr _
         // compute set comprehension and then pick an element from it
         val filterEx = tla.filter(varName, set, pred)
-        var nextState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(filterEx))
+        var nextState = rewriter.rewriteUntilDone(state.setRex(filterEx))
         // pick an arbitrary witness
         val setCell = nextState.asCell
         if (nextState.arena.getHas(setCell).isEmpty) {
-          rewriter.coerce(defaultValueFactory.makeUpValue(nextState, setCell), state.theory)
+          defaultValueFactory.makeUpValue(nextState, setCell)
         } else {
           val elems = nextState.arena.getHas(setCell)
           val nelems = elems.size
@@ -56,7 +56,7 @@ class ChooseRule(rewriter: SymbStateRewriter) extends RewritingRule {
 
           // If oracle = N, the picked cell is not constrained. In the past, we used a default value here,
           // but it sometimes produced conflicts (e.g., a picked record domain had to coincide with a default domain)
-          rewriter.coerce(nextState.setRex(pickedCell.toNameEx), state.theory)
+          nextState.setRex(pickedCell.toNameEx)
         }
 
       case _ =>

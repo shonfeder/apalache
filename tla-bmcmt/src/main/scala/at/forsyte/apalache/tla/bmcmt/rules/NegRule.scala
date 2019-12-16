@@ -24,13 +24,11 @@ class NegRule(rewriter: SymbStateRewriter) extends RewritingRule {
   override def apply(state: SymbState): SymbState = {
     state.ex match {
       case OperEx(TlaBoolOper.not, ex: TlaEx) =>
-        var newState = rewriter.rewriteUntilDone(state.setRex(ex).setTheory(CellTheory()))
+        var newState = rewriter.rewriteUntilDone(state.setRex(ex))
         newState = newState.updateArena(_.appendCell(BoolT()))
         val pred = newState.arena.topCell
         rewriter.solverContext.assertGroundExpr(tla.eql(tla.not(pred.toNameEx), newState.ex))
-        val finalState = newState.setRex(pred.toNameEx)
-        // coerce back, if needed
-        rewriter.coerce(finalState, state.theory)
+        newState.setRex(pred.toNameEx)
 
       case _ =>
         throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

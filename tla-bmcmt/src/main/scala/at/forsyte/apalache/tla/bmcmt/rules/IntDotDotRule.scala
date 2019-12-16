@@ -31,7 +31,7 @@ class IntDotDotRule(rewriter: SymbStateRewriter,
           throw new RewriterException("Expected two arguments to .., found " + elems.length, state.ex)
         val (start: Int, endInclusive: Int) = getRange(state.ex, elems)
         val (newArena, rangeCell) = intRangeCache.create(state.arena, (start, endInclusive))
-        state.setArena(newArena).setRex(rangeCell.toNameEx).setTheory(CellTheory())
+        state.setArena(newArena).setRex(rangeCell.toNameEx)
 
       case _ =>
         throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

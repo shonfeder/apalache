@@ -39,7 +39,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     */
   def run(): Outcome.Value = {
     val initialArena = Arena.create(context.solver)
-    val dummyState = new SymbState(initialArena.cellTrue().toNameEx, CellTheory(), initialArena, Binding())
+    val dummyState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
     val outcome =
       try {
         val initConstState = initializeConstants(dummyState)
@@ -357,7 +357,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.solver.log("; ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d {"
       .format(stepNo, context.rewriter.contextLevel, transitionNo))
     logger.debug("Worker %d: Applying rewriting rules...".format(context.rank))
-    var nextState = context.rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(transition))
+    var nextState = context.rewriter.rewriteUntilDone(state.setRex(transition))
     context.rewriter.flushStatistics()
     if (checkForErrors && params.debug) {
       // This is a debugging feature that allows us to find incorrect rewriting rules.
@@ -454,7 +454,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     } else {
       context.rewriter.push()
       val notInvState = context.rewriter.rewriteUntilDone(nextState
-        .setTheory(CellTheory())
+
         .setRex(notInv))
       context.solver.assertGroundExpr(notInvState.ex)
       context.solver.satOrTimeout(params.invariantTimeout) match {

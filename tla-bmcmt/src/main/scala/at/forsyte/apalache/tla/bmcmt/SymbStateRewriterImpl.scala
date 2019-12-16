@@ -85,7 +85,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     */
   val exprCache = new ExprCache(exprGradeStore)
 
-  private val coercion = new CoercionWithCache(this)
   @transient
   private lazy val substRule = new SubstRule(this)
 
@@ -284,15 +283,15 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     */
   def rewriteOnce(state: SymbState): RewritingResult = {
     state.ex match {
-      case NameEx(name) if CellTheory().hasConst(name) =>
-        Done(coerce(state.setTheory(CellTheory()), state.theory))
+      case NameEx(name) if Arena.isCellName(name) =>
+        Done(state)
 
       case NameEx(name) =>
         if (substRule.isApplicable(state)) {
           statListener.enterRule(substRule.getClass.getSimpleName)
           // a variable that can be substituted with a cell
-          val coercedState = coerce(substRule.apply(substRule.logOnEntry(solverContext, state)), state.theory)
-          val nextState = substRule.logOnReturn(solverContext, coercedState)
+          var nextState = substRule.apply(substRule.logOnEntry(solverContext, state))
+          nextState = substRule.logOnReturn(solverContext, nextState)
           if (nextState.arena.cellCount < state.arena.cellCount) {
             throw new RewriterException("Implementation error: the number of cells decreased from %d to %d"
               .format(state.arena.cellCount, nextState.arena.cellCount), state.ex)
@@ -344,6 +343,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
           case Done(nextState) =>
             // converged to a single cell
             rewritingStack = rewritingStack.tail // pop the expression of the stack
+            solverContext.checkConsistency(nextState.arena) // debugging
             nextState
 
           case Continue(nextState) =>
@@ -363,7 +363,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     exprCache.get(state.ex) match {
       case Some(eg: (TlaEx, ExprGrade.Value)) =>
         solverContext.log(s"; Using cached value ${eg._1} for expression ${state.ex}")
-        coerce(state.setRex(eg._1), state.theory)
+        state.setRex(eg._1)
 
       case None =>
         val nextState = doRecursive(0, state)
@@ -383,14 +383,14 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     var newState = state // it is easier to write this code with a side effect on the state
     // we should be very careful about propagating arenas here
     def eachExpr(e: TlaEx): TlaEx = {
-      val ns = rewriteUntilDone(new SymbState(e, state.theory, newState.arena, newState.binding))
+      val ns = rewriteUntilDone(new SymbState(e, newState.arena, newState.binding))
       assert(ns.arena.cellCount >= newState.arena.cellCount)
       newState = ns
       ns.ex
     }
 
     val rewrittenExprs = es map eachExpr
-    (newState.setRex(state.ex).setTheory(state.theory), rewrittenExprs)
+    (newState.setRex(state.ex), rewrittenExprs)
   }
 
   /**
@@ -404,28 +404,15 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     var newState = state // it is easier to write this code with a side effect on the state
     // we should be very careful about propagating arenas here
     def eachExpr(be: (Binding, TlaEx)): TlaEx = {
-      val ns = rewriteUntilDone(new SymbState(be._2, state.theory, newState.arena, be._1))
+      val ns = rewriteUntilDone(new SymbState(be._2, newState.arena, be._1))
       assert(ns.arena.cellCount >= newState.arena.cellCount)
       newState = ns
       ns.ex
     }
 
     val rewrittenExprs = es map eachExpr
-    (newState.setRex(state.ex).setTheory(state.theory), rewrittenExprs)
+    (newState.setRex(state.ex), rewrittenExprs)
   }
-
-  /**
-    * Coerce the state expression from the current theory to another theory.
-    *
-    * @param state        a symbolic state
-    * @param targetTheory a target theory
-    * @return a new symbolic state, if possible
-    */
-  def coerce(state: SymbState, targetTheory: Theory): SymbState = {
-    solverContext.checkConsistency(state.arena)
-    coercion.coerce(state, targetTheory)
-  }
-
 
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -441,7 +428,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     recordDomainCache.push()
     lazyEq.push()
     exprCache.push()
-    coercion.push()
     solverContext.push()
   }
 
@@ -458,7 +444,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     lazyEq.pop()
     exprCache.pop()
     solverContext.pop()
-    coercion.pop()
     level -= 1
   }
 
@@ -476,7 +461,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     lazyEq.pop(n)
     exprCache.pop(n)
     solverContext.pop(n)
-    coercion.pop(n)
     level -= n
   }
 
@@ -496,7 +480,6 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     recordDomainCache.dispose()
     lazyEq.dispose()
     solverContext.dispose()
-    coercion.dispose()
   }
 
 

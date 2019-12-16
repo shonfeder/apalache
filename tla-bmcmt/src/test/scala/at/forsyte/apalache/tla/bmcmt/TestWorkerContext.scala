@@ -25,7 +25,7 @@ class TestWorkerContext extends FunSuite {
     val workerContext = new WorkerContext(rank = 1, typeFinder, solver, rewriter, HyperTree(HyperTransition(0)))
     var arena = Arena.create(solver).appendCell(IntT())
     val x = arena.topCell
-    var state = new SymbState(tla.eql(x.toNameEx, tla.int(42)), CellTheory(), arena, Binding())
+    var state = new SymbState(tla.eql(x.toNameEx, tla.int(42)), arena, Binding())
     state = rewriter.rewriteUntilDone(state.setRex(tla.eql(x.toNameEx, tla.int(42))))
     solver.assertGroundExpr(state.ex)
     assert(solver.sat())

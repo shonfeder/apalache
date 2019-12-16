@@ -120,15 +120,6 @@ trait SymbStateRewriter extends StackableContext with MessageStorage {
   def rewriteBoundSeqUntilDone(state: SymbState, es: Seq[(Binding, TlaEx)]): (SymbState, Seq[TlaEx])
 
   /**
-    * Coerce the state expression from the current theory to another theory.
-    *
-    * @param state        a symbolic state
-    * @param targetTheory a target theory
-    * @return a new symbolic state, if possible
-    */
-  def coerce(state: SymbState, targetTheory: Theory): SymbState
-
-  /**
     * Flush collected statistics.
     */
   def flushStatistics(): Unit

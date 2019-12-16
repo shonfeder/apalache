@@ -12,7 +12,7 @@ class TestSymbStateRewriterFiniteSets extends RewriterBase {
   test("""Cardinality({1, 2, 3}) = 3""") {
     val set = tla.enumSet(1.to(3).map(tla.int) :_*)
     val card = tla.card(set)
-    val state = new SymbState(card, CellTheory(), arena, Binding())
+    val state = new SymbState(card, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -22,7 +22,7 @@ class TestSymbStateRewriterFiniteSets extends RewriterBase {
   test("""Cardinality({1, 2, 2, 2, 3, 3}) = 3""") {
     val set = tla.enumSet(Seq(1, 2, 2, 2, 3, 3).map(tla.int) :_*)
     val card = tla.card(set)
-    val state = new SymbState(card, CellTheory(), arena, Binding())
+    val state = new SymbState(card, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -38,7 +38,7 @@ class TestSymbStateRewriterFiniteSets extends RewriterBase {
 
     val set = setminus(tla.enumSet(1.to(3).map(tla.int) :_*), 2)
     val card = tla.card(set)
-    val state = new SymbState(card, CellTheory(), arena, Binding())
+    val state = new SymbState(card, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -48,7 +48,7 @@ class TestSymbStateRewriterFiniteSets extends RewriterBase {
   test("""IsFiniteSet({1, 2, 3}) = TRUE""") {
     val set = tla.enumSet(1.to(3).map(tla.int) :_*)
     val card = tla.isFin(set)
-    val state = new SymbState(card, CellTheory(), arena, Binding())
+    val state = new SymbState(card, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())

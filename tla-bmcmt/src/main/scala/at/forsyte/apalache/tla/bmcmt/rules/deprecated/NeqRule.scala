@@ -25,16 +25,14 @@ class NeqRule(rewriter: SymbStateRewriter) extends RewritingRule {
         val eqState =
           state.setRex(OperEx(TlaOper.eq, left, right))
         val nextState = rewriter.rewriteUntilDone(eqState)
-        val finalState =
-          if (state.arena.cellFalse().toNameEx == nextState.ex) {
-            nextState.setRex(state.arena.cellTrue().toNameEx)
-          } else if (state.arena.cellTrue().toNameEx == nextState.ex) {
-            nextState.setRex(state.arena.cellFalse().toNameEx)
-          } else {
-            val neState =  nextState.setRex(OperEx(TlaBoolOper.not, nextState.ex))
-            rewriter.rewriteUntilDone(neState)
-          }
-        rewriter.coerce(finalState, state.theory)
+        if (state.arena.cellFalse().toNameEx == nextState.ex) {
+          nextState.setRex(state.arena.cellTrue().toNameEx)
+        } else if (state.arena.cellTrue().toNameEx == nextState.ex) {
+          nextState.setRex(state.arena.cellFalse().toNameEx)
+        } else {
+          val neState = nextState.setRex(OperEx(TlaBoolOper.not, nextState.ex))
+          rewriter.rewriteUntilDone(neState)
+        }
 
       case _ =>
         throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

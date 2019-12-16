@@ -14,7 +14,7 @@ object ArenaCell {
   */
 class ArenaCell(val id: Int, val cellType: CellT) extends Comparable[ArenaCell] with Serializable {
   override def toString: String = {
-    "%s%d".format(CellTheory().namePrefix, id)
+    "%s%d".format(Arena.namePrefix, id)
   }
 
   def toNameEx: NameEx = {

@@ -3,16 +3,26 @@ package at.forsyte.apalache.tla.bmcmt
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
-import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
+import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx}
 
 import scala.collection.immutable.HashMap
 
 object Arena {
-  val falseName: String = CellTheory().namePrefix + "0"
-  val trueName: String = CellTheory().namePrefix + "1"
-  val booleanSetName: String = CellTheory().namePrefix + "2"
-  val natSetName: String = CellTheory().namePrefix + "3"
-  val intSetName: String = CellTheory().namePrefix + "4"
+  /**
+    * The prefix of all cells.
+    */
+  val namePrefix = "$C$"
+
+  val falseName: String = namePrefix + "0"
+  val trueName: String = namePrefix + "1"
+  val booleanSetName: String = namePrefix + "2"
+  val natSetName: String = namePrefix + "3"
+  val intSetName: String = namePrefix + "4"
+
+  def isCellName(name: String): Boolean = {
+    name.startsWith(namePrefix)
+  }
+
 
   def create(solverContext: SolverContext): Arena = {
     var arena = new Arena(solverContext, 0,
@@ -125,7 +135,14 @@ class Arena private(val solverContext: SolverContext,
     * @throws NoSuchElementException when no cell is found
     */
   def findCellByNameEx(nameEx: TlaEx): ArenaCell = {
-    cellMap(CellTheory().nameExToString(nameEx))
+    nameEx match {
+      case NameEx(name) if Arena.isCellName(name) =>
+        cellMap(name)
+
+      case _ =>
+        throw new CheckerException("Expected NameEx with a cell name, found: %s".format(nameEx))
+    }
+
   }
 
   /**

@@ -53,7 +53,7 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
     ppex match {
       case OperEx(TlaOper.eq, NameEx(left), NameEx(right)) =>
         // eq and not(ne), the latter is transformed by simplifier
-        if (CellTheory().hasConst(left) && CellTheory().hasConst(right)) {
+        if (Arena.isCellName(left) && Arena.isCellName(right)) {
           val pair = if (left.compareTo(right) <= 0) (left, right) else (right, left)
           cache.put(pair, PreproEqEntry(true))
           context.log(";;    -> pp eq cached as true ")
@@ -61,7 +61,7 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
 
       case OperEx(TlaOper.ne, NameEx(left), NameEx(right)) =>
         // ne and not(eq), the latter is transformed by simplifier
-        if (CellTheory().hasConst(left) && CellTheory().hasConst(right)) {
+        if (Arena.isCellName(left) && Arena.isCellName(right)) {
           val pair = if (left.compareTo(right) <= 0) (left, right) else (right, left)
           cache.put(pair, PreproEqEntry(false))
           context.log(";;    -> pp eq cached as false ")
@@ -69,14 +69,14 @@ class PreproSolverContext(context: SolverContext) extends SolverContext {
 
       case OperEx(TlaSetOper.in, NameEx(left), NameEx(right)) =>
         // in and not(notin), the latter is transformed by simplifier
-        if (CellTheory().hasConst(left) && CellTheory().hasConst(right)) {
+        if (Arena.isCellName(left) && Arena.isCellName(right)) {
           cache.put((left, right), PreproInEntry(true))
           context.log(";;    -> pp in cached as true ")
         }
 
       case OperEx(TlaSetOper.notin, NameEx(left), NameEx(right)) =>
         // notin and not(in), the latter is transformed by simplifier
-        if (CellTheory().hasConst(left) && CellTheory().hasConst(right)) {
+        if (Arena.isCellName(left) && Arena.isCellName(right)) {
           cache.put((left, right), PreproInEntry(false))
           context.log(";;    -> pp in cached as false ")
         }

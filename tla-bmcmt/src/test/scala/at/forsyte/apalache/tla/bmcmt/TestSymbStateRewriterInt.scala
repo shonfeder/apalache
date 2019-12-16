@@ -15,8 +15,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftCell = arena.topCell
     arena = arena.appendCell(IntT())
     val rightCell = arena.topCell
-    val state = new SymbState(OperEx(TlaOper.eq, leftCell.toNameEx, rightCell.toNameEx),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaOper.eq, leftCell.toNameEx, rightCell.toNameEx), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -53,8 +52,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftInt = arena.topCell.toNameEx
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
-    val state = new SymbState(OperEx(TlaOper.eq, leftInt, rightInt),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaOper.eq, leftInt, rightInt), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -89,8 +87,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftCell = arena.topCell
     arena = arena.appendCell(IntT())
     val rightCell = arena.topCell
-    val state = new SymbState(OperEx(TlaArithOper.lt, leftCell.toNameEx, rightCell.toNameEx),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaArithOper.lt, leftCell.toNameEx, rightCell.toNameEx), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -119,8 +116,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftCell = arena.topCell
     arena = arena.appendCell(IntT())
     val rightCell = arena.topCell
-    val state = new SymbState(OperEx(TlaArithOper.le, leftCell.toNameEx, rightCell.toNameEx),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaArithOper.le, leftCell.toNameEx, rightCell.toNameEx), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -149,8 +145,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftCell = arena.topCell
     arena = arena.appendCell(IntT())
     val rightCell = arena.topCell
-    val state = new SymbState(OperEx(TlaArithOper.gt, leftCell.toNameEx, rightCell.toNameEx),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaArithOper.gt, leftCell.toNameEx, rightCell.toNameEx), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -177,8 +172,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
   test("SE-INT-CMP1 (composite expressions): 1 + 5 > 6 - 3 ~~> $B$_k") {
     val left = OperEx(TlaArithOper.plus, ValEx(TlaInt(1)), ValEx(TlaInt(5)))
     val right = OperEx(TlaArithOper.minus, ValEx(TlaInt(6)), ValEx(TlaInt(3)))
-    val state = new SymbState(OperEx(TlaArithOper.gt, left, right),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaArithOper.gt, left, right), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -201,8 +195,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftCell = arena.topCell
     arena = arena.appendCell(IntT())
     val rightCell = arena.topCell
-    val state = new SymbState(OperEx(TlaArithOper.ge, leftCell.toNameEx, rightCell.toNameEx),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(OperEx(TlaArithOper.ge, leftCell.toNameEx, rightCell.toNameEx), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -231,8 +224,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val leftInt = arena.topCell.toNameEx
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
-    val state = new SymbState(tla.not(tla.eql(leftInt, rightInt)),
-      CellTheory(), arena, Binding())
+    val state = new SymbState(tla.not(tla.eql(leftInt, rightInt)), arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -269,7 +261,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.plus, leftInt, rightInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -297,7 +289,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.minus, leftInt, rightInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -323,7 +315,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val leftInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.uminus, leftInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -349,7 +341,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.mult, leftInt, rightInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -377,7 +369,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.div, leftInt, rightInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -405,7 +397,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     arena = arena.appendCell(IntT())
     val rightInt = arena.topCell.toNameEx
     val expr = OperEx(TlaArithOper.mod, leftInt, rightInt)
-    val state = new SymbState(expr, CellTheory(), arena, Binding())
+    val state = new SymbState(expr, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -434,7 +426,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val range = OperEx(TlaArithOper.dotdot, ValEx(TlaInt(2)), ValEx(TlaInt(5)))
     val eqExpected = OperEx(TlaOper.eq, range, expected)
 
-    val state = new SymbState(eqExpected, CellTheory(), arena, Binding())
+    val state = new SymbState(eqExpected, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
@@ -460,7 +452,7 @@ class TestSymbStateRewriterInt extends RewriterBase {
     val range = tla.dotdot(tla.int(2), tla.minus(tla.int(6), tla.int(1)))
     val eqExpected = tla.eql(range, expected)
 
-    val state = new SymbState(eqExpected, CellTheory(), arena, Binding())
+    val state = new SymbState(eqExpected, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {

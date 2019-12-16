@@ -14,7 +14,7 @@ class TestSymbStateRewriter extends RewriterBase {
     arena = arena.appendCell(UnknownT())
     val cell = arena.topCell
     val binding = Binding("x" -> cell)
-    val state = new SymbState(NameEx("x"), CellTheory(), arena, binding)
+    val state = new SymbState(NameEx("x"), arena, binding)
     create().rewriteOnce(state) match {
       case SymbStateRewriter.Done(nextState) =>
         val expected = NameEx("$C$%d".format(cell.id))

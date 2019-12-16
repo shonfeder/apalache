@@ -97,10 +97,6 @@ class SymbStateRewriterAuto(val solverContext: SolverContext) extends SymbStateR
     impl.rewriteBoundSeqUntilDone(state, es)
   }
 
-  override def coerce(state: SymbState, targetTheory: Theory): SymbState = {
-    impl.coerce(state, targetTheory)
-  }
-
   override def addMessage(id: Int, message: String): Unit = {
     impl.addMessage(id, message)
   }

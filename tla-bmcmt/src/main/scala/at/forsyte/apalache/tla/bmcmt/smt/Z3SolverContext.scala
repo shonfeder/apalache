@@ -417,7 +417,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         toArithExpr(ex)
 
       case OperEx(TlaOper.eq, lhs@NameEx(lname), rhs@NameEx(rname)) =>
-        if (CellTheory().hasConst(lname) && CellTheory().hasConst(rname)) {
+        if (Arena.isCellName(lname) && Arena.isCellName(rname)) {
           // just comparing cells
           z3context.mkEq(constCache(lname)._1, constCache(rname)._1)
         } else {
