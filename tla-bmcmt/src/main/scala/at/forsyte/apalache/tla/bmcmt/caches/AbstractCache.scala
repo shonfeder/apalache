@@ -9,7 +9,7 @@ import scala.collection.immutable.HashMap
   *
   * @author Igor Konnov
   */
-abstract class AbstractCache[ContextT, SourceT, TargetT] extends StackableContext {
+abstract class AbstractCache[ContextT, SourceT, TargetT] extends StackableContext with Serializable {
   /**
     * A context level, see StackableContext
     */
