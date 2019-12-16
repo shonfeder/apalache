@@ -1,6 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.smt
 
 import java.io.{File, PrintWriter}
+import java.util.concurrent.atomic.AtomicLong
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.profiler.{IdleSmtListener, SmtListener}
@@ -21,6 +22,8 @@ import scala.collection.mutable
   * @author Igor Konnov
   */
 class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends SolverContext {
+  private val id: Long = Z3SolverContext.createId()
+
   /**
     * A log writer, for debugging purposes.
     */
@@ -52,8 +55,14 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     * Let's cache the constants, if Z3 cannot do it well.
     * Again, the cache carries the context level, to support push and pop.
     */
-  private val constCache: mutable.Map[String, (Expr, CellT, Int)] =
-    new mutable.HashMap[String, (Expr, CellT, Int)]
+  private val cellCache: mutable.Map[Int, (Expr, CellT, Int)] =
+    new mutable.HashMap[Int, (Expr, CellT, Int)]
+
+  /**
+    * A cache for the in-relation between a set and its potential element.
+    */
+  private val inCache: mutable.Map[(Int, Int), (Expr, Int)] =
+    new mutable.HashMap[(Int, Int), (Expr, Int)]
 
   /**
     * Sometimes, we lose a fresh arena in the rewriting rules. As this situation is very hard to debug,
@@ -69,7 +78,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   override def dispose(): Unit = {
     z3context.close()
     logWriter.close()
-    constCache.clear()
+    cellCache.clear()
+    inCache.clear()
     funDecls.clear()
     cellSorts.clear()
   }
@@ -86,8 +96,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
       // Checking consistency. When the user accidentally replaces a fresh arena with an older one,
       // we report it immediately. Otherwise, it is very hard to find the cause.
       logWriter.flush() // flush the SMT log
-      throw new InternalCheckerError("Declaring cell %d, while cell %d has been already declared. Damaged arena?"
-        .format(cell.id, maxCellIdPerContext.head), NullEx)
+      throw new InternalCheckerError("SMT %d: Declaring cell %d, while cell %d has been already declared. Damaged arena?"
+        .format(id, cell.id, maxCellIdPerContext.head), NullEx)
     } else {
       maxCellIdPerContext = cell.id +: maxCellIdPerContext.tail
     }
@@ -98,7 +108,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     val cellName = cell.toString
     z3context.mkConstDecl(cellName, cellSort)
     val const = z3context.mkConst(cellName, cellSort)
-    constCache += (cellName -> (const, cell.cellType, level))
+    cellCache += (cell.id -> (const, cell.cellType, level))
 
     if (cell.id <= 1) {
       // Either FALSE or TRUE. Enforce its value explicitely
@@ -112,14 +122,28 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   override def declareInPredIfNeeded(set: ArenaCell, elem: ArenaCell): Unit = {
     val elemT = elem.cellType
     val setT = set.cellType
-    val name = s"in_${elemT.signature}${elem}_${setT.signature}$set"
-    if (!constCache.contains(name)) {
+    val name = s"in_${elemT.signature}${elem.id}_${setT.signature}${set.id}"
+    if (!inCache.contains((set.id, elem.id))) {
       smtListener.onIntroSmtConst(name)
       log(s";; declare edge predicate $name: Bool")
       log(s"(declare-const $name Bool)")
       nBoolConsts += 1
       val const = z3context.mkConst(name, z3context.getBoolSort)
-      constCache += (name -> (const, BoolT(), level))
+      inCache += ((set.id, elem.id) -> (const, level))
+    }
+  }
+
+  private def getInPred(setId: Int, elemId: Int): Expr = {
+    inCache.get((setId, elemId)) match {
+      case None =>
+        val setT = cellCache(setId)._2
+        val elemT = cellCache(elemId)._2
+        val name = s"in_${elemT.signature}${elemId}_${setT.signature}$setId"
+        logWriter.flush() // flush the SMT log
+        throw new IllegalStateException(s"SMT $id: The Boolean constant $name (set membership) is missing from the SMT context")
+
+      case Some((const, _)) =>
+        const
     }
   }
 
@@ -134,7 +158,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
       // Checking consistency. When the user accidentally replaces a fresh arena with an older one,
       // we report it immediately. Otherwise, it is very hard to find the cause.
       logWriter.flush() // flush the SMT log
-      throw new InternalCheckerError(s"Current arena has cell id = $topId, while SMT has ${maxCellIdPerContext.head}. Damaged arena?", NullEx)
+      throw new InternalCheckerError(s"SMT $id: Current arena has cell id = $topId, while SMT has ${maxCellIdPerContext.head}. Damaged arena?", NullEx)
     }
   }
 
@@ -196,13 +220,14 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         if (z3expr.isConst && z3expr.getSort.getName.toString.startsWith("Cell_")) {
           NameEx(z3expr.toString)
         } else {
-          throw new SmtEncodingException("Expected an integer or Boolean, found: " + z3expr, ex)
+          logWriter.flush() // flush the SMT log
+          throw new SmtEncodingException(s"SMT $id: Expected an integer or Boolean, found: $z3expr", ex)
         }
     }
   }
 
   private def initLog(): PrintWriter = {
-    val writer = new PrintWriter(new File("log.smt"))
+    val writer = new PrintWriter(new File(s"log$id.smt"))
     if (!debug) {
       writer.println("Logging is disabled (Z3SolverContext.debug = false). Activate with --debug.")
       writer.flush()
@@ -233,7 +258,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     val resSig = resultType.signature
     val funName = s"fun$cellName"
     if (funDecls.contains(funName)) {
-      throw new SmtEncodingException(s"Declaring twice the function associated with cell $cellName", NullEx)
+      logWriter.flush() // flush the SMT log
+      throw new SmtEncodingException(s"SMT $id: Declaring twice the function associated with cell $cellName", NullEx)
     } else {
       val domSort = getOrMkCellSort(argType)
       val cdmSort = getOrMkCellSort(resultType)
@@ -268,7 +294,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
       // clean the caches
       cellSorts.retain((_, value) => value._2 <= level)
       funDecls.retain((_, value) => value._2 <= level)
-      constCache.retain((_, value) => value._3 <= level)
+      cellCache.retain((_, value) => value._3 <= level)
+      inCache.retain((_, value) => value._2 <= level)
     }
   }
 
@@ -282,7 +309,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
       // clean the caches
       cellSorts.retain((_, value) => value._2 <= level)
       funDecls.retain((_, value) => value._2 <= level)
-      constCache.retain((_, value) => value._3 <= level)
+      cellCache.retain((_, value) => value._3 <= level)
+      inCache.retain((_, value) => value._2 <= level)
     }
   }
 
@@ -293,7 +321,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     logWriter.flush() // good time to flush
     if (status == Status.UNKNOWN) {
       // that seems to be the only reasonable behavior
-      throw new SmtEncodingException("SMT solver reports UNKNOWN. Perhaps, your specification is outside the supported logic.", NullEx)
+      logWriter.flush() // flush the SMT log
+      throw new SmtEncodingException(s"SMT $id: z3 reports UNKNOWN. Maybe, your specification is outside the supported logic.", NullEx)
     }
     status == Status.SATISFIABLE
   }
@@ -378,22 +407,10 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     }
   }
 
-  private def getInPred(setName: String, setT: CellT, elemName: String, elemT: CellT): Expr = {
-    val name = s"in_${elemT.signature}${elemName}_${setT.signature}$setName"
-
-    constCache.get(name) match {
-      case None =>
-        throw new IllegalStateException(s"Trying to use in($elemName, $setName) while $elemName is not in $setName arena")
-
-      case Some((const, _, _)) =>
-        const
-    }
-  }
-
   private def toExpr(ex: TlaEx): Expr = {
     ex match {
       case NameEx(name) =>
-        constCache(name)._1 // the cached expression
+        cellCache(ArenaCell.idFromName(name))._1 // the cached cell
 
       case ValEx(TlaBool(false)) =>
         z3context.mkFalse()
@@ -405,7 +422,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         if (num.isValidLong) {
           z3context.mkInt(num.toLong)
         } else {
-          throw new SmtEncodingException("A number constant is too large to fit in Long: " + num, NullEx)
+          logWriter.flush() // flush the SMT log
+          throw new SmtEncodingException(s"SMT $id: A number constant is too large to fit in Long: $num", NullEx)
         }
 
       case OperEx(oper: TlaArithOper, lex, rex) =>
@@ -417,9 +435,9 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         toArithExpr(ex)
 
       case OperEx(TlaOper.eq, lhs@NameEx(lname), rhs@NameEx(rname)) =>
-        if (Arena.isCellName(lname) && Arena.isCellName(rname)) {
+        if (ArenaCell.isValidName(lname) && ArenaCell.isValidName(rname)) {
           // just comparing cells
-          z3context.mkEq(constCache(lname)._1, constCache(rname)._1)
+          z3context.mkEq(cellCache(ArenaCell.idFromName(lname))._1, cellCache(ArenaCell.idFromName(rname))._1)
         } else {
           // comparing integers and Boolean to cells, Booleans to Booleans, and Integers to Integers
           toEqExpr(toExpr(lhs), toExpr(rhs))
@@ -466,17 +484,19 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         z3context.mkNot(toExpr(OperEx(TlaSetOper.in, elem, set)).asInstanceOf[BoolExpr])
 
       case OperEx(TlaSetOper.in, NameEx(elemName), NameEx(setName)) =>
-        val setEntry = constCache(setName)
-        val elemEntry = constCache(elemName)
-        getInPred(setName, setEntry._2, elemName, elemEntry._2)
+        val setId = ArenaCell.idFromName(setName)
+        val elemId = ArenaCell.idFromName(elemName)
+        getInPred(setId, elemId)
 
       // the old implementation allowed us to do that, but the new one is encoding edges directly
     case OperEx(TlaSetOper.in, ValEx(TlaInt(_)), NameEx(_))
         | OperEx(TlaSetOper.in, ValEx(TlaBool(_)), NameEx(_)) =>
-        throw new InvalidTlaExException("Preprocessing introduced a literal inside tla.in: " + ex, ex)
+        logWriter.flush() // flush the SMT log
+        throw new InvalidTlaExException(s"SMT $id: Preprocessing introduced a literal inside tla.in: $ex", ex)
 
       case _ =>
-        throw new InvalidTlaExException("Unexpected TLA+ expression: " + ex, ex)
+        logWriter.flush() // flush the SMT log
+        throw new InvalidTlaExException(s"SMT $id: Unexpected TLA+ expression: $ex", ex)
     }
   }
 
@@ -499,7 +519,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         z3context.mkEq(le, re)
 
       case _ =>
-        throw new CheckerException("Incomparable expressions", NullEx)
+        logWriter.flush() // flush the SMT log
+        throw new CheckerException(s"SMT $id: Incomparable expressions", NullEx)
     }
   }
 
@@ -509,7 +530,8 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         if (num.isValidLong) {
           z3context.mkInt(num.toLong)
         } else {
-          throw new SmtEncodingException("A number constant is too large to fit in Long: " + num, ex)
+          logWriter.flush() // flush the SMT log
+          throw new SmtEncodingException(s"SMT $id: A number constant is too large to fit in Long: " + num, ex)
         }
 
       case NameEx(name) =>
@@ -562,8 +584,17 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
 
 
       case _ =>
-        throw new InvalidTlaExException("Unexpected arithmetic expression: " + ex, ex)
+        logWriter.flush() // flush the SMT log
+        throw new InvalidTlaExException(s"SMT $id: Unexpected arithmetic expression: $ex", ex)
     }
 
+  }
+}
+
+object Z3SolverContext {
+  private var nextId: AtomicLong = new AtomicLong(0)
+
+  private def createId(): Long = {
+    nextId.getAndIncrement()
   }
 }

@@ -20,7 +20,7 @@ class AssignmentRule(rewriter: SymbStateRewriter) extends RewritingRule {
 
   override def isApplicable(state: SymbState): Boolean = {
     def isUnbound(name: String) =
-      (!Arena.isCellName(name)
+      (!ArenaCell.isValidName(name)
         && !state.binding.contains(name + "'"))
 
     state.ex match {

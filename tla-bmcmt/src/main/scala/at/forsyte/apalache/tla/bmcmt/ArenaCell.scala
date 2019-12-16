@@ -1,10 +1,22 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import at.forsyte.apalache.tla.bmcmt.Arena.namePrefix
 import at.forsyte.apalache.tla.bmcmt.types.CellT
 import at.forsyte.apalache.tla.lir.oper.TlaOper
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx}
 
 object ArenaCell {
+  def isValidName(name: String): Boolean = {
+    name.startsWith(namePrefix)
+  }
+
+  def idFromName(name: String): Int = {
+    if (name.startsWith(namePrefix)) {
+      name.substring(namePrefix.length).toInt
+    } else {
+      throw new IllegalArgumentException("Expected a cell name, found: " + name)
+    }
+  }
 }
 
 /**

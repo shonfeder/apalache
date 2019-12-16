@@ -19,7 +19,7 @@ object RecordingZ3SolverContext {
 }
 
 @SerialVersionUID(700L)
-class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverContext with Serializable {
+class RecordingZ3SolverContext(var debug: Boolean, var profile: Boolean) extends SolverContext with Serializable {
   import RecordingZ3SolverContext._
 
   private var solver = new Z3SolverContext(debug, profile)
@@ -39,6 +39,8 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param ois object input stream
     */
   private def readObject(ois: ObjectInputStream): Unit = {
+    debug = ois.readObject().asInstanceOf[Boolean]
+    profile = ois.readObject().asInstanceOf[Boolean]
     val totalSize = ois.readObject().asInstanceOf[Int]
     lastLog = List[Record]()
     solver = new Z3SolverContext(debug, profile)
@@ -60,6 +62,8 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param oos object output stream
     */
   private def writeObject(oos: ObjectOutputStream): Unit = {
+    oos.writeObject(debug)
+    oos.writeObject(profile)
     val totalSize = logStack.map(_.size).sum + lastLog.size
     oos.writeObject(totalSize)
     for (logPerContext <- logStack) {
@@ -188,7 +192,9 @@ class RecordingZ3SolverContext(debug: Boolean, profile: Boolean) extends SolverC
     * @param message message text, call-by-name
     */
   override def log(message: => String): Unit = {
-    // ignore logging
+    if (debug) {
+      solver.log(message)
+    }
   }
 
   /**

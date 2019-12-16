@@ -2,10 +2,10 @@ package at.forsyte.apalache.tla.bmcmt.search
 
 import java.io._
 
-import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter}
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.bmcmt.smt.{RecordingZ3SolverContext, SolverContext}
+import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
+import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter}
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
 
 import scala.collection.immutable.SortedMap
@@ -78,6 +78,7 @@ class WorkerContext(var rank: Int,
       oos.writeObject(WorkerContext.getClass.getName)
       oos.writeObject(this)
       oos.flush()
+      fos.flush()
     } finally {
       oos.close()
       fos.close()
@@ -112,7 +113,6 @@ object WorkerContext {
         throw new IOException("Corrupted serialized file: " + file)
       } else {
         val context = ois.readObject().asInstanceOf[WorkerContext]
-//        context.solver.asInstanceOf[RecordingZ3SolverContext].replayLog()
         context.rank = newRank
         context
       }

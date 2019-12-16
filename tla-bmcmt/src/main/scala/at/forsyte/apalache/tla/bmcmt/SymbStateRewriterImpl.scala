@@ -283,7 +283,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
     */
   def rewriteOnce(state: SymbState): RewritingResult = {
     state.ex match {
-      case NameEx(name) if Arena.isCellName(name) =>
+      case NameEx(name) if ArenaCell.isValidName(name) =>
         Done(state)
 
       case NameEx(name) =>

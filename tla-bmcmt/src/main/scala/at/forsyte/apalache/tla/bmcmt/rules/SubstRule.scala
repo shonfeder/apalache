@@ -14,7 +14,7 @@ class SubstRule(rewriter: SymbStateRewriter) extends RewritingRule {
     state.ex match {
       case NameEx(x) =>
         // make sure that x is not an SMT constant, but a variable name
-        !Arena.isCellName(x)
+        !ArenaCell.isValidName(x)
 
       case _ => false
     }

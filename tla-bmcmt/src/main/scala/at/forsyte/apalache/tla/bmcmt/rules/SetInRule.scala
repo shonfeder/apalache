@@ -17,7 +17,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
   override def isApplicable(state: SymbState): Boolean = {
     state.ex match {
       case OperEx(TlaSetOper.in, NameEx(name), _) =>
-        Arena.isCellName(name) || state.binding.contains(name)
+        ArenaCell.isValidName(name) || state.binding.contains(name)
 
       case OperEx(TlaSetOper.in, _, _) =>
         true

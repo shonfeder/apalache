@@ -19,11 +19,6 @@ object Arena {
   val natSetName: String = namePrefix + "3"
   val intSetName: String = namePrefix + "4"
 
-  def isCellName(name: String): Boolean = {
-    name.startsWith(namePrefix)
-  }
-
-
   def create(solverContext: SolverContext): Arena = {
     var arena = new Arena(solverContext, 0,
       new ArenaCell(-1, UnknownT()),
@@ -136,7 +131,7 @@ class Arena private(val solverContext: SolverContext,
     */
   def findCellByNameEx(nameEx: TlaEx): ArenaCell = {
     nameEx match {
-      case NameEx(name) if Arena.isCellName(name) =>
+      case NameEx(name) if ArenaCell.isValidName(name) =>
         cellMap(name)
 
       case _ =>
