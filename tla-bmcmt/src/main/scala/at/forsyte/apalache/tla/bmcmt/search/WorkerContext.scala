@@ -60,6 +60,13 @@ class WorkerContext(var rank: Int,
   def types: SortedMap[String, CellT] = typesStack.head
 
   /**
+    * Dispose the resources that are associated with the context
+    */
+  def dispose(): Unit = {
+    rewriter.dispose()
+  }
+
+  /**
     * Push a new level in the context.
     * @param state a new symbolic state
     * @param oracle an oracle that defines which transition reaches the state
