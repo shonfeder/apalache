@@ -501,8 +501,8 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
       checker2.run()
     }
 
-    val outcome1 = Await.result(future1, Duration(5, TimeUnit.SECONDS))
-    val outcome2 = Await.result(future2, Duration(5, TimeUnit.SECONDS))
+    val outcome1 = Await.result(future1, Duration(10, TimeUnit.SECONDS))
+    val outcome2 = Await.result(future2, Duration(10, TimeUnit.SECONDS))
 
     assert(Checker.Outcome.Error == outcome1 || Checker.Outcome.Error == outcome2)
   }

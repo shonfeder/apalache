@@ -34,3 +34,8 @@ case class DisabledTransition() extends TransitionStatus
   * The solver timed out when checking the transition.
   */
 case class TimedOutTransition() extends TransitionStatus
+
+/**
+  * A bug (e.g., invariant violation) was found after applying the transition.
+  */
+case class BuggyTransition() extends TransitionStatus

@@ -90,9 +90,11 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
 
     // run the threads and join
     val workerThreads = 1.to(nworkers) map createCheckerThread
-    addShutdownHook(workerThreads)
-    workerThreads.foreach(_.start())
-    workerThreads.foreach(_.join())
+    val shutdownHook = createShutdownHook(workerThreads)
+    Runtime.getRuntime.addShutdownHook(shutdownHook)    // shutdown the threads, if needed
+    workerThreads.foreach(_.start())                    // start the workers
+    workerThreads.foreach(_.join())                     // wait for their termination
+    Runtime.getRuntime.removeShutdownHook(shutdownHook) // no need for the hook anymore
 
     sharedState.workerStates.values.forall(_ == BugFreeState())
   }
@@ -114,17 +116,17 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     new ModelChecker(input, params, sharedState, context, changeListener, sourceStore)
   }
 
-  private def addShutdownHook(workerThreads: Seq[Thread]): Unit = {
-    Runtime.getRuntime.addShutdownHook(new Thread() {
+  private def createShutdownHook(workerThreads: Seq[Thread]): Thread = {
+    new Thread() {
       override def run(): Unit = {
         logger.error("Shutdown hook activated. Interrupting the workers and joining them for %d ms."
           .format(JOIN_TIMEOUT_MS))
         workerThreads.foreach(_.interrupt())
         workerThreads.foreach(_.join(JOIN_TIMEOUT_MS))
         logger.error("System shutdown")
-        System.exit(EXITCODE_ON_SHUTDOWN)
+        Runtime.getRuntime.halt(EXITCODE_ON_SHUTDOWN)
       }
-    })
+    }
   }
 
   /**
