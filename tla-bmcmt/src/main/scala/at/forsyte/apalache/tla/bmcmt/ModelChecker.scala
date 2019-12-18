@@ -33,6 +33,11 @@ class ModelChecker(val checkerInput: CheckerInput,
   class CancelSearchException(val outcome: Outcome.Value) extends Exception
 
   /**
+    * When a worker thread has nothing to do, it sleep for that number of seconds.
+    */
+  private val SLEEP_DURATION_MS = 500
+
+  /**
     * Check all executions of a TLA+ specification up to a bounded number of steps.
     *
     * @return a verification outcome
@@ -49,15 +54,18 @@ class ModelChecker(val checkerInput: CheckerInput,
           val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
 
           sharedState.synchronized {
+            context.activeNode = sharedState.searchRoot // start with the root
             saveContextInActiveNode(initConstState, new MockOracle(0)) // save for later recovery
-            sharedState.transitions = HashMap(statuses: _*)
+            // the root node contains the list of transitions to be explored
+            context.activeNode.openTransitions = HashMap(statuses: _*)
           }
         }
 
         // register the worker
         sharedState.synchronized {
-          assert(context.activeNode.id == sharedState.activeNode.id)
-          sharedState.workerStates += context.rank -> IdleState()
+          context.activeNode = sharedState.searchRoot // start with the root
+          context.workerState = IdleState()
+          sharedState.workerStates += context.rank -> IdleState() // register as idle
         }
 
         logger.info(s"Worker ${context.rank} started")
@@ -127,10 +135,12 @@ class ModelChecker(val checkerInput: CheckerInput,
       // try to apply one of the actions, similar to what we see in the TLA+ spec
       // TODO: introduce a function that checks the preconditions and selects one action
       // TODO: the current implementation has too many collisions on the locks
-      val appliedAction = borrowTransition() || checkOneTransition() || increaseDepth() || finishBugFree()
+      val appliedAction =
+      borrowTransition() || checkOneTransition() || increaseDepth() || switchNode() || finishBugFree()
+
       if (!appliedAction) {
         // no action applicable, the worker waits and then continues
-        Thread.sleep(100)
+        Thread.sleep(SLEEP_DURATION_MS)
       }
     }
 
@@ -150,17 +160,18 @@ class ModelChecker(val checkerInput: CheckerInput,
     * Try to borrow a transition for feasibility checking.
     */
   private def borrowTransition(): Boolean = {
-    sharedState.synchronized {
-      if (sharedState.workerStates(context.rank) != IdleState()) {
-        return false
-      }
-      sharedState.transitions.find {
+    if (context.workerState != IdleState()) {
+      return false
+    }
+    context.activeNode.synchronized {
+      context.activeNode.openTransitions.find {
         _._2._2 == NewTransition()
       } match {
         case Some((no, (ex, _))) =>
           logger.debug(s"Worker ${context.rank} borrowed transition $no")
-          sharedState.transitions += (no -> (ex, BorrowedTransition()))
-          sharedState.workerStates += context.rank -> ExploringState(no, ex)
+          context.activeNode.openTransitions += (no -> (ex, BorrowedTransition()))
+          context.workerState = ExploringState(no, ex)
+          sharedState.workerStates += context.rank -> context.workerState
           true
 
         case None => false
@@ -170,68 +181,63 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   /**
     * Serialize the context and save it to the file that is named after the active node.
+    *
+    * This method must be called under a lock on the node!
     */
   private def saveContextInActiveNode(state: SymbState, oracle: Oracle): Unit = {
-//    val savefile = getNodeFile(context.activeNode)
-//    context.saveToFile(savefile)
+    //    val savefile = getNodeFile(context.activeNode)
+    //    context.saveToFile(savefile)
     assert(context.activeNode.snapshot.isEmpty)
     context.activeNode.snapshot = Some(context.makeSnapshot(state, oracle))
   }
 
   /**
-    * Recover the worker context from a snapshot
+    * Recover the worker context from a snapshot.
+    *
     * @param node the root of the tree to use for recovery
     */
-  private def recoverContext(node: HyperTree): Unit = {
+  private def recoverContext(node: HyperNode): Unit = {
     logger.debug(s"Worker ${context.rank} is synchronizing with tree node ${node.id}")
     context.dispose() // free the resources
     // XXX: using a type cast
     context = WorkerContext.recover(context.rank, node, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
-//    context = WorkerContext.load(getNodeFile(tree), context.rank)
+    //    context = WorkerContext.load(getNodeFile(tree), context.rank)
     context.solver.log(";;;;;;;;;;;;; RECOVERY FROM node %d".format(context.activeNode.id))
   }
 
   private def checkOneTransition(): Boolean = {
-    // TODO: store the worker's state locally, so we don't need a lock to check the worker's state?
-    val (workerState, globalActive) = sharedState.synchronized {
-      (sharedState.workerStates(context.rank), sharedState.activeNode)
-    }
-    workerState match {
-      case ExploringState(_, _) => ()
-      case _ => return false // this worker is doing something else
-    }
-
-    if (globalActive.id != context.activeNode.id) {
-      // the active node has been change, catch up
-      context.activeNode = globalActive
-    }
-
-    workerState match {
+    context.workerState match {
       case ExploringState(trNo, trEx) if !params.stepMatchesFilter(context.stepNo, trNo) =>
         // the transition does not match the filter, skip
+        context.activeNode.synchronized {
+          context.activeNode.openTransitions += trNo -> (trEx, DisabledTransition())
+        }
         sharedState.synchronized {
-          sharedState.transitions += trNo -> (trEx, DisabledTransition())
-          sharedState.workerStates += context.rank -> IdleState()
+          context.workerState = IdleState()
+          sharedState.workerStates += context.rank -> context.workerState
         }
         true
 
       case ExploringState(trNo, trEx) =>
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
-//        val state = context.state
-//        context.typeFinder.reset(context.types) // set the variable type as they should be at this step
-//        val erased = state.setBinding(state.binding.forgetPrimed)
-//        context.rewriter.push() // LEVEL + 1
-        // do not push, keep the context offline, recover from the snapshot later
-        val (_, isEnabled) = applyOneTransition(context.stepNo, context.state, trEx, trNo, checkForErrors = true)
+      //        val state = context.state
+      //        context.typeFinder.reset(context.types) // set the variable type as they should be at this step
+      //        val erased = state.setBinding(state.binding.forgetPrimed)
+      //        context.rewriter.push() // LEVEL + 1
+      // do not push, keep the context offline, recover from the snapshot later
+      val (_, isEnabled) = applyOneTransition(context.stepNo, context.state, trEx, trNo, checkForErrors = true)
         context.rewriter.exprCache.disposeActionLevel() // leave only the constants
-//        context.rewriter.pop() // forget all the constraints that were generated by the transition, LEVEL + 0
-//        context.typeFinder.reset(context.types)
-        // TODO: handle timeouts!
-        val newStatus = if (isEnabled) EnabledTransition() else DisabledTransition()
-        sharedState.transitions.synchronized {
-          sharedState.transitions += trNo -> (trEx, newStatus)
-          sharedState.workerStates += context.rank -> IdleState()
+      //        context.rewriter.pop() // forget all the constraints that were generated by the transition, LEVEL + 0
+      //        context.typeFinder.reset(context.types)
+      // TODO: handle timeouts!
+      val newStatus = if (isEnabled) EnabledTransition() else DisabledTransition()
+        context.activeNode.synchronized {
+          context.activeNode.openTransitions += trNo -> (trEx, newStatus)
+        }
+        sharedState.synchronized {
+          context.workerState = IdleState()
+          sharedState.workerStates += context.rank -> context.workerState
         }
         // TODO: schedule invariant checking (happening in applyTransition now...)
         true // the action ran successfully
@@ -240,55 +246,86 @@ class ModelChecker(val checkerInput: CheckerInput,
     }
   }
 
-  private def increaseDepth(): Boolean = {
-    val reachedCeiling = context.stepNo >= params.stepsBound
-    var enabled: List[(TlaEx, Int)] = List()
-    if (context.rank == 1) { // only the leader may increase the depth, the others should follow
-      var newActiveNode = context.activeNode
-      // the leader advances the search tree, saves the SMT context, and other workers have to catch up
-      // TODO: can we have a smaller critical section?
-      sharedState.synchronized {
-        enabled = sharedState.transitions.
-          collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
-        val allUnexplored = sharedState.transitions forall {
-          _._2._2.isExplored
-        }
-        if (reachedCeiling || enabled.isEmpty || !allUnexplored) {
-          return false
-        }
-        // TODO: handle slow prefixes
-        // add next transitions to explore
-        val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
-        sharedState.transitions = HashMap(statuses: _*)
-        // extend the search tree and set the new tree node to be active
-        sharedState.extendActiveNode(HyperTransition(enabled.map(_._2) :_*))
-        newActiveNode = sharedState.activeNode
-
-        // recover the context, apply the enabled transitions and save the context
-        recoverContext(context.activeNode)
-        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
-        context.activeNode = newActiveNode
-        saveContextInActiveNode(nextState, nextOracle)
-        logger.info("Worker %d: ALL EXPLORING STEP %d".format(context.rank, context.stepNo))
-      }
-      true
-    } else {
+  /**
+    * If the current node is completely explored, switch the node.
+    *
+    * @return true, if successful
+    */
+  private def switchNode(): Boolean = {
+    if (context.workerState != IdleState()) {
       false
+    } else {
+      // pick a tree node that is yet to be explored (in the top-to-bottom, left-to-right order)
+      def findUnexplored(node: HyperNode): Boolean = {
+        // we do not need a lock for that, right?
+        if (!node.isExplored) {
+          context.activeNode = node
+          true
+        } else {
+          node.children.exists(findUnexplored)
+        }
+      }
+
+      // start with the root
+      findUnexplored(sharedState.searchRoot)
     }
   }
 
+  private def increaseDepth(): Boolean = {
+    val reachedCeiling = context.stepNo >= params.stepsBound
+    var enabled: List[(TlaEx, Int)] = List()
+
+    if (context.workerState != IdleState() || context.activeNode.isExplored) {
+      return false // the worker is busy or the node has been explored, nothing to check
+    }
+
+    // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up
+    // TODO: handle timeouts
+    context.activeNode.synchronized {
+      enabled = context.activeNode.openTransitions.
+        collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
+      val allUnexplored = context.activeNode.openTransitions forall {
+        _._2._2.isExplored
+      }
+      if (context.activeNode.isExplored || enabled.isEmpty || !allUnexplored) {
+        return false
+      }
+      // close the tree node, nothing to explore in this node
+      logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
+      context.activeNode.isExplored = true
+      // introduce a new node, unless the depth is too high
+      if (!reachedCeiling) {
+        val newNode = HyperNode(HyperTransition(enabled.map(_._2) :_*))
+        val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+        newNode.openTransitions = HashMap(statuses: _*)
+        context.activeNode.append(newNode)
+        // apply the transitions and push the new state in the new node
+        // TODO: can we do that outside of the critical section?
+        recoverContext(context.activeNode)
+        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
+        // switch to the new node
+        context.activeNode = newNode
+        saveContextInActiveNode(nextState, nextOracle)
+        logger.info("Worker %d: INTRODUCED NODE %d".format(context.rank, context.activeNode.id))
+      } else {
+        logger.info("Worker %d: REACHED MAX DEPTH".format(context.rank))
+      }
+    }
+
+    true
+  }
+
   private def finishBugFree(): Boolean = {
+    def allExplored(node: HyperNode): Boolean = {
+      // we do not need a lock for that, right?
+      node.isExplored && node.children.forall(allExplored)
+    }
+
     sharedState.synchronized {
       val allIdle = sharedState.workerStates.values.forall(_ == IdleState())
-      val allDisabled = sharedState.transitions.valuesIterator.forall(_._2 == DisabledTransition())
-      val allEnabledOrDisabled =
-        sharedState.transitions.valuesIterator.forall {
-          case (_, EnabledTransition()) | (_, DisabledTransition()) => true
-          case _ => false
-        }
       // TODO: check unsafePrefixes
       // TODO: check slowPrefixes
-      if (allIdle && (allDisabled || (allEnabledOrDisabled && context.stepNo == params.stepsBound))) {
+      if (allIdle && allExplored(sharedState.searchRoot)) {
         sharedState.workerStates += context.rank -> BugFreeState()
         true
       } else {
@@ -303,7 +340,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   // TODO: add WhenAllDisabledButNotFinished
 
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
-                           transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
+                                   transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
     // second, apply the enabled transitions and collect their effects
     logger.info("Worker %d: Step %d, level %d: collecting %d enabled transition(s)"
       .format(context.rank, stepNo, context.rewriter.contextLevel, transitionsWithIndex.size))
@@ -422,7 +459,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // LEVEL + 0
     } else {
       // do not push the context, as it will be recovered
-//      context.rewriter.push() // LEVEL + 1
+      //      context.rewriter.push() // LEVEL + 1
       // assume the constraint constructed by this transition
       context.solver.assertGroundExpr(nextState.ex)
       // check whether this transition violates some assertions
@@ -433,7 +470,7 @@ class ModelChecker(val checkerInput: CheckerInput,
           // check the invariant as soon as one transition has been applied
           checkAllInvariants(stepNo, transitionNo, nextState)
           // and then forget all these constraints!
-//          context.rewriter.pop() // LEVEL + 0
+          //          context.rewriter.pop() // LEVEL + 0
           context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, context.rewriter.contextLevel))
           (nextState, true)
         // LEVEL + 0
@@ -447,7 +484,7 @@ class ModelChecker(val checkerInput: CheckerInput,
               format(context.rank, transitionNo))
           }
           // recover the saved context instead of popping the SMT
-//          context.rewriter.pop() // LEVEL + 0
+          //          context.rewriter.pop() // LEVEL + 0
           context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d"
             .format(stepNo, context.rewriter.contextLevel, transitionNo))
           (nextState, false)
@@ -503,7 +540,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         case Some(true) =>
           // introduce a dummy oracle to hold the transition index, we need it for the counterexample
           val oracle = new MockOracle(transitionNo)
-          val buggyChild = HyperTree(HyperTransition(transitionNo))
+          val buggyChild = HyperNode(HyperTransition(transitionNo))
           sharedState.synchronized {
             // we need a lock on the shared state to extend the shared tree
             context.activeNode.append(buggyChild)
@@ -570,7 +607,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.typeFinder.reset(nextTypes)
   }
 
-  private def getNodeFile(tree: HyperTree): File = {
+  private def getNodeFile(tree: HyperNode): File = {
     new File(params.saveDirectory, "%d.ser".format(tree.id))
   }
 

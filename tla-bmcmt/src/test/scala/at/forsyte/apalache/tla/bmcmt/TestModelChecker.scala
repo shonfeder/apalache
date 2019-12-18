@@ -30,7 +30,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
   private var solver: RecordingZ3SolverContext = RecordingZ3SolverContext(None, false, false)
   private var rewriter = new SymbStateRewriterImpl(solver, typeFinder, exprGradeStore)
   private var sharedState = new SharedSearchState()
-  private var context1 = new WorkerContext(rank = 1, sharedState.activeNode, solver, rewriter, typeFinder)
+  private var context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver, rewriter, typeFinder)
 
   before {
     // initialize the model checker
@@ -41,7 +41,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     rewriter = new SymbStateRewriterImpl(solver, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
     sharedState = new SharedSearchState()
-    context1 = new WorkerContext(rank = 1, sharedState.activeNode, solver, rewriter, typeFinder)
+    context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver, rewriter, typeFinder)
   }
 
   after {
@@ -483,13 +483,13 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val solver1 = RecordingZ3SolverContext(None, false, false)
     val typeFinder1 = new TrivialTypeFinder()
     val rewriter1 = new SymbStateRewriterImpl(solver1, typeFinder1, exprGradeStore)
-    val context1 = new WorkerContext(rank = 1, sharedState.activeNode, solver1, rewriter1, typeFinder1)
+    val context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver1, rewriter1, typeFinder1)
     val checker1 = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
 
     val solver2 = RecordingZ3SolverContext(None, false, false)
     val typeFinder2 = new TrivialTypeFinder
     val rewriter2 = new SymbStateRewriterImpl(solver2, typeFinder2, exprGradeStore)
-    val context2 = new WorkerContext(rank = 2, sharedState.activeNode, solver2, rewriter2, typeFinder2)
+    val context2 = new WorkerContext(rank = 2, sharedState.searchRoot, solver2, rewriter2, typeFinder2)
     val checker2 = new ModelChecker(checkerInput, params, sharedState, context2, changeListener, sourceStore)
 
     val future1 = Future {

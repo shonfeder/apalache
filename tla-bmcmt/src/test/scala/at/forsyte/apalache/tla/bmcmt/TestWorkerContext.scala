@@ -3,7 +3,7 @@ package at.forsyte.apalache.tla.bmcmt
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
 import at.forsyte.apalache.tla.bmcmt.analyses.ExprGradeStoreImpl
-import at.forsyte.apalache.tla.bmcmt.search.{HyperTransition, HyperTree, WorkerContext}
+import at.forsyte.apalache.tla.bmcmt.search.{HyperTransition, HyperNode, WorkerContext}
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.IntT
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
@@ -22,7 +22,7 @@ class TestWorkerContext extends FunSuite {
     val solver = RecordingZ3SolverContext(None, false, false)
     val typeFinder = new TrivialTypeFinder()
     val rewriter = new SymbStateRewriterImpl(solver, typeFinder, new ExprGradeStoreImpl)
-    val workerContext = new WorkerContext(rank = 1, HyperTree(HyperTransition(0)), solver, rewriter, typeFinder)
+    val workerContext = new WorkerContext(rank = 1, HyperNode(HyperTransition(0)), solver, rewriter, typeFinder)
     var arena = Arena.create(solver).appendCell(IntT())
     val x = arena.topCell
     var state = new SymbState(tla.eql(x.toNameEx, tla.int(42)), arena, Binding())

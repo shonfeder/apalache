@@ -15,14 +15,19 @@ import at.forsyte.apalache.tla.lir.io.UTFPrinter
   * @author Igor Konnov
   */
 class WorkerContext(var rank: Int,
-                    initNode: HyperTree,
+                    initNode: HyperNode,
                     var solver: RecordingZ3SolverContext,
                     var rewriter: SymbStateRewriter,
                     var typeFinder: TrivialTypeFinder) extends Serializable {
   /**
+    * A local copy of the worker state.
+    */
+  var workerState: WorkerState = IdleState()
+
+  /**
     * The position in the search tree that the worker is exploring.
     */
-  var activeNode: HyperTree = initNode
+  var activeNode: HyperNode = initNode
 
   def stepNo: Int = activeNode.depth
 
@@ -59,13 +64,13 @@ class WorkerContext(var rank: Int,
   }
 
   def dumpCounterexample(filename: String): Unit = {
-    def findStates: Option[HyperTree] => List[SymbState] = {
+    def findStates: Option[HyperNode] => List[SymbState] = {
       // TODO: when solver is removed from Arena, fix that
       case Some(tree) => tree.snapshot.get.state.updateArena(_.setSolver(solver)) :: findStates(tree.parent)
       case None => List()
     }
 
-    def findOracles: Option[HyperTree] => List[Oracle] = {
+    def findOracles: Option[HyperNode] => List[Oracle] = {
       case Some(tree) => tree.snapshot.get.oracle :: findOracles(tree.parent)
       case None => List()
     }
@@ -111,7 +116,7 @@ object WorkerContext {
   }
 
   def recover(rank: Int,
-              node: HyperTree,
+              node: HyperNode,
               params: ModelCheckerParams,
               protoRewriter: SymbStateRewriterImpl): WorkerContext = {
     assert(node.snapshot.isDefined)

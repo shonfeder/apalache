@@ -78,10 +78,10 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
           try {
             val checker = createModelChecker(rank, sharedState, params, input, tuning)
             val outcome = checker.run()
-            logger.info("Worker %d: The outcome is %s".format(rank, outcome))
+            logger.info(s"Worker $rank: The outcome is $outcome")
           } catch {
             case e: Throwable =>
-              logger.error("Worker $rank has thrown an exception", e)
+              logger.error(s"Worker $rank has thrown an exception", e)
               System.exit(EXITCODE_ON_EXCEPTION)
           }
         }
@@ -109,7 +109,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
     rewriter.config = RewriterConfig(tuning)
-    val context = new WorkerContext(rank, sharedState.activeNode, solverContext, rewriter, typeFinder)
+    val context = new WorkerContext(rank, sharedState.searchRoot, solverContext, rewriter, typeFinder)
 
     new ModelChecker(input, params, sharedState, context, changeListener, sourceStore)
   }
