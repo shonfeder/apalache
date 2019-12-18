@@ -2,7 +2,7 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{File, PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle}
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle}
 import at.forsyte.apalache.tla.bmcmt.search._
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
@@ -42,23 +42,25 @@ class ModelChecker(val checkerInput: CheckerInput,
     val dummyState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
     val outcome =
       try {
-        val initConstState = initializeConstants(dummyState)
-        // push state 0 -- the state after initializing the parameters
-        context.push(initConstState, new MockOracle(0), context.typeFinder.getVarTypes)
-        val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
-        saveContext() // save for later recovery
-
         if (context.rank == 1) {
           // the leading worker is initializing the shared state
+          val initConstState = initializeConstants(dummyState)
+          // push state 0 -- the state after initializing the parameters
+          val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+
           sharedState.synchronized {
+            saveContextInActiveNode(initConstState, new MockOracle(0)) // save for later recovery
             sharedState.transitions = HashMap(statuses: _*)
           }
         }
 
         // register the worker
         sharedState.synchronized {
+          assert(context.activeNode.id == sharedState.activeNode.id)
           sharedState.workerStates += context.rank -> IdleState()
         }
+
+        logger.info(s"Worker ${context.rank} started")
 
         // run the worker's loop
         searchLoop()
@@ -169,19 +171,23 @@ class ModelChecker(val checkerInput: CheckerInput,
   /**
     * Serialize the context and save it to the file that is named after the active node.
     */
-  private def saveContext(): Unit = {
-    val savefile = getNodeFile(context.activeNode)
-    context.saveToFile(savefile)
+  private def saveContextInActiveNode(state: SymbState, oracle: Oracle): Unit = {
+//    val savefile = getNodeFile(context.activeNode)
+//    context.saveToFile(savefile)
+    assert(context.activeNode.snapshot.isEmpty)
+    context.activeNode.snapshot = Some(context.makeSnapshot(state, oracle))
   }
 
   /**
     * Recover the worker context from a snapshot
-    * @param tree the root of the tree to use for recovery
+    * @param node the root of the tree to use for recovery
     */
-  private def recoverContext(tree: HyperTree): Unit = {
-    logger.debug(s"Worker ${context.rank} is synchronizing with tree node ${tree.id}")
+  private def recoverContext(node: HyperTree): Unit = {
+    logger.debug(s"Worker ${context.rank} is synchronizing with tree node ${node.id}")
     context.dispose() // free the resources
-    context = WorkerContext.load(getNodeFile(tree), context.rank)
+    // XXX: using a type cast
+    context = WorkerContext.recover(context.rank, node, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
+//    context = WorkerContext.load(getNodeFile(tree), context.rank)
     context.solver.log(";;;;;;;;;;;;; RECOVERY FROM node %d".format(context.activeNode.id))
   }
 
@@ -260,11 +266,9 @@ class ModelChecker(val checkerInput: CheckerInput,
 
         // recover the context, apply the enabled transitions and save the context
         recoverContext(context.activeNode)
-        val result = applyEnabledThenPush(context.stepNo, context.state, enabled)
-        assert(result.isDefined)
-        // NOTE: applyEnabled has pushed the state and types on the stack, so we do not have to do it
+        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
         context.activeNode = newActiveNode
-        saveContext()
+        saveContextInActiveNode(nextState, nextOracle)
         logger.info("Worker %d: ALL EXPLORING STEP %d".format(context.rank, context.stepNo))
       }
       true
@@ -299,7 +303,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   // TODO: add WhenAllDisabledButNotFinished
 
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
-                           transitionsWithIndex: List[(TlaEx, Int)]): Option[SymbState] = {
+                           transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
     // second, apply the enabled transitions and collect their effects
     logger.info("Worker %d: Step %d, level %d: collecting %d enabled transition(s)"
       .format(context.rank, stepNo, context.rewriter.contextLevel, transitionsWithIndex.size))
@@ -334,8 +338,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       val resultingState = oracleState.setBinding(lastState.binding.shiftBinding(params.constants))
       context.solver.assertGroundExpr(lastState.ex)
       shiftTypes(params.constants)
-      context.push(resultingState, oracle, context.typeFinder.getVarTypes)
-      Some(resultingState)
+      (resultingState, oracle)
     } else {
       // if oracle = i, then the ith transition is enabled
       context.solver.assertGroundExpr(oracle.caseAssertions(oracleState, statesAfterTransitions.map(_.ex)))
@@ -379,8 +382,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // that is the result of this step
       shiftTypes(params.constants)
       // here we save the transition index, not the oracle, which will be shown to the user
-      context.push(finalState, oracle, context.typeFinder.getVarTypes)
-      Some(finalState)
+      (finalState, oracle)
     }
   }
 
@@ -501,7 +503,12 @@ class ModelChecker(val checkerInput: CheckerInput,
         case Some(true) =>
           // introduce a dummy oracle to hold the transition index, we need it for the counterexample
           val oracle = new MockOracle(transitionNo)
-          context.push(notInvState, oracle, context.typeFinder.getVarTypes)
+          val buggyChild = HyperTree(HyperTransition(transitionNo))
+          sharedState.synchronized {
+            // we need a lock on the shared state to extend the shared tree
+            context.activeNode.append(buggyChild)
+            buggyChild.snapshot = Some(context.makeSnapshot(notInvState, oracle))
+          }
           val filename = "counterexample.txt"
           context.dumpCounterexample(filename)
           logger.error("Worker %d: Invariant is violated at depth %d. Check the counterexample in %s".

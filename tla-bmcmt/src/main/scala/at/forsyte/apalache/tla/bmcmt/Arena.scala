@@ -64,12 +64,18 @@ object Arena {
   * @author Igor Konnov
   */
 class Arena private(val solverContext: SolverContext,
-                    val cellCount: Int, val topCell: ArenaCell,
+                    val cellCount: Int,
+                    val topCell: ArenaCell,
                     val cellMap: Map[String, ArenaCell],
                     private val hasEdges: Map[ArenaCell, List[ArenaCell]],
                     private val domEdges: Map[ArenaCell, ArenaCell],
                     private val cdmEdges: Map[ArenaCell, ArenaCell]) extends Serializable {
   // TODO: remove solverContext from Arena!
+  def setSolver(newSolverContext: SolverContext): Arena = {
+    // this is a temporary solution
+    new Arena(newSolverContext, cellCount, topCell, cellMap, hasEdges, domEdges, cdmEdges)
+  }
+
   /**
     * A fixed cell that equals to false in the Boolean theory.
     * @return the false cell

@@ -13,7 +13,7 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class TestRecordingZ3SolverContext extends FunSuite {
   test("operations proxied") {
-    val solver = new RecordingZ3SolverContext(false, false)
+    val solver = RecordingZ3SolverContext(None, false, false)
     var arena = Arena.create(solver).appendCell(IntT())
     val x = arena.topCell
     solver.assertGroundExpr(tla.eql(x.toNameEx, tla.int(42)))
@@ -22,7 +22,7 @@ class TestRecordingZ3SolverContext extends FunSuite {
   }
 
   test("write and read") {
-    val solver = new RecordingZ3SolverContext(false, false)
+    val solver = RecordingZ3SolverContext(None, false, false)
     var arena = Arena.create(solver).appendCell(IntT())
     val x = arena.topCell
     solver.assertGroundExpr(tla.eql(x.toNameEx, tla.int(42)))

@@ -2,12 +2,12 @@ package at.forsyte.apalache.tla.bmcmt.types.eager
 
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.bmcmt.ArenaCell
+import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.values.{TlaBoolSet, TlaIntSet, TlaNatSet}
 import at.forsyte.apalache.tla.lir.transformations.TransformationListener
 import at.forsyte.apalache.tla.lir.values.{TlaBool, TlaInt, TlaStr}
-import com.google.inject.Singleton
 
 import scala.collection.immutable.{Map, SortedMap}
 
@@ -29,8 +29,8 @@ import scala.collection.immutable.{Map, SortedMap}
   *
   * @author Igor Konnov
   */
-@Singleton
-class TrivialTypeFinder extends TypeFinder[CellT] with TransformationListener with Serializable {
+class TrivialTypeFinder extends TypeFinder[CellT]
+    with TransformationListener with Serializable with Recoverable[TrivialTypeSnapshot] {
   private var varTypes: SortedMap[String, CellT] = SortedMap()
   private var typeAnnotations: Map[UID, CellT] = Map()
   private var errors: Seq[TypeInferenceError] = Seq()
@@ -61,6 +61,25 @@ class TrivialTypeFinder extends TypeFinder[CellT] with TransformationListener wi
     varTypes = SortedMap(newVarTypes.toSeq: _*)
     typeAnnotations = Map()
     errors = Seq()
+  }
+
+  /**
+    * Take a snapshot and return it
+    *
+    * @return the snapshot
+    */
+  override def snapshot(): TrivialTypeSnapshot = {
+    new TrivialTypeSnapshot(typeAnnotations, varTypes)
+  }
+
+  /**
+    * Recover a previously saved snapshot (not necessarily saved by this object).
+    *
+    * @param shot a snapshot
+    */
+  override def recover(shot: TrivialTypeSnapshot): Unit = {
+    typeAnnotations = shot.typeAnnotations
+    varTypes = shot.varTypes
   }
 
   /**

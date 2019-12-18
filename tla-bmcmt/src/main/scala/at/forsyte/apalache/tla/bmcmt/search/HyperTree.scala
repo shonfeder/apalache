@@ -9,12 +9,17 @@ import java.util.concurrent.atomic.AtomicLong
   *
   * @author Igor Konnov
   */
-class HyperTree(val id: Long, val transition: HyperTransition, initChildren: Seq[HyperTree]) extends Serializable {
-  var parent: Option[HyperTree] = None
-  private var nodeChildren: Seq[HyperTree] = initChildren
+class HyperTree private (val id: Long, val transition: HyperTransition) extends Serializable {
+  var depth: Int = 0
 
-  // update the children's parent
-  initChildren.foreach { _.parent = Some(this) }
+  var parent: Option[HyperTree] = None
+
+  private var nodeChildren: Seq[HyperTree] = Seq()
+
+  /**
+    * The snapshot that is made after exploring the node.
+    */
+  var snapshot: Option[SearchSnapshot] = None
 
   /**
     * Get the node children
@@ -29,6 +34,7 @@ class HyperTree(val id: Long, val transition: HyperTransition, initChildren: Seq
   def append(child: HyperTree): Unit = {
     nodeChildren = nodeChildren :+ child
     child.parent = Some(this)
+    child.depth = depth + 1
   }
 
   /**
@@ -69,6 +75,8 @@ object HyperTree {
 
   def apply(transition: HyperTransition, children: HyperTree*): HyperTree = {
     val id = nextId.getAndIncrement()
-    new HyperTree(id, transition, children)
+    val node = new HyperTree(id, transition)
+    children.foreach(node.append)
+    node
   }
 }

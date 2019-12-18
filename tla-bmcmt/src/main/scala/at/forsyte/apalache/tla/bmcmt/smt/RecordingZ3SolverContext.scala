@@ -9,20 +9,23 @@ import com.typesafe.scalalogging.LazyLogging
 
 
 object RecordingZ3SolverContext {
-  /**
-    * A record in the solver log
-    */
-  sealed abstract class Record extends Serializable
+  def apply(parentLog: Option[SmtLog], debug: Boolean, profile: Boolean): RecordingZ3SolverContext = {
+    val context = new RecordingZ3SolverContext(parentLog, debug, profile)
+    parentLog match {
+      case Some(log) =>
+        log.replay(context.solver)
 
-  case class DeclareCellRecord(cell: ArenaCell) extends Record with Serializable
-  case class DeclareInPredRecord(set: ArenaCell, elem: ArenaCell) extends Record with Serializable
-  case class AssertGroundExprRecord(ex: TlaEx) extends Record with Serializable
+      case None => ()
+    }
+    context
+  }
 }
 
 @SerialVersionUID(700L)
-class RecordingZ3SolverContext(var debug: Boolean, var profile: Boolean)
+class RecordingZ3SolverContext private (parentLog: Option[SmtLog], var debug: Boolean, var profile: Boolean)
     extends SolverContext with Serializable with LazyLogging {
-  import RecordingZ3SolverContext._
+
+  import SmtLog._
 
   private var solver = new Z3SolverContext(debug, profile)
 
@@ -38,8 +41,9 @@ class RecordingZ3SolverContext(var debug: Boolean, var profile: Boolean)
     */
   private var lastLogRev: List[Record] = List()
 
-  private def compress(): Unit = {
-    lastLogRev = lastLogRev ++ logStackRev.flatten
+  def extractLog(): SmtLog = {
+    val newRecords = (lastLogRev ++ logStackRev.flatten).reverse
+    new SmtLog(parentLog, newRecords)
   }
 
   /**

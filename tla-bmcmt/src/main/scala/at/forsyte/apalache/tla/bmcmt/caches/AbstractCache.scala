@@ -1,6 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.caches
 
 import at.forsyte.apalache.tla.bmcmt.StackableContext
+import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
 
 import scala.collection.immutable.HashMap
 
@@ -9,7 +10,9 @@ import scala.collection.immutable.HashMap
   *
   * @author Igor Konnov
   */
-abstract class AbstractCache[ContextT, SourceT, TargetT] extends StackableContext with Serializable {
+abstract class AbstractCache[ContextT, SourceT, TargetT]
+    extends StackableContext with Serializable with Recoverable[AbstractCacheSnapshot[ContextT, SourceT, TargetT]] {
+
   /**
     * A context level, see StackableContext
     */
@@ -77,6 +80,27 @@ abstract class AbstractCache[ContextT, SourceT, TargetT] extends StackableContex
   }
 
   /**
+    * Take a snapshot and return it
+    *
+    * @return the snapshot
+    */
+  override def snapshot(): AbstractCacheSnapshot[ContextT, SourceT, TargetT] = {
+    val squashedCache = cache.map { case (source, (target, _)) => (source, (target, 0)) }
+    val squashedRevCache = reverseCache.map { case (target, (source, _)) => (target, (source, 0)) }
+    new AbstractCacheSnapshot(squashedCache, squashedRevCache)
+  }
+
+  /**
+    * Recover a previously saved snapshot (not necessarily saved by this object).
+    *
+    * @param shot a snapshot
+    */
+  override def recover(shot: AbstractCacheSnapshot[ContextT, SourceT, TargetT]): Unit = {
+    cache = shot.cache
+    reverseCache = shot.reverseCache
+  }
+
+/**
     * Save the current context and push it on the stack for a later recovery with pop.
     */
   override def push(): Unit = {

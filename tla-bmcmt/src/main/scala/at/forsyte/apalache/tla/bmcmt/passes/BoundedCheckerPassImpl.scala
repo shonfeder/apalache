@@ -8,7 +8,7 @@ import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
 import at.forsyte.apalache.tla.bmcmt.search._
-import at.forsyte.apalache.tla.bmcmt.smt.{RecordingZ3SolverContext, SolverContext}
+import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.NullEx
@@ -75,15 +75,22 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     def createCheckerThread(rank: Int): Thread = {
       new Thread {
         override def run(): Unit = {
-          val checker = createModelChecker(rank, sharedState, params, input, tuning)
-          val outcome = checker.run()
-          logger.info("Worker %d: The outcome is %s".format(rank, outcome))
+          try {
+            val checker = createModelChecker(rank, sharedState, params, input, tuning)
+            val outcome = checker.run()
+            logger.info("Worker %d: The outcome is %s".format(rank, outcome))
+          } catch {
+            case e: Throwable =>
+              logger.error("Worker $rank has thrown an exception", e)
+              System.exit(EXITCODE_ON_EXCEPTION)
+          }
         }
       }
     }
 
     // run the threads and join
     val workerThreads = 1.to(nworkers) map createCheckerThread
+    addShutdownHook(workerThreads)
     workerThreads.foreach(_.start())
     workerThreads.foreach(_.join())
 
@@ -96,15 +103,28 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
                                  input: CheckerInput,
                                  tuning: Map[String, String]): ModelChecker = {
     val profile = options.getOrElse("smt", "prof", false)
-    val solverContext: SolverContext = new RecordingZ3SolverContext(params.debug, profile)
+    val solverContext: RecordingZ3SolverContext = RecordingZ3SolverContext(None, params.debug, profile)
 
     val typeFinder = new TrivialTypeFinder
     val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
     rewriter.config = RewriterConfig(tuning)
-    val context = new WorkerContext(rank, typeFinder, solverContext, rewriter, sharedState.activeNode)
+    val context = new WorkerContext(rank, sharedState.activeNode, solverContext, rewriter, typeFinder)
 
     new ModelChecker(input, params, sharedState, context, changeListener, sourceStore)
+  }
+
+  private def addShutdownHook(workerThreads: Seq[Thread]): Unit = {
+    Runtime.getRuntime.addShutdownHook(new Thread() {
+      override def run(): Unit = {
+        logger.error("Shutdown hook activated. Interrupting the workers and joining them for %d ms."
+          .format(JOIN_TIMEOUT_MS))
+        workerThreads.foreach(_.interrupt())
+        workerThreads.foreach(_.join(JOIN_TIMEOUT_MS))
+        logger.error("System shutdown")
+        System.exit(EXITCODE_ON_SHUTDOWN)
+      }
+    })
   }
 
   /**

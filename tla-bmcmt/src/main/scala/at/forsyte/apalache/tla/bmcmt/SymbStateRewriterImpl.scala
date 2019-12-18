@@ -4,9 +4,10 @@ import at.forsyte.apalache.tla.bmcmt.SymbStateRewriter.{Continue, Done, NoRule, 
 import at.forsyte.apalache.tla.bmcmt.analyses._
 import at.forsyte.apalache.tla.bmcmt.caches._
 import at.forsyte.apalache.tla.bmcmt.profiler.RuleStatListener
-import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
+import at.forsyte.apalache.tla.bmcmt.rewriter.{Recoverable, RewriterConfig, SymbStateRewriterSnapshot}
 import at.forsyte.apalache.tla.bmcmt.rules._
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
+import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla
@@ -33,9 +34,9 @@ import scala.collection.mutable
   * @author Igor Konnov
   */
 class SymbStateRewriterImpl(val solverContext: SolverContext,
-                            val typeFinder: TypeFinder[CellT],
+                            var typeFinder: TypeFinder[CellT],
                             val exprGradeStore: ExprGradeStore = new ExprGradeStoreImpl())
-    extends SymbStateRewriter with Serializable {
+    extends SymbStateRewriter with Serializable with Recoverable[SymbStateRewriterSnapshot] {
   /**
     * We collect the sequence of expressions in the rewriting process,
     * in order to diagnose an error when an exception occurs. The latest expression in on top.
@@ -418,6 +419,29 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
 
 
   /**
+    * Take a snapshot and return it
+    *
+    * @return the snapshot
+    */
+  override def snapshot(): SymbStateRewriterSnapshot = {
+    new SymbStateRewriterSnapshot(typeFinder.asInstanceOf[TrivialTypeFinder].snapshot(), intValueCache.snapshot(),
+      intRangeCache.snapshot(), strValueCache.snapshot(), recordDomainCache.snapshot(), exprCache.snapshot())
+  }
+
+  /**
+    * Recover a previously saved snapshot (not necessarily saved by this object).
+    *
+    * @param shot a snapshot
+    */
+  override def recover(shot: SymbStateRewriterSnapshot): Unit = {
+    typeFinder.asInstanceOf[TrivialTypeFinder].recover(shot.typeFinderSnapshot)
+    intValueCache.recover(shot.intValueCacheSnapshot)
+    intRangeCache.recover(shot.intRangeCacheSnapshot)
+    strValueCache.recover(shot.strValueCacheSnapshot)
+    recordDomainCache.recover(shot.recordDomainCache)
+    exprCache.recover(shot.exprCacheSnapshot)
+  }
+/**
     * Save the current context and push it on the stack for a later recovery with pop.
     */
   override def push(): Unit = {

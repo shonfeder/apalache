@@ -30,11 +30,6 @@ class SharedSearchState {
   var activeNode: HyperTree = searchTree
 
   /**
-    * The search subtrees that could not be quickly explored, so they need a separate search.
-    */
-  var slowTrees: List[HyperTree] = List()
-
-  /**
     * Extend the active node with a child and set the child to be active.
     * @param ht a hyper-transition that corresponds to the active node
     * @return a new active node
