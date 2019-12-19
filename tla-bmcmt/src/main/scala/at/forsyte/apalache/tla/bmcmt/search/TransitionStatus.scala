@@ -4,7 +4,7 @@ package at.forsyte.apalache.tla.bmcmt.search
   * A status of evaluating a symbolic transition when extending a hyperpath.
   */
 sealed abstract class TransitionStatus {
-  def isExplored: Boolean = this match {
+  def isClosed: Boolean = this match {
     case EnabledTransition() | DisabledTransition() | TimedOutTransition() => true
     case _ => false
   }

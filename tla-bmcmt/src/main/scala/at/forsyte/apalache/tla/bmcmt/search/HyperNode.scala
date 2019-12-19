@@ -24,9 +24,14 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   var isExplored: Boolean = false
 
   /**
-    * The status of the transitions that have to explored in this node.
+    * The status of the transitions that have to be explored in this node.
     */
   var openTransitions: Map[Int, (TlaEx, TransitionStatus)] = Map()
+
+  /**
+    * The status of the transitions that have been explored in this node (excluding the ones that were split).
+    */
+  var closedTransitions: Map[Int, (TlaEx, TransitionStatus)] = Map()
 
   /**
     * The snapshot that is made after exploring the node.
@@ -81,7 +86,7 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
 }
 
 object HyperNode {
-  private var nextId: AtomicLong = new AtomicLong()
+  private val nextId: AtomicLong = new AtomicLong()
 
   type indexType = Seq[Int]
 

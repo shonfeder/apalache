@@ -225,7 +225,8 @@ class ModelChecker(val checkerInput: CheckerInput,
       case ExploringState(trNo, trEx) if !params.stepMatchesFilter(context.stepNo, trNo) =>
         // the transition does not match the filter, skip
         context.activeNode.synchronized {
-          context.activeNode.openTransitions += trNo -> (trEx, DisabledTransition())
+          context.activeNode.openTransitions -= trNo
+          context.activeNode.closedTransitions += trNo -> (trEx, DisabledTransition())
         }
         sharedState.synchronized {
           context.workerState = IdleState()
@@ -273,7 +274,8 @@ class ModelChecker(val checkerInput: CheckerInput,
         } else {
           // the transition has been checked
           context.activeNode.synchronized {
-            context.activeNode.openTransitions += trNo -> (trEx, status)
+            context.activeNode.openTransitions -= trNo
+            context.activeNode.closedTransitions += trNo -> (trEx, status)
           }
           sharedState.synchronized {
             context.workerState = if (status != BuggyTransition()) IdleState() else BuggyState()
@@ -335,7 +337,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
     context.activeNode.synchronized {
-      if (context.activeNode.openTransitions.values.forall(_._2 == DisabledTransition())) {
+      if (context.activeNode.openTransitions.isEmpty) {
         logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
         context.activeNode.isExplored = true
         true
@@ -355,12 +357,10 @@ class ModelChecker(val checkerInput: CheckerInput,
 
     // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up
     context.activeNode.synchronized {
-      enabled = context.activeNode.openTransitions.
+      enabled = context.activeNode.closedTransitions.
         collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
-      val allUnexplored = context.activeNode.openTransitions forall {
-        _._2._2.isExplored
-      }
-      if (context.activeNode.isExplored || enabled.isEmpty || !allUnexplored) {
+      val allExplored = context.activeNode.openTransitions.isEmpty
+      if (context.activeNode.isExplored || enabled.isEmpty || !allExplored) {
         return false
       }
       // close the tree node, nothing to explore in this node
@@ -674,8 +674,7 @@ class ModelChecker(val checkerInput: CheckerInput,
             logger.debug("Worker %d: Timeout. Assuming that the invariant holds true.".format(context.rank))
             true
         }
-//      context.rewriter.pop()
-      // TODO: do not pop the SMT context!
+
       holdsTrue
     }
   }
