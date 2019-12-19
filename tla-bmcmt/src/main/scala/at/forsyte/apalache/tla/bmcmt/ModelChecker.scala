@@ -405,8 +405,6 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   // TODO: add StartProving
   // TODO: add ProveInvariant
-  // TODO: add FindSlowPrefixes
-  // TODO: add WhenAllDisabledButNotFinished
 
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
                                    transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
@@ -492,7 +490,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     }
   }
 
-  // This method adds constraints right in the current context, without doing push
+  // warning: this method updates the context and does not recover it
   private def applyOneTransition(stepNo: Int,
                                  state: SymbState,
                                  transition: TlaEx,
@@ -571,6 +569,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     }
   }
 
+  // warning: this method updates the context and does not recover it
   private def checkAllInvariants(stepNo: Int, transitionNo: Int, nextState: SymbState): Boolean = {
     val matchesInvFilter = params.invFilter == "" || stepNo.toString.matches("^" + params.invFilter + "$")
     if (!matchesInvFilter) {
@@ -582,6 +581,15 @@ class ModelChecker(val checkerInput: CheckerInput,
       (stepNo - 1).toString.matches("^" + params.invFilter + "$")
 
     val invNegs = checkerInput.invariantsAndNegations.map(_._2)
+    // do some preparations before checking the invariants
+    val savedTypes = context.rewriter.typeFinder.getVarTypes
+    // rename x' to x, so we are reasoning about the non-primed variables
+    shiftTypes(params.constants)
+    val shiftedState = nextState.setBinding(nextState.binding.shiftBinding(params.constants))
+    context.rewriter.exprCache.disposeActionLevel() // renaming x' to x makes the cache inconsistent, so clean it
+
+    // take a snapshot, so we can just replay it instead of using the incremental SMT
+    val snapshot = context.makeSnapshot(nextState, new MockOracle(transitionNo))
 
     def doesInvariantHold(notInv: TlaEx, invNo: Int): Boolean = {
       logger.debug("Worker %d: Checking the invariant %d".format(context.rank, invNo))
@@ -591,15 +599,12 @@ class ModelChecker(val checkerInput: CheckerInput,
         } else {
           nextState.binding.toMap.keySet // check the invariant in any case, as it could be violated at the previous step
         }
-      val savedTypes = context.rewriter.typeFinder.getVarTypes
-      // rename x' to x, so we are reasoning about the non-primed variables
-      shiftTypes(params.constants)
-      val shiftedState = nextState.setBinding(nextState.binding.shiftBinding(params.constants))
-      context.rewriter.exprCache.disposeActionLevel() // renaming x' to x makes the cache inconsistent, so clean it
       // check the types and the invariant
-      checkTypes(notInv)
       val holdsTrue = checkOneInvariant(stepNo, transitionNo, shiftedState, changedPrimed, notInv)
-      context.rewriter.typeFinder.reset(savedTypes) // forget about the types that were used to check the invariant
+      // recover from the snapshot
+      context.dispose()
+      context = WorkerContext.recover(context.rank,
+        context.activeNode, snapshot, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
       holdsTrue
     }
 
@@ -615,8 +620,9 @@ class ModelChecker(val checkerInput: CheckerInput,
         format(context.rank))
       true
     } else {
-      // TODO: do not push the SMT context!
-      context.rewriter.push()
+      // check the types first
+      checkTypes(notInv)
+//      context.rewriter.push()
       val notInvState = context.rewriter.rewriteUntilDone(nextState.setRex(notInv))
       context.solver.assertGroundExpr(notInvState.ex)
       val holdsTrue =
@@ -625,10 +631,11 @@ class ModelChecker(val checkerInput: CheckerInput,
             // introduce a dummy oracle to hold the transition index, we need it for the counterexample
             val oracle = new MockOracle(transitionNo)
             val buggyChild = HyperNode(HyperTransition(transitionNo))
-            sharedState.synchronized {
+            context.activeNode.synchronized {
               // we need a lock on the shared state to extend the shared tree
-              context.activeNode.append(buggyChild)
+              buggyChild.isExplored = true // nothing to explore
               buggyChild.snapshot = Some(context.makeSnapshot(notInvState, oracle))
+              context.activeNode.append(buggyChild)
             }
             val filename = "counterexample.txt"
             context.dumpCounterexample(filename)
@@ -652,7 +659,7 @@ class ModelChecker(val checkerInput: CheckerInput,
             logger.debug("Worker %d: Timeout. Assuming that the invariant holds true.".format(context.rank))
             true
         }
-      context.rewriter.pop()
+//      context.rewriter.pop()
       // TODO: do not pop the SMT context!
       holdsTrue
     }

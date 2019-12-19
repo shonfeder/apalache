@@ -120,14 +120,22 @@ object WorkerContext {
               params: ModelCheckerParams,
               protoRewriter: SymbStateRewriterImpl): WorkerContext = {
     assert(node.snapshot.isDefined)
-    val solver = RecordingZ3SolverContext(Some(node.snapshot.get.smtLog), params.debug, profile = false)
+    recover(rank, node, node.snapshot.get, params, protoRewriter)
+  }
+
+  def recover(rank: Int,
+              node: HyperNode,
+              snapshot: SearchSnapshot,
+              params: ModelCheckerParams,
+              protoRewriter: SymbStateRewriterImpl): WorkerContext = {
+    val solver = RecordingZ3SolverContext(Some(snapshot.smtLog), params.debug, profile = false)
     val typeFinder = new TrivialTypeFinder()
     // XXX: the rewriter recovery is still a hack
     val rewriter = new SymbStateRewriterImpl(solver, typeFinder, protoRewriter.exprGradeStore)
     rewriter.freeExistentialsStore = protoRewriter.freeExistentialsStore
     rewriter.formulaHintsStore = protoRewriter.formulaHintsStore
     rewriter.config = protoRewriter.config
-    rewriter.recover(node.snapshot.get.rewriterSnapshot)
+    rewriter.recover(snapshot.rewriterSnapshot)
     new WorkerContext(rank, node, solver, rewriter, typeFinder)
   }
 }
