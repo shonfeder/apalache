@@ -308,9 +308,13 @@ class ModelChecker(val checkerInput: CheckerInput,
 
     // pick a tree node that is yet to be explored (in the top-to-bottom, left-to-right order)
     def findUnexplored(node: HyperNode): Boolean = {
-      // we do not need a lock for that, right?
       if (isNodeUnexplored(node)) {
-        context.activeNode = node
+        // lock the node as it may be a node that is concurrently updated
+        node.synchronized {
+          if (isNodeUnexplored(node)) { // still unexplored
+            context.activeNode = node
+          }
+        }
         true
       } else {
         node.children.exists(findUnexplored)
@@ -361,23 +365,29 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
       // close the tree node, nothing to explore in this node
       logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
-      context.activeNode.isExplored = true
+      recoverContext(context.activeNode)
+
       // introduce a new node, unless the depth is too high
       if (!reachedCeiling) {
         val newNode = HyperNode(HyperTransition(enabled.map(_._2): _*))
         val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
         newNode.openTransitions = HashMap(statuses: _*)
-        context.activeNode.append(newNode)
-        // apply the transitions and push the new state in the new node
-        // TODO: can we do that outside of the critical section?
-        recoverContext(context.activeNode)
-        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
-        // switch to the new node
-        context.activeNode = newNode
-        saveContextInActiveNode(nextState, nextOracle)
+        newNode.synchronized {
+          context.activeNode.append(newNode)
+          // apply the transitions and push the new state in the new node
+          // TODO: can we do that outside of the critical section?
+          val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
+          // mark the node as explored in the end, so the finishing actions do not prematurely terminate
+          context.activeNode.isExplored = true
+          // switch to the new node
+          context.activeNode = newNode
+          saveContextInActiveNode(nextState, nextOracle)
+        }
         logger.info("Worker %d: INTRODUCED NODE %d".format(context.rank, context.activeNode.id))
       } else {
         logger.info("Worker %d: REACHED MAX DEPTH".format(context.rank))
+        // mark the node as explored in the end, so the finishing actions do not prematurely terminate
+        context.activeNode.isExplored = true
       }
     }
 
@@ -393,7 +403,6 @@ class ModelChecker(val checkerInput: CheckerInput,
     sharedState.synchronized {
       val allIdle = sharedState.workerStates.values.forall(ws => ws == IdleState() || ws.isFinished)
       // TODO: check unsafePrefixes
-      // TODO: check slowPrefixes
       if (allIdle && allExplored(sharedState.searchRoot)) {
         sharedState.workerStates += context.rank -> BugFreeState()
         true
@@ -589,10 +598,18 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.rewriter.exprCache.disposeActionLevel() // renaming x' to x makes the cache inconsistent, so clean it
 
     // take a snapshot, so we can just replay it instead of using the incremental SMT
-    val snapshot = context.makeSnapshot(nextState, new MockOracle(transitionNo))
+    val tempNode = HyperNode(HyperTransition(transitionNo)) // create a node, but do not connect it to the tree
+    val snapshot = context.makeSnapshot(shiftedState, new MockOracle(transitionNo))
+    tempNode.snapshot = Some(snapshot)
+    val savedContextNode = context.activeNode
+    context.activeNode = tempNode
 
     def doesInvariantHold(notInv: TlaEx, invNo: Int): Boolean = {
       logger.debug("Worker %d: Checking the invariant %d".format(context.rank, invNo))
+      // recover from the snapshot
+      context.dispose()
+      context = WorkerContext.recover(context.rank,
+        context.activeNode, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
       val changedPrimed =
         if (prevMatchesInvFilter) {
           nextState.changed // only check the invariant if it touches the changed variables
@@ -600,15 +617,13 @@ class ModelChecker(val checkerInput: CheckerInput,
           nextState.binding.toMap.keySet // check the invariant in any case, as it could be violated at the previous step
         }
       // check the types and the invariant
-      val holdsTrue = checkOneInvariant(stepNo, transitionNo, shiftedState, changedPrimed, notInv)
-      // recover from the snapshot
-      context.dispose()
-      context = WorkerContext.recover(context.rank,
-        context.activeNode, snapshot, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
+      val holdsTrue = checkOneInvariant(stepNo, transitionNo, context.state, changedPrimed, notInv)
       holdsTrue
     }
 
-    invNegs.zipWithIndex.forall(t => doesInvariantHold(t._1, t._2))
+    val holdsTrue = invNegs.zipWithIndex.forall(t => doesInvariantHold(t._1, t._2))
+    context.activeNode = savedContextNode
+    holdsTrue
   }
 
   private def checkOneInvariant(stepNo: Int, transitionNo: Int,
