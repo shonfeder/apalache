@@ -4,7 +4,12 @@ package object search {
   /**
     * A transition that corresponds to a non-deterministic choice of one of the enabled transitions from the set.
     */
-  class HyperTransition(val indices: Set[Int]) extends Serializable
+  class HyperTransition(val indices: Set[Int]) extends Serializable {
+    /**
+      * If isJailed = true, then the transition has been isolated in a group of its own.
+      */
+    var isJailed = false
+  }
 
   object HyperTransition {
     def apply(indices: Int*): HyperTransition = {

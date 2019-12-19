@@ -69,7 +69,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val debug = options.getOrElse("general", "debug", false)
     val saveDir = options.getOrError("io", "outdir").asInstanceOf[Path].toFile
 
-    val sharedState = new SharedSearchState()
+    val sharedState = new SharedSearchState(nworkers)
     val params = new ModelCheckerParams(input, stepsBound, saveDir, tuning, debug)
 
     def createCheckerThread(rank: Int): Thread = {

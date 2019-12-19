@@ -29,7 +29,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
   private var changeListener: ChangeListener = new ChangeListener()
   private var solver: RecordingZ3SolverContext = RecordingZ3SolverContext(None, false, false)
   private var rewriter = new SymbStateRewriterImpl(solver, typeFinder, exprGradeStore)
-  private var sharedState = new SharedSearchState()
+  private var sharedState = new SharedSearchState(1)
   private var context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver, rewriter, typeFinder)
 
   before {
@@ -40,7 +40,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     solver = RecordingZ3SolverContext(None, false, false)
     rewriter = new SymbStateRewriterImpl(solver, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
-    sharedState = new SharedSearchState()
+    sharedState = new SharedSearchState(1)
     context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver, rewriter, typeFinder)
   }
 
@@ -478,7 +478,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, None, List((tla.not(notInv), notInv)))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checkers
-    val sharedState = new SharedSearchState()
+    val sharedState = new SharedSearchState(2)
 
     val solver1 = RecordingZ3SolverContext(None, false, false)
     val typeFinder1 = new TrivialTypeFinder()

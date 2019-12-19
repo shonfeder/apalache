@@ -28,6 +28,12 @@ class ModelCheckerParams(checkerInput: CheckerInput,
   val transitionTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.transition.timeout", "0")).toLong
 
+  /**
+    * A timeout upon which a transition is split in its own group.
+    */
+  val jailTimeout: Long =
+    BigInt(tuningOptions.getOrElse("search.split.timeout", "60")).toLong
+
   val invariantTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong
 
