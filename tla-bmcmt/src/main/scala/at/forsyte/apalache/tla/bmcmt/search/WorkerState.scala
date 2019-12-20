@@ -26,9 +26,9 @@ case class IdleState() extends WorkerState
 case class ExploringState(trNo: Int, trEx: TlaEx) extends WorkerState
 
 /**
-  * The worker is proving an invariant.
+  * The worker is proving a verification condition.
   */
-case class ProvingState() extends WorkerState
+case class ProvingState(vcNo: Int, vc: VerificationCondition) extends WorkerState
 
 /**
   * The worker has found a bug.

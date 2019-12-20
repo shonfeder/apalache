@@ -34,6 +34,21 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   var closedTransitions: Map[Int, (TlaEx, TransitionStatus)] = Map()
 
   /**
+    * Have all verification conditions in the node been checked with the SMT solver?
+    */
+  var isChecked: Boolean = false
+
+  /**
+    * The verification conditions that are yet to be proven.
+    */
+  var unprovenVCs: Map[Int, VCStatus] = Map()
+
+  /**
+    * The verification conditions that were proven.
+    */
+  var provenVCs: Map[Int, VCStatus] = Map()
+
+  /**
     * The snapshot that is made after exploring the node.
     */
   var snapshot: Option[SearchSnapshot] = None

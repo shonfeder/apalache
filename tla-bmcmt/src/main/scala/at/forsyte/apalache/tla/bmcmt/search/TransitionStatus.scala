@@ -5,7 +5,7 @@ package at.forsyte.apalache.tla.bmcmt.search
   */
 sealed abstract class TransitionStatus {
   def isClosed: Boolean = this match {
-    case EnabledTransition() | DisabledTransition() | TimedOutTransition() => true
+    case EnabledTransition(_) | DisabledTransition() | TimedOutTransition() => true
     case _ => false
   }
 }
@@ -22,8 +22,11 @@ case class BorrowedTransition() extends TransitionStatus
 
 /**
   * The transition was found to be enabled.
+  *
+  * @param vcsWithIndex the verification conditions that must be proven after the transition has been fired,
+  *                     along with their indices.
   */
-case class EnabledTransition() extends TransitionStatus
+case class EnabledTransition(vcsWithIndex: List[(VerificationCondition, Int)]) extends TransitionStatus
 
 /**
   * The transition was found to be disabled.

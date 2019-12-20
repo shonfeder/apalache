@@ -62,6 +62,7 @@ class ModelChecker(val checkerInput: CheckerInput,
 
           context.activeNode.synchronized {
             context.activeNode = sharedState.searchRoot // start with the root
+            context.activeNode.isChecked = true // nothing to check, as Init has not been applied yet
             saveContextInActiveNode(initConstState, new MockOracle(0)) // save for later recovery
             // the root node contains the list of transitions to be explored
             context.activeNode.openTransitions = HashMap(statuses: _*)
@@ -146,7 +147,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // TODO: introduce a function that checks the preconditions and selects one action
       // TODO: the current implementation has too many collisions on the locks
       val appliedAction =
-      borrowTransition() || checkOneTransition() || increaseDepth() ||
+      borrowTransition() || checkOneTransition() || proveOneCondition() || increaseDepth() ||
         closeDisabledNode() || switchNode() || finishBugFree()
 
       if (!appliedAction) {
@@ -173,6 +174,8 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   /**
     * Try to borrow a transition for feasibility checking.
+    *
+    * TODO: merge it with CheckOneTransition?
     */
   private def borrowTransition(): Boolean = {
     if (context.workerState != IdleState()) {
@@ -200,8 +203,6 @@ class ModelChecker(val checkerInput: CheckerInput,
     * This method must be called under a lock on the node!
     */
   private def saveContextInActiveNode(state: SymbState, oracle: Oracle): Unit = {
-    //    val savefile = getNodeFile(context.activeNode)
-    //    context.saveToFile(savefile)
     assert(context.activeNode.snapshot.isEmpty)
     context.activeNode.snapshot = Some(context.makeSnapshot(state, oracle))
   }
@@ -237,10 +238,6 @@ class ModelChecker(val checkerInput: CheckerInput,
       case ExploringState(trNo, trEx) =>
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
-      //        val state = context.state
-      //        context.typeFinder.reset(context.types) // set the variable type as they should be at this step
-      //        val erased = state.setBinding(state.binding.forgetPrimed)
-      //        context.rewriter.push() // LEVEL + 1
       // do not push, keep the context offline, recover from the snapshot later
       // If the transition is not in jail, set a small timeout. Otherwise, no timeout.
       val timeout = if (context.activeNode.transition.isJailed) 0 else params.jailTimeout
@@ -289,8 +286,66 @@ class ModelChecker(val checkerInput: CheckerInput,
     }
   }
 
+  private def proveOneCondition(): Boolean = {
+    if (context.workerState != IdleState()) {
+      return false
+    }
+    // find a condition, if there is any
+    val (vcNo, vc) =
+      context.activeNode.synchronized {
+        context.activeNode.unprovenVCs.find {
+          case (_, NewVC(_)) => true
+          case _ => false
+        } match {
+          case Some((no, NewVC(vc@InvariantVC(_)))) =>
+            logger.debug(s"Worker ${context.rank} started to prove VC $no in node ${context.activeNode.id}")
+            context.activeNode.unprovenVCs += (no -> InProgressVC(vc))
+            context.workerState = ProvingState(no, vc)
+            (no, vc)
+
+          case Some((no, vc@NewVC(_))) =>
+            throw new NotImplementedError(s"Unsupported verification condition: $vc")
+
+          case _ =>
+            return false
+        }
+      }
+
+    // tell the others
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
+    }
+
+    // check the condition
+    recoverContext(context.activeNode) // recover the context
+    val result = checkOneInvariant(context.activeNode.depth, context.state, vcNo, vc)
+    val newState = result match {
+      case InvalidVC(_) =>
+        logger.info(s"Worker ${context.rank}: VC $vcNo is violated. Going to the buggy state.")
+        BuggyState()
+
+      case _ =>
+        logger.info(s"Worker ${context.rank}: Proven VC $vcNo at node ${context.activeNode.id}")
+        IdleState()
+    }
+
+    val activeNode = context.activeNode
+    activeNode.synchronized {
+      activeNode.provenVCs += (vcNo -> result)
+      activeNode.unprovenVCs -= vcNo
+      if (activeNode.unprovenVCs.isEmpty) {
+        activeNode.isChecked = true
+      }
+      context.workerState = newState
+    }
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
+    }
+    true
+  }
+
   /**
-    * If the current node is completely explored, switch the node.
+    * If the current node is completely explored and checked, switch the node.
     *
     * @return true, if successful
     */
@@ -299,32 +354,34 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false
     }
 
-    def isNodeUnexplored(node: HyperNode): Boolean = {
-      !node.isExplored && node.openTransitions.values.exists(_._2 == NewTransition())
+    def isNodeUnexploredOrNotChecked(node: HyperNode): Boolean = {
+      val yetToExplore = !node.isExplored && node.openTransitions.values.exists(_._2 == NewTransition())
+      val yetToProve = !node.isChecked && node.unprovenVCs.values.exists(_.isInstanceOf[NewVC])
+      yetToExplore || yetToProve
     }
 
-    if (isNodeUnexplored(context.activeNode)) {
+    if (isNodeUnexploredOrNotChecked(context.activeNode)) {
       // stay with the current node
       return false
     }
 
     // pick a tree node that is yet to be explored (in the top-to-bottom, left-to-right order)
-    def findUnexplored(node: HyperNode): Boolean = {
-      if (isNodeUnexplored(node)) {
-        // lock the node as it may be a node that is concurrently updated
+    def findUnfinished(node: HyperNode): Boolean = {
+      if (isNodeUnexploredOrNotChecked(node)) {
+        // lock the node as it may be concurrently updated
         node.synchronized {
-          if (isNodeUnexplored(node)) { // still unexplored
+          if (isNodeUnexploredOrNotChecked(node)) { // still unexplored or not checked
             context.activeNode = node
           }
         }
         true
       } else {
-        node.children.exists(findUnexplored)
+        node.children.exists(findUnfinished)
       }
     }
 
     // start with the root
-    if (findUnexplored(sharedState.searchRoot)) {
+    if (findUnfinished(sharedState.searchRoot)) {
       logger.debug(s"Worker ${context.rank} switched to node ${context.activeNode.id}")
       true
     } else {
@@ -358,7 +415,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up
     context.activeNode.synchronized {
       enabled = context.activeNode.closedTransitions.
-        collect({ case (trNo, (trEx, EnabledTransition())) => (trEx, trNo) }).toList
+        collect({ case (trNo, (trEx, EnabledTransition(_))) => (trEx, trNo) }).toList
       val allExplored = context.activeNode.openTransitions.isEmpty
       if (context.activeNode.isExplored || enabled.isEmpty || !allExplored) {
         return false
@@ -368,42 +425,53 @@ class ModelChecker(val checkerInput: CheckerInput,
       recoverContext(context.activeNode)
 
       // introduce a new node, unless the depth is too high
+      val newNode = HyperNode(HyperTransition(enabled.map(_._2): _*))
+      // Find all verification conditions. By converting it to Map, we remove the duplicates
+      val allVCsMap = context.activeNode.closedTransitions.
+        collect({ case (_, (_, EnabledTransition(vcs))) => vcs }).
+        flatten.map(p => (p._2, p._1)).
+        toMap
+
+      // schedule the verification conditions
+      newNode.unprovenVCs = allVCsMap map { case (no, vc) => (no, NewVC(vc)) }
+      if (newNode.unprovenVCs.isEmpty) {
+        newNode.isChecked = true // nothing to check
+      }
+
+      // schedule the transitions to check
       if (!reachedCeiling) {
-        val newNode = HyperNode(HyperTransition(enabled.map(_._2): _*))
         val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
         newNode.openTransitions = HashMap(statuses: _*)
-        newNode.synchronized {
-          context.activeNode.append(newNode)
-          // apply the transitions and push the new state in the new node
-          // TODO: can we do that outside of the critical section?
-          val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
-          // mark the node as explored in the end, so the finishing actions do not prematurely terminate
-          context.activeNode.isExplored = true
-          // switch to the new node
-          context.activeNode = newNode
-          saveContextInActiveNode(nextState, nextOracle)
-        }
-        logger.info("Worker %d: INTRODUCED NODE %d".format(context.rank, context.activeNode.id))
       } else {
-        logger.info("Worker %d: REACHED MAX DEPTH".format(context.rank))
+        logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants to check")
+        newNode.isExplored = true
+      }
+      newNode.synchronized {
+        context.activeNode.append(newNode)
+        // apply the transitions and push the new state in the new node
+        // TODO: can we do that outside of the critical section?
+        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
         // mark the node as explored in the end, so the finishing actions do not prematurely terminate
         context.activeNode.isExplored = true
+        // switch to the new node
+        context.activeNode = newNode
+        saveContextInActiveNode(nextState, nextOracle)
       }
+      logger.info("Worker %d: INTRODUCED NODE %d".format(context.rank, context.activeNode.id))
     }
 
     true
   }
 
   private def finishBugFree(): Boolean = {
-    def allExplored(node: HyperNode): Boolean = {
-      // we do not need a lock for that, right?
-      node.isExplored && node.children.forall(allExplored)
+    def allExploredAndChecked(node: HyperNode): Boolean = {
+      // we do not need a lock here, as isExplored is changing once from false to true (it can be checked again later)
+      node.isExplored && node.isChecked && node.children.forall(allExploredAndChecked)
     }
 
     sharedState.synchronized {
       val allIdle = sharedState.workerStates.values.forall(ws => ws == IdleState() || ws.isFinished)
-      // TODO: check unsafePrefixes
-      if (allIdle && allExplored(sharedState.searchRoot)) {
+      if (allIdle && allExploredAndChecked(sharedState.searchRoot)) {
         sharedState.workerStates += context.rank -> BugFreeState()
         true
       } else {
@@ -411,9 +479,6 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
     }
   }
-
-  // TODO: add StartProving
-  // TODO: add ProveInvariant
 
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
                                    transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
@@ -465,7 +530,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       val primedVars = getAssignedVars(statesAfterTransitions.head) // only VARIABLES, not CONSTANTS
       var finalState = oracleState
       if (statesAfterTransitions.exists(getAssignedVars(_) != primedVars)) {
-        // TODO: we should not throw an exception here, but ignore the transitions that does not have all assignments.
+        // TODO: we should not throw an exception here, but ignore the transitions that do not have all assignments.
         // The reason is that the assignment solver guarantees that every transition has the assignments.
         // The only case when this situation may happen is when the rewriter uses short-circuiting logic.
         val index = statesAfterTransitions.indexWhere(getAssignedVars(_) != primedVars)
@@ -534,8 +599,8 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
     }
     if (!checkForErrors) {
-      // just return the state
-      (nextState, EnabledTransition())
+      // just return the state, no verification conditions
+      (nextState, EnabledTransition(List.empty))
       // LEVEL + 0
     } else {
       // do not push the context, as it will be recovered
@@ -546,136 +611,98 @@ class ModelChecker(val checkerInput: CheckerInput,
       logger.debug("Checking transition feasibility.")
       context.solver.satOrTimeout(timeout) match {
         case Some(true) =>
-          // TODO: this should be a separate step
-          // check the invariant as soon as one transition has been applied
-          if (checkAllInvariants(stepNo, transitionNo, nextState)) {
-            // and then forget all these constraints!
-            //          context.rewriter.pop() // LEVEL + 0
-            context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, context.rewriter.contextLevel))
-            (nextState, EnabledTransition())
-            // LEVEL + 0
-          } else {
-            context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, context.rewriter.contextLevel))
-            (nextState, BuggyTransition())
-          }
+          val vcs = findTransitionInvariants(stepNo, transitionNo, nextState)
+          context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, context.rewriter.contextLevel))
+          (nextState, EnabledTransition(vcs))
 
         case r: Option[Boolean] => // unsat or timeout
-          // the current symbolic state is not feasible
-          if (r.isDefined) {
+          if (r.isDefined) { // the transition is not feasible in the current symbolic state
             logger.debug("Worker %d: Transition #%d is not feasible.".format(context.rank, transitionNo))
-            // recover the saved context instead of popping the SMT
-            //          context.rewriter.pop() // LEVEL + 0
             context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d"
               .format(stepNo, context.rewriter.contextLevel, transitionNo))
             (nextState, DisabledTransition())
-            // LEVEL + 0
-          } else {
-            logger.debug("Worker %d: Transition %d is slow. It should be separated.".
-              format(context.rank, transitionNo))
+          } else { // it takes too long to check the transition
+            logger.debug("Worker %d: Transition %d is slow. It should be separated.".format(context.rank, transitionNo))
             (nextState, TimedOutTransition())
           }
       }
     }
   }
 
-  // warning: this method updates the context and does not recover it
-  private def checkAllInvariants(stepNo: Int, transitionNo: Int, nextState: SymbState): Boolean = {
+  // schedule the invariants to be checked after the transition was fired
+  private def findTransitionInvariants(stepNo: Int,
+                                       transitionNo: Int,
+                                       nextState: SymbState): List[(VerificationCondition, Int)] = {
+    // skip the check if the user told us to skip the invariant at this step
     val matchesInvFilter = params.invFilter == "" || stepNo.toString.matches("^" + params.invFilter + "$")
     if (!matchesInvFilter) {
-      return true // skip the check if this transition should not be checked
+      return List.empty
     }
 
     // if the previous step was filtered, we cannot use the unchanged optimization
-    val prevMatchesInvFilter = params.invFilter == "" ||
-      (stepNo - 1).toString.matches("^" + params.invFilter + "$")
+    val prevMatchesInvFilter =
+      params.invFilter == "" || (stepNo - 1).toString.matches("^" + params.invFilter + "$")
+    val changedPrimed =
+      if (prevMatchesInvFilter) {
+        // only check an invariant if it touches the changed variables
+        nextState.changed
+      } else {
+        // check an invariant in any case, as it could be violated at the previous step (the invariant was filtered before)
+        nextState.binding.toMap.keySet
+      }
 
-    val invNegs = checkerInput.invariantsAndNegations.map(_._2)
-    // do some preparations before checking the invariants
-    val savedTypes = context.rewriter.typeFinder.getVarTypes
-    // rename x' to x, so we are reasoning about the non-primed variables
-    shiftTypes(params.constants)
-    val shiftedState = nextState.setBinding(nextState.binding.shiftBinding(params.constants))
-    context.rewriter.exprCache.disposeActionLevel() // renaming x' to x makes the cache inconsistent, so clean it
-
-    // take a snapshot, so we can just replay it instead of using the incremental SMT
-    val tempNode = HyperNode(HyperTransition(transitionNo)) // create a node, but do not connect it to the tree
-    val snapshot = context.makeSnapshot(shiftedState, new MockOracle(transitionNo))
-    tempNode.snapshot = Some(snapshot)
-    val savedContextNode = context.activeNode
-    context.activeNode = tempNode
-
-    def doesInvariantHold(notInv: TlaEx, invNo: Int): Boolean = {
-      logger.debug("Worker %d: Checking the invariant %d".format(context.rank, invNo))
-      // recover from the snapshot
-      context.dispose()
-      context = WorkerContext.recover(context.rank,
-        context.activeNode, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
-      val changedPrimed =
-        if (prevMatchesInvFilter) {
-          nextState.changed // only check the invariant if it touches the changed variables
-        } else {
-          nextState.binding.toMap.keySet // check the invariant in any case, as it could be violated at the previous step
-        }
-      // check the types and the invariant
-      val holdsTrue = checkOneInvariant(stepNo, transitionNo, context.state, changedPrimed, notInv)
-      holdsTrue
+    // is the invariant non-trivial, that is, it refers to the changed variables
+    def refersToChanged(notInv: TlaEx): Boolean = {
+      // add primes as the invariant is referring to the unprimed variables
+      val used = TlaExUtil.findUsedNames(notInv).map(_ + "'")
+      used.intersect(changedPrimed).nonEmpty
     }
 
-    val holdsTrue = invNegs.zipWithIndex.forall(t => doesInvariantHold(t._1, t._2))
-    context.activeNode = savedContextNode
-    holdsTrue
+    // keep the invariant negations that refer to the changed variables
+    val invNegs = checkerInput.invariantsAndNegations.map(_._2).zipWithIndex.filter(p => refersToChanged(p._1))
+    if (invNegs.nonEmpty) {
+      logger.debug("Worker %d, step %d, transition %d: scheduled invariants %s"
+        .format(context.rank, stepNo, transitionNo, invNegs.map(_._2).mkString(", ")))
+      invNegs.map(p => (InvariantVC(p._1), p._2))
+    } else {
+      logger.debug("Worker %d, step %d, transition %d: no invariants to check"
+        .format(context.rank, stepNo, transitionNo))
+      List.empty
+    }
   }
 
-  private def checkOneInvariant(stepNo: Int, transitionNo: Int,
-                                nextState: SymbState,
-                                changedPrimed: Set[String], notInv: TlaEx): Boolean = {
-    val used = TlaExUtil.findUsedNames(notInv).map(_ + "'") // add primes as the invariant is referring to non-primed variables
-    if (used.intersect(changedPrimed).isEmpty) {
-      logger.debug(s"Worker %d: The invariant is referring only to the UNCHANGED variables. Skipped.".
-        format(context.rank))
-      true
-    } else {
-      // check the types first
-      checkTypes(notInv)
-//      context.rewriter.push()
-      val notInvState = context.rewriter.rewriteUntilDone(nextState.setRex(notInv))
-      context.solver.assertGroundExpr(notInvState.ex)
-      val holdsTrue =
-        context.solver.satOrTimeout(params.invariantTimeout) match {
-          case Some(true) =>
-            // introduce a dummy oracle to hold the transition index, we need it for the counterexample
-            val oracle = new MockOracle(transitionNo)
-            val buggyChild = HyperNode(HyperTransition(transitionNo))
-            context.activeNode.synchronized {
-              // we need a lock on the shared state to extend the shared tree
-              buggyChild.isExplored = true // nothing to explore
-              buggyChild.snapshot = Some(context.makeSnapshot(notInvState, oracle))
-              context.activeNode.append(buggyChild)
-            }
-            val filename = "counterexample.txt"
-            context.dumpCounterexample(filename)
-            logger.error("Worker %d: Invariant is violated at depth %d. Check the counterexample in %s".
-              format(context.rank, stepNo, filename))
-            if (params.debug) {
-              logger.warn("Worker %d: Dumping the arena into smt.log. This may take some time...".format(context.rank))
-              // dump everything in the log
-              val writer = new StringWriter()
-              new SymbStateDecoder(context.solver, context.rewriter).dumpArena(notInvState, new PrintWriter(writer))
-              context.solver.log(writer.getBuffer.toString)
-            }
-
-            false
-
-          case Some(false) =>
-            logger.debug("Worker %d: The invariant holds true.".format(context.rank))
-            true
-
-          case None =>
-            logger.debug("Worker %d: Timeout. Assuming that the invariant holds true.".format(context.rank))
-            true
+  private def checkOneInvariant(stepNo: Int,
+                                state: SymbState,
+                                vcNo: Int,
+                                vc: InvariantVC): VCStatus = {
+    // check the types first
+    checkTypes(vc.notInv)
+    val notInvState = context.rewriter.rewriteUntilDone(state.setRex(vc.notInv))
+    context.solver.assertGroundExpr(notInvState.ex)
+    context.solver.satOrTimeout(params.invariantTimeout) match {
+      case Some(true) =>
+        // TODO: take a snapshot and return InvalidVC instead?
+        val filename = "counterexample.txt"
+        context.dumpCounterexample(filename)
+        logger.error("Worker %d: Invariant %d is violated at depth %d. Check the counterexample in %s".
+          format(context.rank, vcNo, stepNo, filename))
+        if (params.debug) {
+          logger.warn("Worker %d: Dumping the arena into smt.log. This may take some time...".format(context.rank))
+          // dump everything in the log
+          val writer = new StringWriter()
+          new SymbStateDecoder(context.solver, context.rewriter).dumpArena(notInvState, new PrintWriter(writer))
+          context.solver.log(writer.getBuffer.toString)
         }
 
-      holdsTrue
+        InvalidVC(vc)
+
+      case Some(false) =>
+        logger.debug(s"Worker ${context.rank}: The invariant $vcNo holds true.")
+        ValidVC(vc)
+
+      case None =>
+        logger.debug(s"Worker ${context.rank}: Timeout when checking invariant $vcNo.")
+        UnknownVC(vc)
     }
   }
 
