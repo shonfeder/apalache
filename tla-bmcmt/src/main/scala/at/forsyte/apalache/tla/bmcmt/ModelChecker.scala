@@ -325,7 +325,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         BuggyState()
 
       case _ =>
-        logger.info(s"Worker ${context.rank}: Proven VC $vcNo at node ${context.activeNode.id}")
+        logger.debug(s"Worker ${context.rank}: Proven VC $vcNo at node ${context.activeNode.id}")
         IdleState()
     }
 
@@ -443,7 +443,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
         newNode.openTransitions = HashMap(statuses: _*)
       } else {
-        logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants to check")
+        logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants will be checked")
         newNode.isExplored = true
       }
       newNode.synchronized {
