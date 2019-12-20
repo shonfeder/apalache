@@ -25,14 +25,20 @@ class ModelCheckerParams(checkerInput: CheckerInput,
   val invFilter: String =
     tuningOptions.getOrElse("search.invariantFilter", "")
 
-  val transitionTimeout: Long =
-    BigInt(tuningOptions.getOrElse("search.transition.timeout", "0")).toLong
-
   /**
     * A timeout upon which a transition is split in its own group.
+    * This is the minimal timeout. The actual timeout is updated at every step using `search.split.timeout.factor`.
+    *
     */
-  val jailTimeout: Long =
-    BigInt(tuningOptions.getOrElse("search.split.timeout", "60")).toLong
+  val jailTimeoutMinSec: Long =
+    BigInt(tuningOptions.getOrElse("search.split.timeout.minimum", "60")).toLong
+
+  /**
+   * At every step, the jail timeout for the next step is computed as `maxTime * factor / 100`,
+    * where `maxTime` is the maximum checking time among all enabled or disabled transition.
+   */
+  val jailTimeoutFactor: Long =
+    BigInt(tuningOptions.getOrElse("search.split.timeout.factor", "200")).toInt
 
   val invariantTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong

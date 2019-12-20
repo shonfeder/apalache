@@ -54,6 +54,11 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   var snapshot: Option[SearchSnapshot] = None
 
   /**
+    * The timeout that is used to jail a transition. It is set by ModelChecker.
+    */
+  var jailTimeoutSec: Long = 60
+
+  /**
     * Get the node children
     * @return the list of children (may change after append)
     */
@@ -97,6 +102,20 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
 
   def findPrefixAsString: String = {
     findPrefix.mkString(".")
+  }
+
+  /**
+    * Compute the maximum time of feasibility checking among the transitions, except timeouts
+    * @return the maximum time in milliseconds
+    */
+  def maxTransitionTimeMs(): Long = {
+    def transitionTime: TransitionStatus => Long = {
+      case EnabledTransition(ms, _) => ms
+      case DisabledTransition(ms) => ms
+      case _ => 0
+    }
+
+    closedTransitions.values.map(p => transitionTime(p._2)).foldLeft(0L) { case (max, ms) => Math.max(max, ms) }
   }
 }
 

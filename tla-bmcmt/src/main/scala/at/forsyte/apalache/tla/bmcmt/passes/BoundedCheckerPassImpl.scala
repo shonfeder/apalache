@@ -123,7 +123,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
           .format(JOIN_TIMEOUT_MS))
         workerThreads.foreach(_.interrupt())
         workerThreads.foreach(_.join(JOIN_TIMEOUT_MS))
-        logger.error("System shutdown")
+        logger.error("Forced shutdown")
         Runtime.getRuntime.halt(EXITCODE_ON_SHUTDOWN)
       }
     }

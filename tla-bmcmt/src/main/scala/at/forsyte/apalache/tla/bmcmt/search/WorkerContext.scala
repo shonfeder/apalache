@@ -79,7 +79,6 @@ class WorkerContext(var rank: Int,
     val oracles = findOracles(Some(activeNode)).reverse
 
     val writer = new PrintWriter(new FileWriter(filename, false))
-    writer.println(s"FIXME in WorkerContext.dumpCounterexample")
     for (((state, oracle), i) <- states.zip(oracles).zipWithIndex) {
       val decoder = new SymbStateDecoder(solver, rewriter)
       val transition = oracle.evalPosition(solver, state)
