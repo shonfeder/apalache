@@ -13,9 +13,6 @@ class CheckCmd extends Command(name = "check",
   description = "Check a TLA+ specification") with General {
 
   var file: File = arg[File](description = "a file containing a TLA+ specification")
-  var search: String = opt[String](
-    name = "search", default = "bfs",
-    description = "search type (dfs or bfs), default: bfs")
   var nworkers: Int = opt[Int](
     name = "nworkers", default = 1,
     description = "the number of parallel workers, default: 1")
@@ -37,14 +34,7 @@ class CheckCmd extends Command(name = "check",
   var tuning: String =
     opt[String](name="tuning", default = "",
       description = "filename of the config with file tuning options (see tuning.md)")
-
-  var randomizeDfs: Boolean = opt[Boolean](
-    name = "randomizeDfs", default = true,
-    description = "randomize the choice of the next transition in DFS, default: true")
-  var filter: String =
-    opt[String](name = "filter", default = "",
-      description = "A sequence of regular expressions over transitions that filter transitions at every step, e.g., (0|1),(1|2),4,5")
-  var checkRuntime: Boolean =
-    opt[Boolean](name = "checkRuntime", default = false,
-      description = " (BROKEN) check for runtime errors, e.g., applying f[x] when x is outside of f's domain, default: false")
+  var lucky: Boolean = opt[Boolean](
+    name = "lucky", default = true,
+    description = "do not check whether transitions are enabled, default: false")
 }

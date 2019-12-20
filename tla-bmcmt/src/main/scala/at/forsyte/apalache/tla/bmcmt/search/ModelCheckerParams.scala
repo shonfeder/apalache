@@ -15,9 +15,19 @@ class ModelCheckerParams(checkerInput: CheckerInput,
                          tuningOptions: Map[String, String] = Map(),
                          val debug: Boolean) {
   /**
-    * A set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
+    * If lucky is set to true, there will be no check of whether a transition is enabled.
     */
-  val constants = Set(checkerInput.rootModule.constDeclarations.map(_.name): _*)
+  var lucky: Boolean = false
+
+  /**
+    * The set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
+    */
+  val consts = Set(checkerInput.rootModule.constDeclarations.map(_.name): _*)
+
+  /**
+    * The set of VARIABLES.
+    */
+  val vars = Set(checkerInput.rootModule.varDeclarations.map(_.name): _*)
 
   val stepFilters: Seq[String] =
     tuningOptions.getOrElse("search.transitionFilter", ".*").split(",")

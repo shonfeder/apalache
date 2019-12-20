@@ -522,9 +522,9 @@ class ModelChecker(val checkerInput: CheckerInput,
     if (statesAfterTransitions.isEmpty) {
       throw new IllegalArgumentException("enabled must be non-empty")
     } else if (statesAfterTransitions.lengthCompare(1) == 0) {
-      val resultingState = oracleState.setBinding(lastState.binding.shiftBinding(params.constants))
+      val resultingState = oracleState.setBinding(lastState.binding.shiftBinding(params.consts))
       context.solver.assertGroundExpr(lastState.ex)
-      shiftTypes(params.constants)
+      shiftTypes(params.consts)
       (resultingState, oracle)
     } else {
       // if oracle = i, then the ith transition is enabled
@@ -559,15 +559,15 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
 
       val finalVarBinding = Binding(primedVars.toSeq map (n => (n, pickVar(n))): _*) // variables only
-      val constBinding = Binding(oracleState.binding.toMap.filter(p => params.constants.contains(p._1)))
+      val constBinding = Binding(oracleState.binding.toMap.filter(p => params.consts.contains(p._1)))
       finalState = finalState.setBinding(finalVarBinding ++ constBinding)
       if (params.debug && !context.solver.sat()) {
         throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", finalState.ex)
       }
       // finally, shift the primed variables to non-primed
-      finalState = finalState.setBinding(finalState.binding.shiftBinding(params.constants))
+      finalState = finalState.setBinding(finalState.binding.shiftBinding(params.consts))
       // that is the result of this step
-      shiftTypes(params.constants)
+      shiftTypes(params.consts)
       // here we save the transition index, not the oracle, which will be shown to the user
       (finalState, oracle)
     }
@@ -589,6 +589,20 @@ class ModelChecker(val checkerInput: CheckerInput,
     logger.debug("Worker %d: Applying rewriting rules...".format(context.rank))
     val nextState = context.rewriter.rewriteUntilDone(state.setRex(transition))
     context.rewriter.flushStatistics()
+
+    val assignedVars = nextState.binding.toMap.
+      collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1)}
+    if (assignedVars.toSet != params.vars) {
+      logger.debug(s"Worker ${context.rank}: Transition $transitionNo produces partial assignment. Disabled.")
+      return (nextState, DisabledTransition(1))
+    }
+
+    if (params.lucky) {
+      // feeling lucky, do not check whether the transition is enabled
+      logger.debug(s"Worker ${context.rank}: Feeling lucky. Transition $transitionNo is enabled.")
+      return (nextState, EnabledTransition(1, findTransitionInvariants(stepNo, transitionNo, nextState)))
+    }
+
     if (checkForErrors && params.debug) {
       // This is a debugging feature that allows us to find incorrect rewriting rules.
       // Disable it in production.
