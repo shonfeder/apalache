@@ -1,7 +1,5 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
-import at.forsyte.apalache.tla.lir.TlaEx
-
 /**
   * A state of a worker thread.
   */
@@ -18,12 +16,11 @@ sealed abstract class WorkerState {
 case class IdleState() extends WorkerState
 
 /**
-  * The worker is checking feasibility of a transition.
+  * The worker is checking, whether a transition is enabled.
   *
-  * @param trNo transition number
-  * @param trEx transition expression
+  * @param borrowed the state of the borrowed transition
   */
-case class ExploringState(trNo: Int, trEx: TlaEx) extends WorkerState
+case class ExploringState(borrowed: BorrowedTransition) extends WorkerState
 
 /**
   * The worker is proving a verification condition.

@@ -148,8 +148,8 @@ class ModelChecker(val checkerInput: CheckerInput,
       // TODO: introduce a function that checks the preconditions and selects one action
       // TODO: the current implementation has too many collisions on the locks
       val appliedAction =
-      borrowTransition() || checkOneTransition() || proveOneCondition() || increaseDepth() ||
-        closeDisabledNode() || switchNode() || finishBugFree()
+      borrowTransition() || checkOneTransition || migrateTransition ||
+        proveOneCondition() || increaseDepth() || closeDisabledNode() || switchNode() || finishBugFree()
 
       if (!appliedAction) {
         // no action applicable, the worker waits and then continues
@@ -175,8 +175,6 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   /**
     * Try to borrow a transition for feasibility checking.
-    *
-    * TODO: merge it with CheckOneTransition?
     */
   private def borrowTransition(): Boolean = {
     if (context.workerState != IdleState()) {
@@ -186,15 +184,68 @@ class ModelChecker(val checkerInput: CheckerInput,
       context.activeNode.openTransitions.find {
         _._2._2 == NewTransition()
       } match {
-        case Some((no, (ex, _))) =>
-          logger.debug(s"Worker ${context.rank} borrowed transition $no from node ${context.activeNode.id}")
-          context.activeNode.openTransitions += (no -> (ex, BorrowedTransition()))
-          context.workerState = ExploringState(no, ex)
+        case Some((trNo, (trEx, _))) =>
+          logger.debug(s"Worker ${context.rank} borrowed transition $trNo from node ${context.activeNode.id}")
+          val timeoutMs = context.activeNode.jailTimeoutSec * 1000
+          val borrowed = BorrowedTransition(trNo, trEx, context.activeNode, timeoutMs)
+          context.activeNode.openTransitions += (trNo -> (trEx, borrowed))
+          context.workerState = ExploringState(borrowed)
           sharedState.workerStates += context.rank -> context.workerState
           true
 
         case None => false
       }
+    }
+
+    // Check immediately. It might fail due to concurrency.
+    checkOneTransition()
+  }
+
+  private def isolateBorrowedTransition(borrowed: BorrowedTransition): Unit = {
+    if (!borrowed.isMigrated) {
+      borrowed.node.synchronized {
+        if (borrowed.node.openTransitions.size + borrowed.node.closedTransitions.size <= 1) {
+          return // do not move the only transition!
+        }
+
+        borrowed.isMigrated = true
+        // remove the borrowed transition from the active node
+        context.activeNode.openTransitions -= borrowed.trNo
+        val transition = HyperTransition(borrowed.trNo)
+        transition.isJailed = true
+        val newNode = HyperNode(transition)
+        val elapsedMs = System.currentTimeMillis() - borrowed.startTimeMs
+        logger.info("Worker %d: INTRODUCED JAIL NODE %d after timeout of %d ms on transition %d".
+          format(context.rank, newNode.id, elapsedMs, borrowed.trNo))
+        // introduce the borrowed transition in the new node
+        newNode.openTransitions = Map(borrowed.trNo -> (borrowed.trEx, borrowed))
+        newNode.snapshot = context.activeNode.snapshot // copy the context
+        borrowed.node.parent match {
+          case Some(parent) => parent.append(newNode)
+          case None => borrowed.node.append(newNode) // this should not happen actually
+        }
+        logger.debug(s"Worker ${context.rank}: Isolated transition ${borrowed.trNo} in node ${newNode.id}")
+      }
+    }
+  }
+
+  private def migrateTransition(): Boolean = {
+    // quick check, before obtaining a lock
+    val existsExploring = sharedState.workerStates.exists(_._2.isInstanceOf[ExploringState])
+    if (!existsExploring) {
+      return false
+    }
+
+    // isolate slow transitions
+    sharedState.synchronized {
+      val slow = sharedState.workerStates collect {
+        case (_, ExploringState(borrowed))
+            if !borrowed.isMigrated && borrowed.timeoutMs <= (System.currentTimeMillis() - borrowed.startTimeMs) =>
+          borrowed
+      }
+
+      slow foreach isolateBorrowedTransition
+      slow.exists(_.isMigrated) // return success, if there was a migrated transition
     }
   }
 
@@ -224,11 +275,11 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   private def checkOneTransition(): Boolean = {
     context.workerState match {
-      case ExploringState(trNo, trEx) if !params.stepMatchesFilter(context.stepNo, trNo) =>
+      case ExploringState(borrowed) if !params.stepMatchesFilter(context.stepNo, borrowed.trNo) =>
         // the transition does not match the filter, skip
         context.activeNode.synchronized {
-          context.activeNode.openTransitions -= trNo
-          context.activeNode.closedTransitions += trNo -> (trEx, DisabledTransition(1))
+          context.activeNode.openTransitions -= borrowed.trNo
+          context.activeNode.closedTransitions += borrowed.trNo -> (borrowed.trEx, DisabledTransition(1))
         }
         sharedState.synchronized {
           context.workerState = IdleState()
@@ -236,51 +287,37 @@ class ModelChecker(val checkerInput: CheckerInput,
         }
         true
 
-      case ExploringState(trNo, trEx) =>
+      case ExploringState(borrowed) =>
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
       // do not push, keep the context offline, recover from the snapshot later
-      // If the transition is not in jail, set a small timeout. Otherwise, no timeout.
-      val timeout = if (context.activeNode.transition.isJailed) 0 else context.activeNode.jailTimeoutSec
-        val (_, status) = applyOneTransition(context.stepNo, context.state, trEx, trNo, timeout, checkForErrors = true)
+        val (_, status) = applyOneTransition(context.stepNo,
+          context.state, borrowed.trEx, borrowed.trNo, checkForErrors = true, timeout = 0)
         context.rewriter.exprCache.disposeActionLevel() // leave only the constants
+        val durationMs = System.currentTimeMillis() - borrowed.startTimeMs
 
         status match {
-          case TimedOutTransition(durationMs) =>
-            // the transition timed out, isolate it in its own group
-            recoverContext(context.activeNode) // recover the context, as it was updated by applyTransition
-            context.activeNode.synchronized {
-              context.activeNode.openTransitions -= trNo
-              val transition = HyperTransition(trNo)
-              transition.isJailed = true
-              val newNode = HyperNode(transition)
-              logger.info(s"Worker ${context.rank}: INTRODUCED NODE ${newNode.id} after timeout of $durationMs ms on transition $trNo")
-              newNode.openTransitions = Map(trNo -> (trEx, NewTransition()))
-              val activeSnapshot = context.activeNode.snapshot.get
-              newNode.snapshot = Some(context.makeSnapshot(activeSnapshot.state, activeSnapshot.oracle))
-              context.activeNode.parent match {
-                case Some(parent) => parent.append(newNode)
-                case None => context.activeNode.append(newNode) // this should not happen actually
-
-              }
-              logger.debug(s"Worker ${context.rank}: Transition $trNo timed out. Isolated it in node ${newNode.id}")
-            }
-            sharedState.synchronized {
-              context.workerState = IdleState()
-              sharedState.workerStates += context.rank -> context.workerState
-            }
+          case TimedOutTransition(_) =>
+            throw new IllegalStateException("No timeouts anymore")
 
           case _ =>
-            // the transition has been checked
-            context.activeNode.synchronized {
-              context.activeNode.openTransitions -= trNo
-              context.activeNode.closedTransitions += trNo -> (trEx, status)
+            // The transition has been checked.
+            borrowed.durationMs = durationMs
+            if (borrowed.timeoutMs <= durationMs) {
+              // if the transition was slow, then it should be isolated
+              isolateBorrowedTransition(borrowed)
+            }
+            // Close the transition. The transition could migrate to a new node.
+            borrowed.node.synchronized {
+              borrowed.node.openTransitions -= borrowed.trNo
+              borrowed.node.closedTransitions += borrowed.trNo -> (borrowed.trEx, status)
             }
             sharedState.synchronized {
               context.workerState = IdleState()
               sharedState.workerStates += context.rank -> context.workerState
             }
-            logger.debug(s"Worker ${context.rank}: Transition $trNo is $status (elapsed time ${status.elapsedMs} ms).")
+            logger.debug("Worker %d: Transition %d is %s (elapsed time %d ms).".
+              format(context.rank, borrowed.trNo, status, status.elapsedMs))
         }
 
         true // the action ran successfully
@@ -350,7 +387,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   }
 
   /**
-    * If the current node is completely explored and checked, switch the node.
+    * If the current node is completely explored and checked, switch to an unexplored node with minimal depth.
     *
     * @return true, if successful
     */
@@ -370,27 +407,48 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false
     }
 
-    // pick a tree node that is yet to be explored (in the top-to-bottom, left-to-right order)
-    def findUnfinished(node: HyperNode): Boolean = {
+    // pick a tree node that is yet to be explored (in the breadth-first order)
+    def findMinUnfinishedDepth(node: HyperNode): Option[Int] = {
       if (isNodeUnexploredOrNotChecked(node)) {
-        // lock the node as it may be concurrently updated
-        node.synchronized {
-          if (isNodeUnexploredOrNotChecked(node)) { // still unexplored or not checked
-            context.activeNode = node
+        Some(node.depth)
+      } else {
+        def min(that: Option[Int], other: Option[Int]): Option[Int] = {
+          (that, other) match {
+            case (Some(a), Some(b)) => Some(Math.min(a, b))
+            case (Some(a), _) => Some(a)
+            case (_, Some(b)) => Some(b)
+            case (None, None) => None
           }
         }
-        true
-      } else {
-        node.children.exists(findUnfinished)
+        val depths = node.children.map(findMinUnfinishedDepth)
+        depths.foldLeft(None: Option[Int])(min)
       }
     }
 
-    // start with the root
-    if (findUnfinished(sharedState.searchRoot)) {
-      logger.debug(s"Worker ${context.rank} switched to node ${context.activeNode.id}")
-      true
-    } else {
-      false
+    def findNodeByDepth(depth: Int, node: HyperNode): Boolean = {
+      if (isNodeUnexploredOrNotChecked(node) && node.depth == depth) {
+        node.synchronized {
+          // lock the node as it may be concurrently updated
+          if (isNodeUnexploredOrNotChecked(node)) { // still unexplored or not checked
+            context.activeNode = node
+          }
+          true
+        }
+      } else {
+        node.children.exists(n => findNodeByDepth(depth, n))
+      }
+    }
+
+    findMinUnfinishedDepth(sharedState.searchRoot) match {
+      case Some(depth) =>
+        if (findNodeByDepth(depth, sharedState.searchRoot)) {
+          logger.debug(s"Worker ${context.rank} switched to node ${context.activeNode.id}")
+          true
+        } else {
+          false
+        }
+
+      case None => false
     }
   }
 
@@ -629,7 +687,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // assume the constraint constructed by this transition
       context.solver.assertGroundExpr(nextState.ex)
       // check whether this transition violates some assertions
-      logger.debug("Checking transition feasibility.")
+      logger.debug(s"Worker ${context.rank}: Checking if transition ${transitionNo} is enabled.")
       val startTimeMs = System.currentTimeMillis()
       context.solver.satOrTimeout(timeout) match {
         case Some(true) =>
