@@ -407,7 +407,9 @@ class ModelChecker(val checkerInput: CheckerInput,
     def isNodeUnexploredOrNotChecked(node: HyperNode): Boolean = {
       val yetToExplore = !node.isExplored && node.openTransitions.values.exists(_._2 == NewTransition())
       val yetToProve = !node.isChecked && node.unprovenVCs.values.exists(_.isInstanceOf[NewVC])
-      yetToExplore || yetToProve
+      val yetToClose = (!node.isExplored && node.openTransitions.isEmpty) &&
+        (!node.isChecked && node.unprovenVCs.isEmpty)
+      yetToExplore || yetToProve || yetToClose
     }
 
     if (isNodeUnexploredOrNotChecked(context.activeNode)) {
@@ -477,9 +479,16 @@ class ModelChecker(val checkerInput: CheckerInput,
 
     context.activeNode.synchronized {
       if (context.activeNode.openTransitions.isEmpty) {
-        logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
-        context.activeNode.isExplored = true
-        true
+        val allDisabled = context.activeNode.closedTransitions.
+          forall(_._2._2.isInstanceOf[DisabledTransition])
+        if (allDisabled) {
+          logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
+          context.activeNode.isExplored = true
+          context.activeNode.isChecked = true // there is nothing to check
+          true
+        } else {
+          false
+        }
       } else {
         false
       }
