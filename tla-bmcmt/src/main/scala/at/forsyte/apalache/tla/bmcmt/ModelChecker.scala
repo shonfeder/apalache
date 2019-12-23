@@ -44,6 +44,17 @@ class ModelChecker(val checkerInput: CheckerInput,
   private val SLEEP_DURATION_MS = 500
 
   /**
+    * When a worker has been sleeping for DEADLOCK_TIMEOUT_MS and other workers are idle,
+    * report a deadlock in the model checker.
+    */
+  private val DEADLOCK_TIMEOUT_MS = 30000
+
+  /**
+    * How long the worker has been idle without switching to any job.
+    */
+  private var idleTimeMs = 0
+
+  /**
     * Check all executions of a TLA+ specification up to a bounded number of steps.
     *
     * @return a verification outcome
@@ -154,6 +165,20 @@ class ModelChecker(val checkerInput: CheckerInput,
       if (!appliedAction) {
         // no action applicable, the worker waits and then continues
         Thread.sleep(SLEEP_DURATION_MS)
+        idleTimeMs += SLEEP_DURATION_MS
+        if (idleTimeMs >= DEADLOCK_TIMEOUT_MS) {
+          sharedState.synchronized {
+            if (sharedState.workerStates.values.forall(_ == IdleState())) {
+              logger.error("Worker %d has been idle for %d ms and other workers are idle too. Deadlock? Check search-tree.json"
+                .format(context.rank, idleTimeMs))
+              sharedState.searchRoot.printJsonToFile(new File("search-tree.json"))
+              throw new IllegalStateException("Detected deadlock")
+            }
+          }
+        }
+      } else {
+        idleTimeMs = 0
+        sharedState.searchRoot.printJsonToFile(new File("search-tree.json"))
       }
     }
 
@@ -687,7 +712,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // assume the constraint constructed by this transition
       context.solver.assertGroundExpr(nextState.ex)
       // check whether this transition violates some assertions
-      logger.debug(s"Worker ${context.rank}: Checking if transition ${transitionNo} is enabled.")
+      logger.debug(s"Worker ${context.rank}: Checking whether transition $transitionNo is enabled.")
       val startTimeMs = System.currentTimeMillis()
       context.solver.satOrTimeout(timeout) match {
         case Some(true) =>
@@ -699,7 +724,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         case r: Option[Boolean] => // unsat or timeout
           val durationMs = System.currentTimeMillis() - startTimeMs
           if (r.isDefined) { // the transition is not feasible in the current symbolic state
-            logger.debug("Worker %d: Transition #%d is not feasible.".format(context.rank, transitionNo))
+            logger.debug("Worker %d: Transition #%d is disabled.".format(context.rank, transitionNo))
             context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d"
               .format(stepNo, context.rewriter.contextLevel, transitionNo))
             (nextState, DisabledTransition(durationMs))

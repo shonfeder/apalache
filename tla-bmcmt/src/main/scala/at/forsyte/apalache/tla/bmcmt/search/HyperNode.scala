@@ -1,5 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
+import java.io.{File, FileWriter, PrintWriter}
 import java.util.concurrent.atomic.AtomicLong
 
 import at.forsyte.apalache.tla.lir.TlaEx
@@ -116,6 +117,66 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
     }
 
     closedTransitions.values.map(p => transitionTime(p._2)).foldLeft(0L) { case (max, ms) => Math.max(max, ms) }
+  }
+
+  /**
+    * Print the node (including its children) in the JSON format. The last line does not contain line feed.
+    *
+    * @param nspaces the number of spaces to add in front of every line.
+    * @param writer a print writer
+    */
+  def printJson(nspaces: Int, writer: PrintWriter): Unit = {
+    def transitionStatus(keyValue: (Int, (TlaEx, TransitionStatus))): String = {
+      "{%d: \"%s\"}".format(keyValue._1, keyValue._2._2)
+    }
+
+    def vcStatus(keyValue: (Int, VCStatus)): String = {
+      "{%d: \"%s\"}".format(keyValue._1, keyValue._2)
+    }
+
+    val spaces = " " * nspaces
+    def indentln(text: String): Unit = {
+      writer.println(spaces + text)
+    }
+    indentln("{")
+    indentln(s""" "id": $id,""")
+    indentln(""" "transition": [%s],""".format(transition.indices.mkString(", ")))
+    indentln(s""" "isExplored": $isExplored,""")
+    indentln(s""" "isChecked": $isChecked,""")
+    indentln(s""" "jailTimeoutSec": $jailTimeoutSec,""")
+    indentln(s""" "openTransitions": [%s],""".
+      format(openTransitions.map(transitionStatus).mkString(", ")))
+    indentln(s""" "closedTransitions": [%s],""".
+      format(closedTransitions.map(transitionStatus).mkString(", ")))
+    indentln(s""" "provenVCs": [%s],""".
+      format(provenVCs.map(vcStatus).mkString(", ")))
+    indentln(s""" "unprovenVCs": [%s],""".
+      format(provenVCs.map(vcStatus).mkString(", ")))
+    indentln(""" "children": [""")
+    if (children.nonEmpty) {
+      children.head.printJson(nspaces + 2, writer)
+      for (child <- children.tail) {
+        writer.println(",")
+        child.printJson(nspaces + 2, writer)
+      }
+    }
+    writer.println("")
+    indentln(" ]")
+    writer.print(spaces + "}")
+  }
+
+  /**
+    * Print the node including its children in the JSON format.
+    *
+    * @param file output file
+    */
+  def printJsonToFile(file: File): Unit = {
+    val writer = new PrintWriter(new FileWriter(file))
+    try {
+      printJson(0, writer)
+    } finally {
+      writer.close()
+    }
   }
 }
 

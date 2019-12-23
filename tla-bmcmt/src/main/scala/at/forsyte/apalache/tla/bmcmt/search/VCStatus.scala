@@ -26,29 +26,39 @@ sealed abstract class VCStatus
   *
   * @param vc a verification condition
   */
-case class NewVC(vc: VerificationCondition) extends VCStatus
+case class NewVC(vc: VerificationCondition) extends VCStatus {
+  override def toString: String = "new"
+}
 
 /**
   * A verification condition that is being proved by a worker.
   *
   * @param vc a verification condition
   */
-case class InProgressVC(vc: VerificationCondition) extends VCStatus
+case class InProgressVC(vc: VerificationCondition) extends VCStatus {
+  override def toString: String = "inProgress"
+}
 
 /**
   * A verification condition that has been proven to be valid, that is, its negation is unsatisfiable.
   * @param vc a verification condition
   */
-case class ValidVC(vc: VerificationCondition) extends VCStatus
+case class ValidVC(vc: VerificationCondition) extends VCStatus {
+  override def toString: String = "valid"
+}
 
 /**
   * A verification condition that has been proven to be invalid, that is, its negation is satisfiable.
   * @param vc a verification condition
   */
-case class InvalidVC(vc: VerificationCondition) extends VCStatus
+case class InvalidVC(vc: VerificationCondition) extends VCStatus {
+  override def toString: String = "invalid"
+}
 
 /**
   * A verification condition whose status is unknown, as the SMT solver has reported.
   * @param vc a verification condition
   */
-case class UnknownVC(vc: VerificationCondition) extends VCStatus
+case class UnknownVC(vc: VerificationCondition) extends VCStatus {
+  override def toString: String = "unknown"
+}
