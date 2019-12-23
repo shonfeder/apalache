@@ -30,11 +30,9 @@ case class NewTransition() extends TransitionStatus {
   *
   * @param trNo transition number
   * @param trEx transition expression
-  * @param node the node this transition was borrowed from, after timeout the node may change!
   * @param timeoutMs timeout in seconds, after which the node is going to migrate to a distinguished node.
   */
-case class BorrowedTransition(trNo: Int, trEx: TlaEx, var node: HyperNode, timeoutMs: Long) extends TransitionStatus {
-  var isMigrated: Boolean = false
+case class BorrowedTransition(trNo: Int, trEx: TlaEx, timeoutMs: Long) extends TransitionStatus {
   val startTimeMs: Long = System.currentTimeMillis()
   var durationMs: Long = 0
 

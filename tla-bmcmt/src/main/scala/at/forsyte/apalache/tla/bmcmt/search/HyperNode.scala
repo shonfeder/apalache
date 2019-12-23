@@ -35,6 +35,13 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   var closedTransitions: Map[Int, (TlaEx, TransitionStatus)] = Map()
 
   /**
+    * A set of the transitions that took too long to be checked. The node can be closed
+    * without waiting for the slow ones. The slow transitions will be isolated in their
+    * own nodes.
+    */
+  var slowTransitions: Set[Int] = Set()
+
+  /**
     * Have all verification conditions in the node been checked with the SMT solver?
     */
   var isChecked: Boolean = false
@@ -148,10 +155,12 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
       format(openTransitions.map(transitionStatus).mkString(", ")))
     indentln(s""" "closedTransitions": [%s],""".
       format(closedTransitions.map(transitionStatus).mkString(", ")))
+    indentln(s""" "slowTransitions": [%s],""".
+      format(slowTransitions.mkString(", ")))
     indentln(s""" "provenVCs": [%s],""".
       format(provenVCs.map(vcStatus).mkString(", ")))
     indentln(s""" "unprovenVCs": [%s],""".
-      format(provenVCs.map(vcStatus).mkString(", ")))
+      format(unprovenVCs.map(vcStatus).mkString(", ")))
     indentln(""" "children": [""")
     if (children.nonEmpty) {
       children.head.printJson(nspaces + 2, writer)
