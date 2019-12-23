@@ -555,6 +555,9 @@ class ModelChecker(val checkerInput: CheckerInput,
         val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
         // mark the node as explored in the end, so the finishing actions do not prematurely terminate
         context.activeNode.isExplored = true
+        if (context.activeNode.unprovenVCs.isEmpty) {
+          newNode.isChecked = true // nothing to check
+        }
         // switch to the new node
         context.activeNode = newNode
         saveContextInActiveNode(nextState, nextOracle)
