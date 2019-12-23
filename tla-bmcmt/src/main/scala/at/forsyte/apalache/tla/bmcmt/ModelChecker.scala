@@ -418,6 +418,11 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false
     }
 
+    context.workerState = HouseKeepingState()
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
+    }
+
     def isNodeUnexploredOrNotChecked(node: HyperNode): Boolean = {
       val yetToExplore = !node.isExplored && node.openTransitions.values.exists(_._2 == NewTransition())
       val yetToProve = !node.isChecked && node.unprovenVCs.values.exists(_.isInstanceOf[NewVC])
@@ -462,17 +467,24 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
     }
 
-    findMinUnfinishedDepth(sharedState.searchRoot) match {
-      case Some(depth) =>
-        if (findNodeByDepth(depth, sharedState.searchRoot)) {
-          logger.debug(s"Worker ${context.rank} switched to node ${context.activeNode.id}")
-          true
-        } else {
-          false
-        }
+    val result =
+      findMinUnfinishedDepth(sharedState.searchRoot) match {
+        case Some(depth) =>
+          if (findNodeByDepth(depth, sharedState.searchRoot)) {
+            logger.debug(s"Worker ${context.rank} switched to node ${context.activeNode.id}")
+            true
+          } else {
+            false
+          }
 
-      case None => false
+        case None => false
+      }
+
+    context.workerState = IdleState()
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
     }
+    result
   }
 
   private def closeDisabledNode(): Boolean = {
@@ -506,6 +518,12 @@ class ModelChecker(val checkerInput: CheckerInput,
       if (context.activeNode.isExplored || enabled.isEmpty || !allExplored) {
         return false
       }
+
+      context.workerState = HouseKeepingState()
+      sharedState.synchronized {
+        sharedState.workerStates += context.rank -> context.workerState
+      }
+
       // close the tree node, nothing to explore in this node
       logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
       recoverContext(context.activeNode)
@@ -548,6 +566,11 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
       logger.info("Worker %d: INTRODUCED NODE %d with %d open transitions".
         format(context.rank, context.activeNode.id, context.activeNode.openTransitions.size))
+    }
+
+    context.workerState = IdleState()
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
     }
 
     true
