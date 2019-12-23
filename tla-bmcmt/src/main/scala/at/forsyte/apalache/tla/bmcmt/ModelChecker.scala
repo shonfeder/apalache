@@ -50,11 +50,6 @@ class ModelChecker(val checkerInput: CheckerInput,
   private val DEADLOCK_TIMEOUT_MS = 30000
 
   /**
-    * How long the worker has been idle without switching to any job.
-    */
-  private var idleTimeMs = 0
-
-  /**
     * Check all executions of a TLA+ specification up to a bounded number of steps.
     *
     * @return a verification outcome
@@ -162,23 +157,25 @@ class ModelChecker(val checkerInput: CheckerInput,
       borrowTransition() || checkOneTransition || migrateTransition ||
         proveOneCondition() || increaseDepth() || closeDisabledNode() || switchNode() || finishBugFree()
 
-      if (!appliedAction) {
+      val jsonFile: File = new File("search-tree.json")
+      if (appliedAction) {
+        sharedState.searchRoot.printJsonToFile(jsonFile)
+      } else {
         // no action applicable, the worker waits and then continues
         Thread.sleep(SLEEP_DURATION_MS)
-        idleTimeMs += SLEEP_DURATION_MS
-        if (idleTimeMs >= DEADLOCK_TIMEOUT_MS) {
+        if (context.workerState.timeSinceStart() >= DEADLOCK_TIMEOUT_MS) {
           sharedState.synchronized {
-            if (sharedState.workerStates.values.forall(_ == IdleState())) {
+            val allDeadlocked: Boolean = sharedState.workerStates.values.forall {
+              s => s == IdleState() && s.timeSinceStart() >= DEADLOCK_TIMEOUT_MS
+            }
+            if (allDeadlocked) {
               logger.error("Worker %d has been idle for %d ms and other workers are idle too. Deadlock? Check search-tree.json"
-                .format(context.rank, idleTimeMs))
-              sharedState.searchRoot.printJsonToFile(new File("search-tree.json"))
+                .format(context.rank, context.workerState.timeSinceStart()))
+              sharedState.searchRoot.printJsonToFile(jsonFile)
               throw new IllegalStateException("Detected deadlock")
             }
           }
         }
-      } else {
-        idleTimeMs = 0
-        sharedState.searchRoot.printJsonToFile(new File("search-tree.json"))
       }
     }
 
@@ -265,7 +262,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     sharedState.synchronized {
       val slow = sharedState.workerStates collect {
         case (_, ExploringState(borrowed))
-            if !borrowed.isMigrated && borrowed.timeoutMs <= (System.currentTimeMillis() - borrowed.startTimeMs) =>
+          if !borrowed.isMigrated && borrowed.timeoutMs <= (System.currentTimeMillis() - borrowed.startTimeMs) =>
           borrowed
       }
 
@@ -316,10 +313,10 @@ class ModelChecker(val checkerInput: CheckerInput,
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
       // do not push, keep the context offline, recover from the snapshot later
-        val (_, status) = applyOneTransition(context.stepNo,
-          context.state, borrowed.trEx, borrowed.trNo, checkForErrors = true, timeout = 0)
+      val (_, status) = applyOneTransition(context.stepNo,
+        context.state, borrowed.trEx, borrowed.trNo, checkForErrors = true, timeout = 0)
         context.rewriter.exprCache.disposeActionLevel() // leave only the constants
-        val durationMs = System.currentTimeMillis() - borrowed.startTimeMs
+      val durationMs = System.currentTimeMillis() - borrowed.startTimeMs
 
         status match {
           case TimedOutTransition(_) =>
@@ -445,6 +442,7 @@ class ModelChecker(val checkerInput: CheckerInput,
             case (None, None) => None
           }
         }
+
         val depths = node.children.map(findMinUnfinishedDepth)
         depths.foldLeft(None: Option[Int])(min)
       }
@@ -674,7 +672,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.rewriter.flushStatistics()
 
     val assignedVars = nextState.binding.toMap.
-      collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1)}
+      collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1) }
     if (assignedVars.toSet != params.vars) {
       logger.debug(s"Worker ${context.rank}: Transition $transitionNo produces partial assignment. Disabled.")
       return (nextState, DisabledTransition(1))
