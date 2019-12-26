@@ -147,6 +147,8 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
     }
     indentln("{")
     indentln(s""" "id": $id,""")
+    indentln(""" "parent": %s,""".format(if (parent.isDefined) parent.get.id else "None"))
+    indentln(s""" "depth": $depth,""")
     indentln(""" "transition": [%s],""".format(transition.indices.mkString(", ")))
     indentln(s""" "isExplored": $isExplored,""")
     indentln(s""" "isChecked": $isChecked,""")

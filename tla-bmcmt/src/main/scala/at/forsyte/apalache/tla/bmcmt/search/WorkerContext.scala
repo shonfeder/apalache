@@ -29,7 +29,11 @@ class WorkerContext(var rank: Int,
     */
   var activeNode: HyperNode = initNode
 
-  def stepNo: Int = activeNode.depth
+  /**
+    * Get the step number.
+    * @return the step number
+    */
+  def stepNo: Int = activeNode.depth - 1 // we initialize constants at depth 0 and initialized states at depth 1
 
   // TODO: when solver is removed from Arena, fix that
   def state: SymbState = activeNode.snapshot.get.state.updateArena(_.setSolver(solver))
