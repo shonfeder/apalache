@@ -468,9 +468,10 @@ class ModelChecker(val checkerInput: CheckerInput,
 
     context.activeNode.synchronized {
       if (context.activeNode.openTransitions.isEmpty) {
+        val noOpen = context.activeNode.openTransitions.isEmpty
         val allDisabled = context.activeNode.closedTransitions.
           forall(_._2._2.isInstanceOf[DisabledTransition])
-        if (allDisabled) {
+        if (noOpen && allDisabled) {
           logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
           context.activeNode.isExplored = true
           context.activeNode.isChecked = true // there is nothing to check
