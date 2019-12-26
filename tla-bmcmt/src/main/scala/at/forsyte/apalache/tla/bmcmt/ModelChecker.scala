@@ -297,8 +297,13 @@ class ModelChecker(val checkerInput: CheckerInput,
             throw new IllegalStateException("No timeouts anymore")
 
           case _ =>
-            // The transition has been checked
-            val node = jailBorrowedTransitionIfSlow(borrowed, status)
+            // The transition has been checked. Isolate it if the transition is enabled and slow.
+            val node: HyperNode =
+              status match {
+                case DisabledTransition(_) => context.activeNode
+                case EnabledTransition(_, _) => jailBorrowedTransitionIfSlow(borrowed, status)
+              }
+
             // Close the transition.
             node.synchronized {
               node.openTransitions -= borrowed.trNo
