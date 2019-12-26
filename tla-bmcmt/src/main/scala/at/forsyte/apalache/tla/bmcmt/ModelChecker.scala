@@ -300,8 +300,8 @@ class ModelChecker(val checkerInput: CheckerInput,
             // The transition has been checked. Isolate it if the transition is enabled and slow.
             val node: HyperNode =
               status match {
-                case DisabledTransition(_) => context.activeNode
                 case EnabledTransition(_, _) => jailBorrowedTransitionIfSlow(borrowed, status)
+                case _ => context.activeNode // DisabledTransition
               }
 
             // Close the transition.
