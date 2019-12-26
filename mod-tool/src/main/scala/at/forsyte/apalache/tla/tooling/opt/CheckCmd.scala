@@ -30,7 +30,7 @@ class CheckCmd extends Command(name = "check",
       description = "the name of an invariant operator, e.g., Inv")
   var length: Int =
     opt[Int](name = "length", default = 10,
-      description = "the bound on the computation length, default: 10")
+      description = "maximal number of Next steps, default: 10")
   var tuning: String =
     opt[String](name="tuning", default = "",
       description = "filename of the config with file tuning options (see tuning.md)")

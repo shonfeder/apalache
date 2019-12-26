@@ -33,7 +33,10 @@ class WorkerContext(var rank: Int,
     * Get the step number.
     * @return the step number
     */
-  def stepNo: Int = activeNode.depth - 1 // we initialize constants at depth 0 and initialized states at depth 1
+  def stepNo: Int = {
+    // the constants are initialized at depth 0 and the initial states are computed at step 0: from depth 0 to depth 1
+    activeNode.depth
+  }
 
   // TODO: when solver is removed from Arena, fix that
   def state: SymbState = activeNode.snapshot.get.state.updateArena(_.setSolver(solver))
@@ -83,16 +86,27 @@ class WorkerContext(var rank: Int,
     val oracles = findOracles(Some(activeNode)).reverse
 
     val writer = new PrintWriter(new FileWriter(filename, false))
-    for (((state, oracle), i) <- states.zip(oracles).zipWithIndex) {
+
+    def printState(heading: String, state: SymbState, stateNo: Int, oracle: Oracle): Unit = {
       val decoder = new SymbStateDecoder(solver, rewriter)
       val transition = oracle.evalPosition(solver, state)
-      writer.println(s"State $i (from transition $transition):")
+      writer.println(s"Transition $transition: State $stateNo to State ${stateNo+1}:")
+      writer.println()
+      writer.println(heading)
       writer.println("--------")
       val binding = decoder.decodeStateVariables(state)
       for (name <- binding.keys.toSeq.sorted) { // sort the keys
         writer.println("%-15s ->  %s".format(name, UTFPrinter.apply(binding(name))))
       }
       writer.println("========\n")
+    }
+
+    // the first state is initializing the constants
+    printState(s"CONSTANTS:", states.head, 0, oracles.head)
+
+    // the other states are the computed by Init and then by multiple applications of Next
+    for (((state, oracle), i) <- states.tail.zip(oracles).zipWithIndex) {
+      printState(s"State ${i+1}:", state, i, oracle)
     }
     writer.close()
   }

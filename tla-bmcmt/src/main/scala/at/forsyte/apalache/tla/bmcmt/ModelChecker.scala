@@ -66,7 +66,8 @@ class ModelChecker(val checkerInput: CheckerInput,
           // the leading worker is initializing the shared state
           val initConstState = initializeConstants(dummyState)
           // push state 0 -- the state after initializing the parameters
-          val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+          val filteredTransitions = filterTransitions(0, checkerInput.initTransitions)
+          val statuses = filteredTransitions map { case (e, i) => (i, (e, NewTransition())) }
 
           context.activeNode.synchronized {
             context.activeNode = sharedState.searchRoot // start with the root
@@ -283,18 +284,6 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   private def checkOneTransition(): Boolean = {
     context.workerState match {
-      case ExploringState(borrowed) if !params.stepMatchesFilter(context.stepNo, borrowed.trNo) =>
-        // the transition does not match the filter, skip
-        context.activeNode.synchronized {
-          context.activeNode.openTransitions -= borrowed.trNo
-          context.activeNode.closedTransitions += borrowed.trNo -> (borrowed.trEx, DisabledTransition(1))
-        }
-        sharedState.synchronized {
-          context.workerState = IdleState()
-          sharedState.workerStates += context.rank -> context.workerState
-        }
-        true
-
       case ExploringState(borrowed) =>
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
@@ -496,7 +485,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   }
 
   private def increaseDepth(): Boolean = {
-    val reachedCeiling = context.stepNo >= params.stepsBound
+    val reachedCeiling = context.stepNo >= params.stepsBound // the previous step is the last one
     var enabled: List[(TlaEx, Int)] = List()
 
     if (context.workerState != IdleState() || context.activeNode.isExplored) {
@@ -542,7 +531,8 @@ class ModelChecker(val checkerInput: CheckerInput,
 
       // schedule the transitions to check
       if (!reachedCeiling) {
-        val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+        val filteredTransitions = filterTransitions(context.stepNo + 1, checkerInput.nextTransitions)
+        val statuses = filteredTransitions map { case (e, i) => (i, (e, NewTransition())) }
         newNode.openTransitions = HashMap(statuses: _*)
       } else {
         logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants will be checked")
@@ -884,8 +874,9 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.typeFinder.reset(nextTypes)
   }
 
-  private def getNodeFile(tree: HyperNode): File = {
-    new File(params.saveDirectory, "%d.ser".format(tree.id))
+  // filter the transitions by the search.transitionFilter
+  private def filterTransitions(stepNo: Int, transitions: List[TlaEx]): List[(TlaEx, Int)] = {
+    transitions.zipWithIndex.filter { case (_, i) => params.stepMatchesFilter(stepNo, i) }
   }
 
   private def printRewriterSourceLoc(): Unit = {
