@@ -149,7 +149,7 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
     indentln(s""" "id": $id,""")
     indentln(""" "parent": %s,""".format(if (parent.isDefined) parent.get.id else """"None""""))
     indentln(s""" "depth": $depth,""")
-    indentln(""" "transition": [%s],""".format(transition.indices.mkString(", ")))
+    indentln(""" "transition": [%s],""".format(transition.indices.toList.sorted.mkString(", ")))
     indentln(s""" "isExplored": $isExplored,""")
     indentln(s""" "isChecked": $isChecked,""")
     indentln(s""" "jailTimeoutSec": $jailTimeoutSec,""")
@@ -158,7 +158,7 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
     indentln(s""" "closedTransitions": [%s],""".
       format(closedTransitions.map(transitionStatus).mkString(", ")))
     indentln(s""" "slowTransitions": [%s],""".
-      format(slowTransitions.mkString(", ")))
+      format(slowTransitions.toList.sorted.mkString(", ")))
     indentln(s""" "provenVCs": [%s],""".
       format(provenVCs.map(vcStatus).mkString(", ")))
     indentln(s""" "unprovenVCs": [%s],""".
