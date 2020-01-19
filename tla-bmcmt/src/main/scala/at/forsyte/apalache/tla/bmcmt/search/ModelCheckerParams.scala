@@ -50,6 +50,19 @@ class ModelCheckerParams(checkerInput: CheckerInput,
   val jailTimeoutFactor: Long =
     BigInt(tuningOptions.getOrElse("search.split.timeout.factor", "200")).toInt
 
+  /**
+    * A timeout (in seconds) that indicates for how long an idle worker has to wait until splitting
+    * an active tree node into two.
+    */
+  val idleTimeoutSec: Long =
+    BigInt(tuningOptions.getOrElse("search.idle.timeout", "60")).toLong
+
+  /**
+    * A timeout (in milliseconds) that indicates for how long an idle worker has to wait until splitting
+    * an active tree node into two.
+    */
+  def idleTimeoutMs: Long = idleTimeoutSec * 1000
+
   val invariantTimeout: Long =
     BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong
 

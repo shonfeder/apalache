@@ -157,7 +157,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // TODO: introduce a function that checks the preconditions and selects one action
       // TODO: the current implementation has too many collisions on the locks
       val appliedAction =
-      borrowTransition() || checkOneTransition ||
+        borrowTransition() || checkOneTransition || splitNodeOnLowLoad() ||
         proveOneCondition() || increaseDepth() || closeDisabledNode() || switchNode() || finishBugFree()
 
       val jsonFile: File = new File("search-tree.json")
@@ -166,14 +166,14 @@ class ModelChecker(val checkerInput: CheckerInput,
       } else {
         // no action applicable, the worker waits and then continues
         Thread.sleep(SLEEP_DURATION_MS)
-        if (context.workerState.timeSinceStart() >= DEADLOCK_TIMEOUT_MS) {
+        if (context.workerState.timeSinceStartMs() >= DEADLOCK_TIMEOUT_MS) {
           sharedState.synchronized {
             val allDeadlocked: Boolean = sharedState.workerStates.values.forall {
-              s => s == IdleState() && s.timeSinceStart() >= DEADLOCK_TIMEOUT_MS
+              s => s == IdleState() && s.timeSinceStartMs() >= DEADLOCK_TIMEOUT_MS
             }
             if (allDeadlocked) {
               logger.error("Worker %d has been idle for %d ms and other workers are idle too. Deadlock? Check search-tree.json"
-                .format(context.rank, context.workerState.timeSinceStart()))
+                .format(context.rank, context.workerState.timeSinceStartMs()))
               sharedState.searchRoot.printJsonToFile(jsonFile)
               throw new IllegalStateException("Detected deadlock")
             }
@@ -384,18 +384,14 @@ class ModelChecker(val checkerInput: CheckerInput,
   }
 
   /**
-    * If the current node is completely explored and checked, switch to an unexplored node with minimal depth.
+    * If the current node is completely explored and checked,
+    * then switch to an unexplored or unchecked node with the minimal depth.
     *
     * @return true, if successful
     */
   private def switchNode(): Boolean = {
     if (context.workerState != IdleState()) {
       return false
-    }
-
-    context.workerState = HouseKeepingState()
-    sharedState.synchronized {
-      sharedState.workerStates += context.rank -> context.workerState
     }
 
     def isNodeUnexploredOrNotChecked(node: HyperNode): Boolean = {
@@ -444,6 +440,13 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
     }
 
+    // change the state, as it might take some time
+    val oldState = context.workerState
+    context.workerState = HouseKeepingState()
+    sharedState.synchronized {
+      sharedState.workerStates += context.rank -> context.workerState
+    }
+
     val result =
       findMinUnfinishedDepth(sharedState.searchRoot) match {
         case Some(depth) =>
@@ -457,11 +460,52 @@ class ModelChecker(val checkerInput: CheckerInput,
         case None => false
       }
 
-    context.workerState = IdleState()
+    context.workerState = if (result) IdleState() else oldState
     sharedState.synchronized {
       sharedState.workerStates += context.rank -> context.workerState
     }
     result
+  }
+
+  private def splitNodeOnLowLoad(): Boolean = {
+    if (context.activeNode.isExplored || context.activeNode.parent.isEmpty) {
+      return false // the root node, or the active node has been explored; nothing to check
+    }
+
+    context.workerState match {
+      case is: IdleState if is.timeSinceStartMs() >= params.idleTimeoutMs =>
+        // the current worker has been idle for some time => split the active node into two
+        context.activeNode.synchronized {
+          val activeNode = context.activeNode
+          if (activeNode.closedTransitions.isEmpty || activeNode.openTransitions.isEmpty) {
+            false
+          } else {
+            val newNode = HyperNode(activeNode.transition)
+            // move the closed transitions to the new node, so it can make progress
+            newNode.closedTransitions = activeNode.closedTransitions
+            newNode.snapshot = activeNode.snapshot
+            activeNode.closedTransitions = Map()
+
+            val parent = activeNode.parent.get
+            parent.synchronized {
+              parent.append(newNode)
+            }
+
+            context.activeNode = newNode
+
+            logger.info("Idle worker %d branched node %d from node %d"
+              .format(context.rank, activeNode.id, newNode.id))
+            true
+          }
+        }
+
+      case is: IdleState =>
+//        logger.debug("Idle worker since %d ms".format(is.timeSinceStartMs()))
+        false
+
+      case _ =>
+        false
+    }
   }
 
   private def closeDisabledNode(): Boolean = {
@@ -469,6 +513,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
 
+    // TODO: this method updates openTransitions, which are empty by this time!
     markSlowTransitions() // move the slow transitions, if needed
 
     context.activeNode.synchronized {
@@ -498,6 +543,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
 
+    // TODO: this method updates openTransitions, which are empty by this time!
     markSlowTransitions() // move the slow transitions, if needed
 
     // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up

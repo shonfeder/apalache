@@ -10,7 +10,7 @@ sealed abstract class WorkerState {
     */
   val startTimeMs: Long = System.currentTimeMillis()
 
-  def timeSinceStart(): Long = System.currentTimeMillis() - startTimeMs
+  def timeSinceStartMs(): Long = System.currentTimeMillis() - startTimeMs
 
   def isFinished: Boolean = this match {
     case BuggyState() | BugFreeState() => true
