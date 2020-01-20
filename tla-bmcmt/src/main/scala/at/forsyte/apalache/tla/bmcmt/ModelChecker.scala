@@ -372,9 +372,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     activeNode.synchronized {
       activeNode.provenVCs += (vcNo -> result)
       activeNode.unprovenVCs -= vcNo
-      if (activeNode.unprovenVCs.isEmpty) {
-        activeNode.isChecked = true
-      }
+      activeNode.isChecked = activeNode.unprovenVCs.isEmpty
       context.workerState = newState
     }
     sharedState.synchronized {
@@ -484,6 +482,7 @@ class ModelChecker(val checkerInput: CheckerInput,
             // move the closed transitions to the new node, so it can make progress
             newNode.closedTransitions = activeNode.closedTransitions
             newNode.snapshot = activeNode.snapshot
+            newNode.isChecked = true // the invariants will be checked at activeNode
             activeNode.closedTransitions = Map()
 
             val parent = activeNode.parent.get
@@ -513,7 +512,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
 
-    // TODO: this method updates openTransitions, which are empty by this time!
+    // TODO: this method updates openTransitions even if the action does not take place
     markSlowTransitions() // move the slow transitions, if needed
 
     context.activeNode.synchronized {
@@ -543,7 +542,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
 
-    // TODO: this method updates openTransitions, which are empty by this time!
+    // TODO: this method updates openTransitions even if the action does not take place
     markSlowTransitions() // move the slow transitions, if needed
 
     // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up
@@ -567,7 +566,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       // introduce a new node, unless the depth is too high
       val newNode = HyperNode(HyperTransition(enabled.map(_._2): _*))
       // recompute the jail timeout
-      val newJailTimeout = 1 + context.activeNode.maxTransitionTimeMs() * params.jailTimeoutFactor / 100000
+      val newJailTimeout = 1 + context.activeNode.maxTransitionTimeSec() * params.jailTimeoutFactor / 100
       newNode.jailTimeoutSec = Math.max(newJailTimeout, params.jailTimeoutMinSec)
       // Find all verification conditions. By converting it to Map, we remove the duplicates
       val allVCsMap = context.activeNode.closedTransitions.
@@ -577,9 +576,7 @@ class ModelChecker(val checkerInput: CheckerInput,
 
       // schedule the verification conditions
       newNode.unprovenVCs = allVCsMap map { case (no, vc) => (no, NewVC(vc)) }
-      if (newNode.unprovenVCs.isEmpty) {
-        newNode.isChecked = true // nothing to check
-      }
+      newNode.isChecked = newNode.unprovenVCs.isEmpty
 
       // schedule the transitions to check
       if (!reachedCeiling) {

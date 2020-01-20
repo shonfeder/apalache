@@ -127,6 +127,14 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   }
 
   /**
+    * Same as maxTransitionTimeMs but truncated to seconds.
+    * @return maximal transition time in seconds
+    */
+  def maxTransitionTimeSec(): Long = {
+    maxTransitionTimeMs() / 1000
+  }
+
+  /**
     * Print the node (including its children) in the JSON format. The last line does not contain line feed.
     *
     * @param nspaces the number of spaces to add in front of every line.
