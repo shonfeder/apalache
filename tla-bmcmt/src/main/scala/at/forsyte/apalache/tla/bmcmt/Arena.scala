@@ -141,7 +141,7 @@ class Arena private(val solverContext: SolverContext,
         cellMap(name)
 
       case _ =>
-        throw new CheckerException("Expected NameEx with a cell name, found: %s".format(nameEx))
+        throw new CheckerException("Expected NameEx with a cell name, found: %s".format(nameEx), nameEx)
     }
 
   }

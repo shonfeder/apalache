@@ -149,7 +149,6 @@ object WorkerContext {
     val typeFinder = new TrivialTypeFinder()
     // XXX: the rewriter recovery is still a hack
     val rewriter = new SymbStateRewriterImpl(solver, typeFinder, protoRewriter.exprGradeStore)
-    rewriter.freeExistentialsStore = protoRewriter.freeExistentialsStore
     rewriter.formulaHintsStore = protoRewriter.formulaHintsStore
     rewriter.config = protoRewriter.config
     rewriter.recover(snapshot.rewriterSnapshot)

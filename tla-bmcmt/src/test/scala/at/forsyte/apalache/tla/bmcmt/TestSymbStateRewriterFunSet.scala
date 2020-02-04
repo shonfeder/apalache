@@ -85,7 +85,7 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
         tla.funSet(domain, codomain),
         pred)
     val skolem = OperEx(BmcOper.skolem, exists)
-    val state = new SymbState(skolem, CellTheory(), arena, Binding())
+    val state = new SymbState(skolem, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     solverContext.assertGroundExpr(nextState.ex)
@@ -103,7 +103,7 @@ class TestSymbStateRewriterFunSet extends RewriterBase {
     val exists =
       tla.exists(tla.name("f"), funset, pred)
     val skolem = OperEx(BmcOper.skolem, exists)
-    val state = new SymbState(skolem, CellTheory(), arena, Binding())
+    val state = new SymbState(skolem, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     val gprime = nextState.binding("g'")
