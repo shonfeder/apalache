@@ -632,6 +632,8 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   // find slow transitions in the active node and move them to slowTransitions
   private def markSlowTransitions(): Unit = {
+    // FIXME: figure out why we need it!
+    /*
     context.activeNode.synchronized {
       val slow = context.activeNode.openTransitions.collect {
         case (trNo, (_, borrowed@BorrowedTransition(_, _, _)))
@@ -644,6 +646,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       }
       context.activeNode.slowTransitions ++= slow
     }
+    */
   }
 
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
