@@ -73,7 +73,7 @@ class ChooseRule(rewriter: SymbStateRewriter) extends RewritingRule {
   // It should be used only after resolving the issue #95: https://github.com/konnov/apalache/issues/95
   private def happyChoose(state: SymbState, varName: String, set: TlaEx, pred: TlaEx): SymbState = {
     // rewrite the bounding set
-    val nextState = rewriter.rewriteUntilDone(state.setTheory(CellTheory()).setRex(set))
+    val nextState = rewriter.rewriteUntilDone(state.setRex(set))
     val setCell = nextState.asCell
     val isFinSet = PartialFunction.cond(setCell.cellType) { case FinSetT(_) => true }
     if (isFinSet) {
@@ -99,11 +99,11 @@ class ChooseRule(rewriter: SymbStateRewriter) extends RewritingRule {
       nextState = pickRule.pickByOracle(nextState, oracle, elems, trueEx)
       val witness = nextState.asCell
       // assert that the predicate holds -- we are in the happy case
-      val tempBinding = nextState.binding + (varName -> witness)
+      val tempBinding = Binding(nextState.binding.toMap + (varName -> witness))
       nextState = rewriter.rewriteUntilDone(nextState.setRex(pred).setBinding(tempBinding))
       solverAssert(nextState.ex)
       // return the witness
-      nextState.setRex(witness.toNameEx).setBinding(nextState.binding - varName)
+      nextState.setRex(witness.toNameEx).setBinding(Binding(nextState.binding.toMap - varName))
     }
   }
 
@@ -114,11 +114,11 @@ class ChooseRule(rewriter: SymbStateRewriter) extends RewritingRule {
     var nextState = pickRule.pick(setCell, state, state.arena.cellFalse().toNameEx)
     val witness = nextState.asCell
     // assert that the witness satisfies the predicate -- we are in the happy case
-    val tempBinding = nextState.binding + (varName -> witness)
+    val tempBinding = Binding(nextState.binding.toMap + (varName -> witness))
     nextState = rewriter.rewriteUntilDone(nextState.setRex(pred).setBinding(tempBinding))
     solverAssert(nextState.ex)
     // return the witness
-    nextState.setRex(witness.toNameEx).setBinding(nextState.binding - varName)
+    nextState.setRex(witness.toNameEx).setBinding(Binding(nextState.binding.toMap - varName))
   }
 
 }

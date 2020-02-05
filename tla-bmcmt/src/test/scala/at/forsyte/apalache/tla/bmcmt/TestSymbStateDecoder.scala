@@ -53,7 +53,7 @@ class TestSymbStateDecoder extends RewriterBase {
 
   test("decode Int set") {
     val originalEx = ValEx(TlaIntSet)
-    val state = new SymbState(originalEx, CellTheory(), arena, new Binding)
+    val state = new SymbState(originalEx, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
@@ -65,7 +65,7 @@ class TestSymbStateDecoder extends RewriterBase {
 
   test("decode Nat set") {
     val originalEx = ValEx(TlaNatSet)
-    val state = new SymbState(originalEx, CellTheory(), arena, new Binding)
+    val state = new SymbState(originalEx, arena, Binding())
     val rewriter = create()
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())

@@ -757,7 +757,7 @@ class TestSymbStateRewriterSet extends RewriterBase with TestingPredefs {
     val mapExpr = tla.name("x")
     val mapSet = tla.map(mapExpr, tla.name("x"), set)
 
-    val state = new SymbState(mapSet, BoolTheory(), arena, new Binding)
+    val state = new SymbState(mapSet, arena, Binding())
     val rewriter = create()
     assertThrows[TypeInferenceError](rewriter.rewriteUntilDone(state))
   }
