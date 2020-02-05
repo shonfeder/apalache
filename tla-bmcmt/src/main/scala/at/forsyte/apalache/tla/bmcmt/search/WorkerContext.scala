@@ -6,7 +6,10 @@ import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
 import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter, SymbStateRewriterImpl}
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.lir.io.UTFPrinter
+import at.forsyte.apalache.tla.lir.{NameEx, OperEx, ValEx}
+import at.forsyte.apalache.tla.lir.io.{PrettyWriter, UTFPrinter}
+import at.forsyte.apalache.tla.lir.oper.TlaFunOper
+import at.forsyte.apalache.tla.lir.values.TlaStr
 
 /**
   * A context that maintains the search stack, rewriter, solver context, type finder, etc.
@@ -95,8 +98,11 @@ class WorkerContext(var rank: Int,
       writer.println(heading)
       writer.println("--------")
       val binding = decoder.decodeStateVariables(state)
-      for (name <- binding.keys.toSeq.sorted) { // sort the keys
-        writer.println("%-15s ->  %s".format(name, UTFPrinter.apply(binding(name))))
+      // construct a record and print it with PrettyWriter
+      if (binding.nonEmpty) {
+        val keyVals = binding.toList.sortBy(_._1).flatMap(p => List(ValEx(TlaStr(p._1)), p._2))
+        val record = OperEx(TlaFunOper.enum, keyVals :_*)
+        new PrettyWriter(writer).write(record)
       }
       writer.println("========\n")
     }
