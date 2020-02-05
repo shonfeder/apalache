@@ -173,7 +173,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
             }
 
           case tp@_ =>
-            addError(new TypeInferenceError(set, "Expected a set, found: " + tp))
+            addError(new TypeInferenceError(set, "Expected a finite set, found: " + tp))
             varTypes = varTypes + (x -> UnknownT()) // otherwise, the type rewriter may throw an exception
             None
         }
@@ -194,7 +194,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
               varTypes = varTypes + (name -> setT)
 
             case tp@_ =>
-              addError(new TypeInferenceError(set, "Expected a set, found: " + tp))
+              addError(new TypeInferenceError(set, "Expected a finite set, found: " + tp))
               varTypes = varTypes + (name -> UnknownT()) // otherwise, the type rewriter may throw an exception
           }
         }
@@ -214,7 +214,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
               varTypes = varTypes + (name -> elemT)
 
             case tp@_ =>
-              addError(new TypeInferenceError(set, "Expected a set, found: " + tp))
+              addError(new TypeInferenceError(set, "Expected a finite set, found: " + tp))
               varTypes = varTypes + (name -> UnknownT()) // otherwise, the type rewriter throws an exception 10 lines below
           }
         }
@@ -234,24 +234,41 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       // exists, forall, or CHOOSE
       case OperEx(op, NameEx(x), set, pred)
         if op == TlaBoolOper.exists || op == TlaBoolOper.forall || op == TlaOper.chooseBounded =>
+
+        // infer result by having computed the set type (below)
+        def inferResult(elemT: CellT) = {
+          assert(!varTypes.contains(x))
+          varTypes = varTypes + (x -> elemT)
+          val predT = inferAndSave(pred)
+          if (predT.contains(BoolT())) {
+            if (op == TlaOper.chooseBounded) {
+              Some(elemT) // CHOOSE
+            } else {
+              Some(BoolT()) // exists/forall
+            }
+          } else {
+            addError(new TypeInferenceError(pred, "Expected a Boolean, found: " + predT))
+            None
+          }
+        }
+
+        // first, compute the set type and then the result
         inferAndSave(set) match {
           case Some(setT@FinSetT(elemT)) =>
-            assert(!varTypes.contains(x))
-            varTypes = varTypes + (x -> elemT)
-            val predT = inferAndSave(pred)
-            if (predT.contains(BoolT())) {
-              if (op == TlaOper.chooseBounded) {
-                Some(elemT) // CHOOSE
-              } else {
-                Some(BoolT()) // exists/forall
-              }
-            } else {
-              addError(new TypeInferenceError(pred, "Expected a Boolean, found: " + predT))
-              None
-            }
+            inferResult(elemT)
+
+          case Some(setT@InfSetT(elemT)) if op == TlaBoolOper.exists =>
+            // pass an infinite set, as it might be replaced with a constant, due to Skolemization
+            inferResult(elemT)
+
+          case Some(_@InfSetT(elemT)) if op == TlaOper.chooseBounded || op == TlaBoolOper.forall =>
+            // complain right away
+            val name = if (op == TlaOper.chooseBounded) "CHOOSE" else "\\A"
+            addError(new TypeInferenceError(set, s"$name over an infinite set"))
+            None
 
           case tp@_ =>
-            addError(new TypeInferenceError(set, "Expected a set, found: " + tp))
+            addError(new TypeInferenceError(set, "Expected a finite set, found: " + tp))
             varTypes = varTypes + (x -> UnknownT()) // otherwise, the type rewriter may throw an exception
             None
         }
@@ -394,10 +411,10 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       ConstT()
 
     case ValEx(TlaNatSet) =>
-      FinSetT(IntT())
+      InfSetT(IntT())
 
     case ValEx(TlaIntSet) =>
-      FinSetT(IntT())
+      InfSetT(IntT())
   }
 
   private def computeBasicOps(argTypes: Seq[CellT]): PartialFunction[TlaEx, CellT] = {
@@ -478,6 +495,10 @@ class TrivialTypeFinder extends TypeFinder[CellT]
           // FinT expects the types of the domain and the result (not of the co-domain!)
           FinSetT(FunT(FinSetT(argT), resT))
 
+        case Seq(FinSetT(argT), InfSetT(resT)) =>
+          // a result from an infinite domain is ok, as soon as we are not unfolding this domain
+          FinSetT(FunT(FinSetT(argT), resT))
+
         case _ => errorUnexpected(ex, op.name, argTypes)
       }
 
@@ -488,7 +509,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       val _, fieldTypes = deinterleave(argTypes, 1, 2)
       val elemTypes = argTypes.collect { case FinSetT(t) => t }
       if (elemTypes.size < fieldTypes.size) {
-        error(ex, "Only explicit sets are supported in sets of records")
+        error(ex, "Only finite sets of records are supported in [a: A, ..., z: Z]")
       }
       assert(fieldNames.length == fieldTypes.length)
       FinSetT(RecordT(SortedMap(fieldNames.zip(elemTypes): _*)))
@@ -507,7 +528,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       assert(argTypes.nonEmpty)
       val elemTypes = argTypes.collect({ case FinSetT(t) => t }) // using partial functions
       if (elemTypes.size < argTypes.size) {
-        error(ex, "Only explicit sets are supported in Cartesian products")
+        error(ex, "Only finite sets are supported in the cross product A \\X B")
       }
       FinSetT(TupleT(elemTypes))
 
@@ -562,6 +583,10 @@ class TrivialTypeFinder extends TypeFinder[CellT]
     case ex@OperEx(op, _, _) if op == TlaSetOper.in || op == TlaSetOper.notin =>
       argTypes match {
         case Seq(memT, FinSetT(elemT)) =>
+          expectEqualTypes(ex, memT, elemT)
+          BoolT()
+
+        case Seq(memT, InfSetT(elemT)) =>
           expectEqualTypes(ex, memT, elemT)
           BoolT()
 
@@ -806,6 +831,9 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       expectType(BoolT(), pred, predType)
       setType match {
         case FinSetT(elemT) =>
+          expectType(elemT, x, xType)
+
+        case InfSetT(elemT) =>
           expectType(elemT, x, xType)
 
         case _ =>
