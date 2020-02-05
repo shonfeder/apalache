@@ -71,7 +71,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
 
     val sharedState = new SharedSearchState(nworkers)
     val params = new ModelCheckerParams(input, stepsBound, saveDir, tuning, debug)
-    params.lucky = options.getOrElse("search", "lucky", false)
+    params.lucky = options.getOrElse("checker", "lucky", false)
 
     def createCheckerThread(rank: Int): Thread = {
       new Thread {

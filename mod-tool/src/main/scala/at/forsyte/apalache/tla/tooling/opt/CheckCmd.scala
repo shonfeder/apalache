@@ -35,6 +35,6 @@ class CheckCmd extends Command(name = "check",
     opt[String](name="tuning", default = "",
       description = "filename of the config with file tuning options (see tuning.md)")
   var lucky: Boolean = opt[Boolean](
-    name = "lucky", default = true,
+    name = "lucky", default = false,
     description = "do not check whether transitions are enabled, default: false")
 }
