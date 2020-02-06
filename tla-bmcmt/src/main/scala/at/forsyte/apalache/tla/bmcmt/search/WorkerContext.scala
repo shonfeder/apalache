@@ -1,15 +1,16 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
 import java.io._
+import java.util.Calendar
 
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter, SymbStateRewriterImpl}
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.lir.{NameEx, OperEx, ValEx}
-import at.forsyte.apalache.tla.lir.io.{PrettyWriter, UTFPrinter}
-import at.forsyte.apalache.tla.lir.oper.TlaFunOper
-import at.forsyte.apalache.tla.lir.values.TlaStr
+import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter, SymbStateRewriterImpl}
+import at.forsyte.apalache.tla.lir.io.PrettyWriter
+import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaFunOper, TlaOper}
+import at.forsyte.apalache.tla.lir.values.{TlaBool, TlaStr}
+import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaOperDecl, ValEx}
 
 /**
   * A context that maintains the search stack, rewriter, solver context, type finder, etc.
@@ -93,27 +94,36 @@ class WorkerContext(var rank: Int,
     def printState(heading: String, state: SymbState, stateNo: Int, oracle: Oracle): Unit = {
       val decoder = new SymbStateDecoder(solver, rewriter)
       val transition = oracle.evalPosition(solver, state)
-      writer.println(s"Transition $transition: State $stateNo to State ${stateNo+1}:")
+      writer.println(s"""\\* Transition $transition: State $stateNo to State ${stateNo+1}:""")
       writer.println()
-      writer.println(heading)
-      writer.println("--------")
       val binding = decoder.decodeStateVariables(state)
       // construct a record and print it with PrettyWriter
-      if (binding.nonEmpty) {
-        val keyVals = binding.toList.sortBy(_._1).flatMap(p => List(ValEx(TlaStr(p._1)), p._2))
-        val record = OperEx(TlaFunOper.enum, keyVals :_*)
-        new PrettyWriter(writer).write(record)
-      }
-      writer.println("========\n")
+      val body =
+        if (binding.isEmpty) {
+          ValEx(TlaBool(true))
+        } else {
+          val keyVals = binding.toList.sortBy(_._1)
+            .map(p => OperEx(TlaOper.eq, NameEx(p._1), p._2))
+          OperEx(TlaBoolOper.and, keyVals :_*)
+        }
+
+      new PrettyWriter(writer).write(TlaOperDecl(heading, List(), body))
+      writer.println("")
+      writer.println("")
     }
 
+    writer.println("%s MODULE Counterexample %s\n".format("-" * 25, "-" * 25))
+
     // the first state is initializing the constants
-    printState(s"CONSTANTS:", states.head, 0, oracles.head)
+    printState(s"ConstInit", states.head, 0, oracles.head)
 
     // the other states are the computed by Init and then by multiple applications of Next
     for (((state, oracle), i) <- states.tail.zip(oracles).zipWithIndex) {
-      printState(s"State ${i+1}:", state, i, oracle)
+      printState(s"State${i+1}", state, i, oracle)
     }
+    writer.println("\n%s".format("=" * 80))
+    writer.println("\\* Created %s by Apalache".format(Calendar.getInstance().getTime))
+    writer.println("\\* https://github.com/konnov/apalache")
     writer.close()
   }
 
