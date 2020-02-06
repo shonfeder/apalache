@@ -78,7 +78,7 @@ object TlcOper {
     */
   object atat extends TlcOper {
     override def name: String = "TLC!@@"
-    override def arity: OperArity = FixedArity(2)
+    override def arity: OperArity = AnyArity()
     override val precedence: (Int, Int) = (6, 6)
   }
 

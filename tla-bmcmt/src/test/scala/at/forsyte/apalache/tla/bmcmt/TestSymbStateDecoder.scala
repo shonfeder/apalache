@@ -129,7 +129,8 @@ class TestSymbStateDecoder extends RewriterBase {
     val cell = nextState.asCell
     val decoder = new SymbStateDecoder(solverContext, rewriter)
     val decodedEx = decoder.decodeCellToTlaEx(nextState.arena, cell)
-    val expectedOutcome = tla.enumFun(tla.int(1), tla.int(2), tla.int(2), tla.int(3))
+    val expectedOutcome =
+      tla.atat(tla.int(1), tla.int(2), tla.int(2), tla.int(3))
     assert(expectedOutcome == decodedEx)
     // we cannot directly compare the outcome, as it comes in the same form as a record
     //    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(decodedEx, funEx)))
@@ -146,7 +147,7 @@ class TestSymbStateDecoder extends RewriterBase {
     val decoder = new SymbStateDecoder(solverContext, rewriter)
     val decodedEx = decoder.decodeCellToTlaEx(nextState.arena, cell)
     // this is the standard outcome for an empty-domain function: {x \in {} |-> {}}
-    val expectedOutcome = tla.funDef(tla.enumSet(), tla.name("x"), tla.enumSet())
+    val expectedOutcome = tla.atat()
     assert(expectedOutcome == decodedEx)
     // we cannot directly compare the outcome, as it comes in the same form as a record
     //    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(decodedEx, funEx)))
@@ -168,7 +169,7 @@ class TestSymbStateDecoder extends RewriterBase {
     val decoder = new SymbStateDecoder(solverContext, rewriter)
     val decodedEx = decoder.decodeCellToTlaEx(nextState.arena, cell)
     // this is the standard outcome for an empty-domain function: {x \in {} |-> {}}
-    val expectedOutcome = tla.funDef(tla.enumSet(), tla.name("x"), tla.enumSet())
+    val expectedOutcome = tla.atat()
     assert(expectedOutcome == decodedEx)
     // we cannot directly compare the outcome, as it comes in the same form as a record
     //    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(decodedEx, funEx)))
