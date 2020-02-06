@@ -866,7 +866,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context.solver.satOrTimeout(params.invariantTimeout) match {
       case Some(true) =>
         // TODO: take a snapshot and return InvalidVC instead?
-        val filename = "counterexample.tla"
+        val filename = s"counterexample-vc$vcNo-w${context.rank}.tla"
         context.dumpCounterexample(filename)
         logger.error("Worker %d: Invariant %d is violated at depth %d. Check the counterexample in %s".
           format(context.rank, vcNo, stepNo, filename))
