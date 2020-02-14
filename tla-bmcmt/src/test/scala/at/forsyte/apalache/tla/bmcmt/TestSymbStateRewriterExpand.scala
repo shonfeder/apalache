@@ -40,7 +40,7 @@ class TestSymbStateRewriterExpand extends RewriterBase {
     val domain = tla.enumSet(tla.int(1), tla.int(2))
     val codomain = tla.enumSet(tla.bool(false), tla.bool(true))
     val funSet = OperEx(BmcOper.expand, tla.funSet(domain, codomain))
-    val state = new SymbState(funSet, CellTheory(), arena, new Binding)
+    val state = new SymbState(funSet, arena, Binding())
     val rewriter = create()
     var nextState = rewriter.rewriteUntilDone(state)
     val funSetCell = nextState.asCell
