@@ -96,6 +96,9 @@ class ModelChecker(val checkerInput: CheckerInput,
         case _: CancelSearchException =>
           Outcome.Error
 
+        case _: InterruptedException =>
+          Outcome.Interrupted
+
         case err: CheckerException =>
           // try to get any info about the problematic source location
           printRewriterSourceLoc()
