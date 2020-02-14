@@ -37,11 +37,10 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
         val rhsCell = nextState.arena.findCellByNameEx(nextState.ex)
         val lhsCell = state.binding(name)
         val afterEqState = rewriter.lazyEq.cacheOneEqConstraint(nextState, lhsCell, rhsCell)
-        afterEqState.setRex(rewriter.lazyEq.safeEq(lhsCell, rhsCell))
+        // bugfix: safeEq may produce ValEx(TlaBool(false)) or ValEx(TlaBool(true)).
+        rewriter.rewriteUntilDone(afterEqState.setRex(rewriter.lazyEq.safeEq(lhsCell, rhsCell)))
 
       case OperEx(TlaSetOper.in, elem, set) =>
-        // TODO: remove theories, see https://github.com/konnov/apalache/issues/22
-        // switch to cell theory
         val elemState = rewriter.rewriteUntilDone(state.setRex(elem))
         val elemCell = elemState.asCell
         val setState = rewriter.rewriteUntilDone(elemState.setRex(set))

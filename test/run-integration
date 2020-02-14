@@ -28,6 +28,8 @@ function check() {
         RES=1
     elif grep -q "The outcome is: Error" "$OUTF"; then
         RES=0
+    elif grep -q "The outcome is: Deadlock" "$OUTF"; then
+        RES=0
     elif grep -q "REPORT A BUG" "$OUTF"; then
         RES=500
     else
@@ -103,6 +105,13 @@ check "016-y2k" --length=30 --inv=Safety y2k_override.tla \
     && expect_err
 check "017-NatCounter" --length=10 --inv=Inv NatCounter.tla \
     && expect_err
+check "018-NeedForTypesWithTypes" --length=10 --cinit=ConstInit --inv=Inv \
+    NeedForTypesWithTypes.tla \
+    && expect_ok
+check "019-HandshakeWithTypes" --length=4 --inv=Inv HandshakeWithTypes.tla \
+    && expect_ok
+check "020-HandshakeWithTypes" --length=5 --inv=Inv HandshakeWithTypes.tla \
+    && expect_err # deadlock
 
 cat "$LOGFILE"
 
