@@ -10,7 +10,7 @@ import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewr
 import at.forsyte.apalache.tla.lir.io.PrettyWriter
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaFunOper, TlaOper}
 import at.forsyte.apalache.tla.lir.values.{TlaBool, TlaStr}
-import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaOperDecl, ValEx}
+import at.forsyte.apalache.tla.lir._
 
 /**
   * A context that maintains the search stack, rewriter, solver context, type finder, etc.
@@ -74,7 +74,7 @@ class WorkerContext(var rank: Int,
     }
   }
 
-  def dumpCounterexample(filename: String): Unit = {
+  def dumpCounterexample(filename: String, notInv: TlaEx): Unit = {
     def findStates: Option[HyperNode] => List[SymbState] = {
       // TODO: when solver is removed from Arena, fix that
       case Some(tree) => tree.snapshot.get.state.updateArena(_.setSolver(solver)) :: findStates(tree.parent)
@@ -121,6 +121,11 @@ class WorkerContext(var rank: Int,
     for (((state, oracle), i) <- states.tail.zip(oracles).zipWithIndex) {
       printState(s"State${i+1}", state, i, oracle)
     }
+
+    // print the violated invariant
+    writer.println(s"(* The following formula holds true in State${states.length} and violates the invariant *)")
+    new PrettyWriter(writer).write(TlaOperDecl("InvariantViolation", List(), notInv))
+
     writer.println("\n%s".format("=" * 80))
     writer.println("\\* Created %s by Apalache".format(Calendar.getInstance().getTime))
     writer.println("\\* https://github.com/konnov/apalache")
