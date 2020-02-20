@@ -123,7 +123,7 @@ class WorkerContext(var rank: Int,
     }
 
     // print the violated invariant
-    writer.println(s"(* The following formula holds true in State${states.length} and violates the invariant *)")
+    writer.println(s"(* The following formula holds true in State${states.length - 1} and violates the invariant *)")
     new PrettyWriter(writer).write(TlaOperDecl("InvariantViolation", List(), notInv))
 
     writer.println("\n%s".format("=" * 80))
