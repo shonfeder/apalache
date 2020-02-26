@@ -38,14 +38,15 @@ class ModelCheckerParams(checkerInput: CheckerInput,
   /**
     * A timeout upon which a transition is split in its own group.
     * This is the minimal timeout. The actual timeout is updated at every step using `search.split.timeout.factor`.
+    * In our experiments, small timeouts lead to explosion of the search tree.
     *
     */
   val jailTimeoutMinSec: Long =
-    BigInt(tuningOptions.getOrElse("search.split.timeout.minimum", "60")).toLong
+    BigInt(tuningOptions.getOrElse("search.split.timeout.minimum", "1800")).toLong
 
   /**
    * At every step, the jail timeout for the next step is computed as `maxTime * factor / 100`,
-    * where `maxTime` is the maximum checking time among all enabled or disabled transition.
+    * where `maxTime` is the maximum checking time among all enabled or disabled transitions.
    */
   val jailTimeoutFactor: Long =
     BigInt(tuningOptions.getOrElse("search.split.timeout.factor", "200")).toInt
@@ -55,7 +56,7 @@ class ModelCheckerParams(checkerInput: CheckerInput,
     * an active tree node into two.
     */
   val idleTimeoutSec: Long =
-    BigInt(tuningOptions.getOrElse("search.idle.timeout", "60")).toLong
+    BigInt(tuningOptions.getOrElse("search.idle.timeout", "1800")).toLong
 
   /**
     * A timeout (in milliseconds) that indicates for how long an idle worker has to wait until splitting
