@@ -63,8 +63,8 @@ class SymbStateRewriterAuto(val solverContext: SolverContext) extends SymbStateR
   private def preprocess(ex: TlaEx): Unit = {
     exprGradeAnalysis.labelExpr(consts, vars, ex)
     typeFinder.inferAndSave(ex)
-    if (typeFinder.getTypeErrors.nonEmpty) {
-      throw typeFinder.getTypeErrors.head // just throw the first error
+    if (typeFinder.typeErrors.nonEmpty) {
+      throw new TypeInferenceException(typeFinder.typeErrors)
     }
   }
 

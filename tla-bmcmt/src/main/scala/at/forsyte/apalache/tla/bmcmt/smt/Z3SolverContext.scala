@@ -271,6 +271,13 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   }
 
   /**
+    * Get the current context level, that is the difference between the number of pushes and pops made so far.
+    *
+    * @return the current level, always non-negative.
+    */
+  override def contextLevel: Int = level
+
+  /**
     * Push SMT context
     */
   override def push(): Unit = {

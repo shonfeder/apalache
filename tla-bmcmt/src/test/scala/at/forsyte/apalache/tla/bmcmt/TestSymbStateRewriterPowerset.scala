@@ -179,7 +179,7 @@ class TestSymbStateRewriterPowerset extends RewriterBase {
     nextState = new PowSetCtor(rewriter).confringo(nextState, baseCell)
     val powCell = nextState.asCell
     // give the cell type to type finder
-    rewriter.typeFinder.reset(rewriter.typeFinder.getVarTypes + (powCell.toString -> powCell.cellType))
+    rewriter.typeFinder.reset(rewriter.typeFinder.varTypes + (powCell.toString -> powCell.cellType))
     // check equality
     val eq = tla.eql(nextState.ex,
       tla.enumSet(tla.withType(tla.enumSet(), AnnotationParser.toTla(FinSetT(IntT()))),

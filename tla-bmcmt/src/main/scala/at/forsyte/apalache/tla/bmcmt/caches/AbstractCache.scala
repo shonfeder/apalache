@@ -100,7 +100,14 @@ abstract class AbstractCache[ContextT, SourceT, TargetT]
     reverseCache = shot.reverseCache
   }
 
-/**
+  /**
+    * Get the current context level, that is the difference between the number of pushes and pops made so far.
+    *
+    * @return the current level, always non-negative.
+    */
+  override def contextLevel: Int = level
+
+  /**
     * Save the current context and push it on the stack for a later recovery with pop.
     */
   override def push(): Unit = {

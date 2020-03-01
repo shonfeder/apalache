@@ -57,9 +57,11 @@ object Arena {
 }
 
 /**
-  * A memory arena represents a memory layout. The arena is dynamically populated, when new objects are created.
+  * <p>A memory arena represents a memory layout. The arena is dynamically populated, when new objects are created.
   * Currently, an arena is a directed acyclic graph, where edges are pointing from a container object
-  * to the associated cells, e.g., a set cell points to the cells that store its elements.
+  * to the associated cells, e.g., a set cell points to the cells that store its elements.</p>
+  *
+  * <p>Do not use solverContext, as it is going to be removed in the future.</p>
   *
   * @author Igor Konnov
   */

@@ -4,7 +4,7 @@ import at.forsyte.apalache.infra.ExceptionAdapter
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.types.TypeInferenceError
 import at.forsyte.apalache.tla.imp.src.SourceStore
-import at.forsyte.apalache.tla.lir.{MalformedTlaError, TlaEx}
+import at.forsyte.apalache.tla.lir.{MalformedTlaError, OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import at.forsyte.apalache.tla.pp.NotInKeraError
 import javax.inject.{Inject, Singleton}
@@ -31,8 +31,8 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
     case err: TypeException =>
       "%s: type error: %s".format(findLoc(err.causeExpr), err.getMessage)
 
-    case err: TypeInferenceError =>
-      "%s: type error: %s".format(findLoc(err.origin), err.getMessage)
+    case err: TypeInferenceException =>
+      "%s\n%s".format(err.getMessage, err.errors.map(ofTypeInferenceError).mkString("\n"))
 
     case err: InvalidTlaExException =>
       "%s: unexpected TLA+ expression: %s".format(findLoc(err.causeExpr), err.getMessage)
@@ -58,5 +58,14 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
       case Some(loc) => loc.toString
       case None => "<unknown>"
     }
+  }
+
+  def ofTypeInferenceError(e: TypeInferenceError): String = {
+    val locInfo = findLoc(e.origin)
+    val exStr = e.origin match {
+      case OperEx(op, _*) => op.name
+      case ex@_ => ex.toString()
+    }
+    "%s, %s, type error: %s".format(locInfo, exStr, e.explanation)
   }
 }

@@ -57,8 +57,10 @@ class ModelChecker(val checkerInput: CheckerInput,
     * @return a verification outcome
     */
   def run(): Outcome.Value = {
+    // FIXME: move to TransitionExecutor
     val initialArena = Arena.create(context.solver)
     val dummyState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
+    // FIXME: END
     val outcome =
       try {
         logger.info(s"Worker ${context.rank} is initializing")
@@ -116,6 +118,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     * @return a new state with the constants initialized
     */
   private def initializeConstants(state: SymbState): SymbState = {
+    // XXX: move to TransitionExecutor
     val newState =
       if (checkerInput.constInitPrimed.isEmpty) {
         logger.info(s"Worker ${context.rank}: No CONSTANT initializer given")
@@ -291,6 +294,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         // check the borrowed transition
         recoverContext(context.activeNode) // recover the context
       // do not push, keep the context offline, recover from the snapshot later
+        // FIXME: use TransitionExecutor
       val (_, status) = applyOneTransition(context.stepNo,
         context.state, borrowed.trEx, borrowed.trNo, checkForErrors = true, timeout = 0)
         context.rewriter.exprCache.disposeActionLevel() // leave only the constants
@@ -359,6 +363,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     // check the condition
     val startTimeMs = System.currentTimeMillis()
     recoverContext(context.activeNode) // recover the context
+    // FIXME: call TransitionExecutor
     val result = checkOneInvariant(context.activeNode.depth, context.state, vcNo, vc)
     val diffMs = System.currentTimeMillis() - startTimeMs
     val newState = result match {
@@ -594,6 +599,7 @@ class ModelChecker(val checkerInput: CheckerInput,
         context.activeNode.append(newNode)
         // apply the transitions and push the new state in the new node
         // TODO: can we do that outside of the critical section?
+        // FIXME: call TransitionExecutor
         val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
         // mark the node as explored in the end, so the finishing actions do not prematurely terminate
         context.activeNode.isExplored = true
@@ -652,6 +658,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     */
   }
 
+  // FIXME: move to TransitionExecutor
   private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
                                    transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
     // second, apply the enabled transitions and collect their effects
@@ -737,6 +744,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   }
 
   // warning: this method updates the context and does not recover it
+  // FIXME: move to TransitionExecutor
   private def applyOneTransition(stepNo: Int,
                                  state: SymbState,
                                  transition: TlaEx,
@@ -817,6 +825,7 @@ class ModelChecker(val checkerInput: CheckerInput,
   }
 
   // schedule the invariants to be checked after the transition was fired
+  // FIXME: move to TransitionExecutor?
   private def findTransitionInvariants(stepNo: Int,
                                        transitionNo: Int,
                                        nextState: SymbState): List[(VerificationCondition, Int)] = {
@@ -858,6 +867,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     }
   }
 
+  // FIXME: move to TransitionExecutor
   private def checkOneInvariant(stepNo: Int,
                                 state: SymbState,
                                 vcNo: Int,
@@ -895,24 +905,8 @@ class ModelChecker(val checkerInput: CheckerInput,
 
   private def checkTypes(expr: TlaEx): Unit = {
     context.typeFinder.inferAndSave(expr)
-    if (context.typeFinder.getTypeErrors.nonEmpty) {
-      def print_error(e: TypeInferenceError): Unit = {
-        val sourceLocator: SourceLocator = SourceLocator(sourceStore.makeSourceMap, changeListener)
-
-        val locInfo =
-          sourceLocator.sourceOf(e.origin) match {
-            case Some(loc) => loc.toString
-            case None => "<unknown origin>"
-          }
-        val exStr = e.origin match {
-          case OperEx(op, _*) => op.name + "(...)"
-          case ex@_ => ex.toString()
-        }
-        logger.error("%s, %s, type error: %s".format(locInfo, exStr, e.explanation))
-      }
-
-      context.typeFinder.getTypeErrors foreach print_error
-      throw new CancelSearchException(Outcome.Error)
+    if (context.typeFinder.typeErrors.nonEmpty) {
+      throw new TypeInferenceException(context.typeFinder.typeErrors)
     }
   }
 
@@ -922,7 +916,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     * After that, remove the type finder to contain the new types only.
     */
   private def shiftTypes(constants: Set[String]): Unit = {
-    val types = context.typeFinder.getVarTypes
+    val types = context.typeFinder.varTypes
     val nextTypes =
       types.filter(p => p._1.endsWith("'") || constants.contains(p._1))
         .map(p => (p._1.stripSuffix("'"), p._2))
@@ -934,6 +928,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     transitions.zipWithIndex.filter { case (_, i) => params.stepMatchesFilter(stepNo, i) }
   }
 
+  // FIXME: should it be implemented at a higher level?
   private def printRewriterSourceLoc(): Unit = {
     def getSourceLocation(ex: TlaEx) = {
       val sourceLocator: SourceLocator = SourceLocator(

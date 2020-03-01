@@ -677,7 +677,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     val x = tla.name("x")
     val assign = tla.assignPrime( x, tla.int(1))
     assert(typeFinder.inferAndSave(assign).contains(BoolT()))
-    assert(IntT() == typeFinder.getVarTypes("x'"))
+    assert(IntT() == typeFinder.varTypes("x'"))
   }
 
   test("inferAndSave double assignment") {
@@ -691,7 +691,7 @@ class TestTrivialTypeFinder extends RewriterBase {
         tla.assignPrime(x, tla.int(3))
       )
     assert(typeFinder.inferAndSave(assign).contains(BoolT()))
-    assert(IntT() == typeFinder.getVarTypes("x'"))
+    assert(IntT() == typeFinder.varTypes("x'"))
   }
 
   test("inferAndSave set filter") {
@@ -699,7 +699,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     val x = tla.name("x")
     val filter = tla.filter(x, tla.enumSet(tla.int(3)), tla.bool(true))
     assert(typeFinder.inferAndSave(filter).contains(FinSetT(IntT())))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
   }
 
   test("inferAndSave set map") {
@@ -708,7 +708,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     val y = tla.name("y")
     val map = tla.map(tla.enumSet(x), x, tla.enumSet(tla.int(3)))
     assert(typeFinder.inferAndSave(map).contains(FinSetT(FinSetT(IntT()))))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
   }
 
   test("inferAndSave exists/forall") {
@@ -716,15 +716,15 @@ class TestTrivialTypeFinder extends RewriterBase {
     val x = tla.name("x")
     val exists = tla.exists(x, tla.enumSet(tla.int(3)), tla.bool(true))
     assert(typeFinder.inferAndSave(exists).contains(BoolT()))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
     typeFinder = new TrivialTypeFinder()
     val forall = tla.exists(x, tla.enumSet(tla.int(3)), tla.bool(true))
     assert(typeFinder.inferAndSave(forall).contains(BoolT()))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
     // bad cases
     typeFinder = new TrivialTypeFinder()
     assert(typeFinder.inferAndSave(tla.exists(x, tla.enumSet(tla.int(3)), tla.int(4))).isEmpty)
-    assert(typeFinder.getTypeErrors.nonEmpty)
+    assert(typeFinder.typeErrors.nonEmpty)
   }
 
   test("inferAndSave CHOOSE") {
@@ -732,12 +732,12 @@ class TestTrivialTypeFinder extends RewriterBase {
     val x = tla.name("x")
     val choose = tla.choose(x, tla.enumSet(tla.int(3)), tla.bool(true))
     assert(typeFinder.inferAndSave(choose).contains(IntT()))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
     // bad cases
     typeFinder = new TrivialTypeFinder()
     val badChoose = tla.choose(x, tla.enumSet(tla.int(3)), tla.int(4))
     assert(typeFinder.inferAndSave(badChoose).isEmpty)
-    assert(typeFinder.getTypeErrors.nonEmpty)
+    assert(typeFinder.typeErrors.nonEmpty)
   }
 
   test("inferAndSave [x \\in S |-> e]") {
@@ -745,7 +745,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     val x = tla.name("x")
     val map = tla.funDef(tla.enumSet(x), x, tla.enumSet(tla.int(1)))
     assert(typeFinder.inferAndSave(map).contains(FunT(FinSetT(IntT()), FinSetT(IntT()))))
-    assert(IntT() == typeFinder.getVarTypes("x"))
+    assert(IntT() == typeFinder.varTypes("x"))
   }
 
   test("inferAndSave [x \\in S, y \\in T |-> e]") {
@@ -754,8 +754,8 @@ class TestTrivialTypeFinder extends RewriterBase {
     val y = tla.name("y")
     val map = tla.funDef(tla.enumSet(x), x, tla.enumSet(tla.int(1)), y, tla.enumSet(tla.bool(false)))
     assert(typeFinder.inferAndSave(map).contains(FunT(FinSetT(TupleT(Seq(IntT(), BoolT()))), FinSetT(IntT()))))
-    assert(IntT() == typeFinder.getVarTypes("x"))
-    assert(BoolT() == typeFinder.getVarTypes("y"))
+    assert(IntT() == typeFinder.varTypes("x"))
+    assert(BoolT() == typeFinder.varTypes("y"))
   }
 
   test("inferAndSave LET A == 1 + 2 IN 1 + A") {
@@ -763,7 +763,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     val decl = TlaOperDecl("A", List(), tla.plus(tla.int(1), tla.int(2)))
     val letIn = tla.letIn(tla.plus(tla.int(1), tla.appDecl(decl)), decl)
     assert(typeFinder.inferAndSave(letIn).contains(IntT()))
-    assert(IntT() == typeFinder.getVarTypes("A"))
+    assert(IntT() == typeFinder.varTypes("A"))
   }
 
   test("inferAndSave type annotation") {
@@ -885,6 +885,6 @@ class TestTrivialTypeFinder extends RewriterBase {
       d => ttf.inferAndSave( d.body )
     }
 
-    assert( ttf.getTypeErrors.isEmpty )
+    assert( ttf.typeErrors.isEmpty )
   }
 }
