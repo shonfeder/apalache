@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
-import at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl
+import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateRewriter, SymbStateRewriterImpl}
 import at.forsyte.apalache.tla.bmcmt.analyses._
 import at.forsyte.apalache.tla.bmcmt.smt.Z3SolverContext
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
@@ -81,13 +81,13 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
     assert(trex.sat(60).contains(true))
   }
 
-  test("push 3 steps") {
+  test("Init + 3x Next") {
     // x' <- 1 /\ y' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
     // x' <- y /\ y' <- x + y
     val nextTrans = tla.and(
-      mkAssign("y", tla.plus(tla.name("y"), tla.int(1))),
-      mkAssign("x", tla.plus(tla.name("x"), tla.name("y"))))
+      mkAssign("x", tla.name("y")),
+      mkAssign("y", tla.plus(tla.name("x"), tla.name("y"))))
     // 3 = x /\ 3 = y
     val inv = tla.ge(tla.name("y"), tla.name("x"))
     val trex = new TransitionExecutor(Set.empty, Set("x", "y"), execCtx)
@@ -103,6 +103,31 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
     trex.prepareTransition(1, nextTrans)
     trex.pickTransition()
     trex.nextState()
+    // test the symbolic execution
+    val exe = trex.execution
+    assert(exe.path.length == 5)
+    // check the assertions about the execution states
+    // state 0 is not restricted, as there are no parameters
+
+    // state 1 is the state right after Init, that is, Init(state0)
+    val state1 = exe.path(1)
+    assertValid(trex, tla.eql(state1("x").toNameEx, tla.int(1)))
+    assertValid(trex, tla.eql(state1("y").toNameEx, tla.int(1)))
+
+    // state 2 is the state Next(Init(state0))
+    val state2 = exe.path(2)
+    assertValid(trex, tla.eql(state2("x").toNameEx, tla.int(1)))
+    assertValid(trex, tla.eql(state2("y").toNameEx, tla.int(2)))
+
+    // state 3 is the state Next(Next(Init(state0)))
+    val state3 = exe.path(3)
+    assertValid(trex, tla.eql(state3("x").toNameEx, tla.int(2)))
+    assertValid(trex, tla.eql(state3("y").toNameEx, tla.int(3)))
+
+    // state 4 is the state Next(Next(Next(Init(state0)))
+    val state4 = exe.path(4)
+    assertValid(trex, tla.eql(state4("x").toNameEx, tla.int(3)))
+    assertValid(trex, tla.eql(state4("y").toNameEx, tla.int(5)))
   }
 
   private def mkAssign(name: String, value: Int) =
@@ -110,4 +135,16 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
 
   private def mkAssign(name: String, rhs: TlaEx) =
     tla.assignPrime(tla.name(name), rhs)
+
+  protected def assertValid(trex: TransitionExecutor[IncrementalSnapshot], assertion: TlaEx): Unit = {
+    var snapshot = trex.snapshot()
+    trex.assertState(assertion)
+    assert(trex.sat(0).contains(true))
+    trex.recover(snapshot)
+
+    snapshot = trex.snapshot()
+    trex.assertState(tla.not(assertion))
+    assert(trex.sat(0).contains(false))
+    trex.recover(snapshot)
+  }
 }

@@ -2,7 +2,7 @@ package at.forsyte.apalache.tla.bmcmt.trex
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
-import at.forsyte.apalache.tla.bmcmt.rules.aux.CherryPick
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, SparseOracle}
 import at.forsyte.apalache.tla.lir.TlaEx
 import com.typesafe.scalalogging.LazyLogging
 
@@ -33,17 +33,23 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
 
   private val initialArena = Arena.create(ctx.rewriter.solverContext)
   // the latest symbolic state that is produced by the rewriter
-  var topState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
-  // the stack of symbolic states, reversed, except topState
-  private var revStack: List[SymbState] = List()
+  var lastState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
+  // the stack of the variable bindings, one per state, in reverse order, excluding the binding in topState
+  private var revStack: List[Binding] = List()
 
   // the transitions that are translated with prepareTransition in the current step
-  private var preparedTransitions: Map[Int, SymbState] = Map()
+  private var preparedTransitions: Map[Int, ReducedTransition] = Map[Int, ReducedTransition]()
 
   /**
     * The step that is currently encoded.
     */
   def stepNo: Int = _stepNo
+
+  /**
+    * Retrieve the translated symbolic execution
+    * @return the accumulated execution
+    */
+  def execution = ReducedExecution(lastState.arena, (lastState.binding +: revStack).reverse)
 
   /**
     * Translate a transition into SMT and save it under the given number. This method returns false,
@@ -67,13 +73,13 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     ctx.rewriter.solverContext.log("; ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d {"
       .format(stepNo, ctx.rewriter.contextLevel, transitionNo))
     logger.debug("Translating to SMT...")
-    val erased = topState.setBinding(topState.binding.forgetPrimed) // forget the previous assignments
+    val erased = lastState.setBinding(lastState.binding.forgetPrimed) // forget the previous assignments
     ctx.rewriter.exprCache.disposeActionLevel() // forget the previous action caches
     // translate the transition to SMT
-    topState = ctx.rewriter.rewriteUntilDone(erased.setRex(transitionEx))
+    lastState = ctx.rewriter.rewriteUntilDone(erased.setRex(transitionEx))
     ctx.rewriter.flushStatistics()
     // the transition can be accessed
-    preparedTransitions += transitionNo -> topState
+    preparedTransitions += transitionNo -> ReducedTransition(lastState.asCell, lastState.binding)
 
     if (debug) {
       // This is a debugging feature that allows us to find incorrect rewriting rules. Disable it in production.
@@ -83,12 +89,12 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
       } else {
         // this is a clear sign of a bug in one of the translation rules
         logger.debug("Transition constraints are inconsistent")
-        throw new CheckerException("A contradiction introduced in rewriting. Report a bug.", topState.ex)
+        throw new CheckerException("A contradiction introduced in rewriting. Report a bug.", lastState.ex)
       }
     }
 
     // check, whether all variables have been assigned
-    val assignedVars = topState.binding.toMap.
+    val assignedVars = lastState.binding.toMap.
       collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1) }
     if (assignedVars.toSet == vars) {
       true // the transition is probably enabled
@@ -111,7 +117,7 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     if (!preparedTransitions.contains(transitionNo)) {
       throw new IllegalStateException(s"Use prepareTransition before calling assumeTransition for $transitionNo")
     } else {
-      ctx.rewriter.solverContext.assertGroundExpr(preparedTransitions(transitionNo).ex)
+      ctx.rewriter.solverContext.assertGroundExpr(preparedTransitions(transitionNo).trigger.toNameEx)
     }
 
     controlState = Picked()
@@ -124,19 +130,17 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     *                  though it may be an action expression.
     */
   def assertState(assertion: TlaEx): Unit = {
-    val nextState = ctx.rewriter.rewriteUntilDone(topState.setRex(assertion))
+    val nextState = ctx.rewriter.rewriteUntilDone(lastState.setRex(assertion))
     ctx.rewriter.solverContext.assertGroundExpr(nextState.ex)
-    topState = nextState.setRex(topState.ex) // propagate the arena and binding, but keep the old expression
+    lastState = nextState.setRex(lastState.ex) // propagate the arena and binding, but keep the old expression
   }
 
   /**
     * Pick non-deterministically one transition among the transitions that are prepared
     * in the current step. Further, assume that the picked transition has fired.
     * This method must be called after at least one call to prepareTransition.
-    *
-    * TODO: save an object that allows us to check, which transition has actually fired.
     */
-  def pickTransition(): Unit = {
+  def pickTransition(): SparseOracle = {
     assert(controlState == Preparing())
     // assert that there is at least one prepared transition
     logger.info("Step %d, level %d: picking a transition out of %d transition(s)"
@@ -145,18 +149,17 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     val sortedTransitions = preparedTransitions.toSeq.sortBy(_._1)
 
     // pick an index j \in { 0..k } of the fired transition
-    // TODO: introduce a reverse mapping from oracle values to transition numbers
     val picker = new CherryPick(ctx.rewriter)
-    val (oracleState, oracle) = picker.oracleFactory.newDefaultOracle(topState, sortedTransitions.length)
+    val (oracleState, oracle) = picker.oracleFactory.newDefaultOracle(lastState, sortedTransitions.length)
 
     if (sortedTransitions.isEmpty) {
       throw new IllegalArgumentException("unable to pick transitions from empty set")
     } else if (sortedTransitions.lengthCompare(1) == 0) {
-      ctx.solver.assertGroundExpr(topState.ex)
-      topState = oracleState
+      ctx.solver.assertGroundExpr(lastState.ex)
+      lastState = oracleState
     } else {
       // if oracle = i, then the ith transition is enabled
-      ctx.solver.assertGroundExpr(oracle.caseAssertions(oracleState, sortedTransitions.map(_._2.ex)))
+      ctx.solver.assertGroundExpr(oracle.caseAssertions(oracleState, sortedTransitions.map(_._2.trigger.toNameEx)))
 
       // glue the computed states S_0, ..., S_k together:
       // for every variable x', pick c_x from { S_1[x'], ..., S_k[x'] }
@@ -171,18 +174,20 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
         nextState.asCell
       }
 
-      def getAssignedVars(st: SymbState) = st.binding.forgetNonPrimed(Set()).toMap.keySet
-      val primedVars = getAssignedVars(sortedTransitions.head._2) // only VARIABLES, not CONSTANTS
+      def getAssignedVars(binding: Binding) = binding.forgetNonPrimed(Set()).toMap.keySet
+      val primedVars = getAssignedVars(sortedTransitions.head._2.binding) // only VARIABLES, not CONSTANTS
 
       val finalVarBinding = Binding(primedVars.toSeq map (n => (n, pickVar(n))): _*) // variables only
       val constBinding = Binding(oracleState.binding.toMap.filter(p => consts.contains(p._1)))
-      topState = nextState.setBinding(finalVarBinding ++ constBinding)
+      lastState = nextState.setBinding(finalVarBinding ++ constBinding)
       if (debug && !ctx.solver.sat()) {
-        throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", topState.ex)
+        throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", lastState.ex)
       }
     }
 
     controlState = Picked()
+    // the sparse oracle is mapping the oracle values to the transition numbers
+    new SparseOracle(oracle, preparedTransitions.keySet)
   }
 
   /**
@@ -191,12 +196,12 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     */
   def nextState(): Unit = {
     assert(controlState == Picked())
-    val erased = topState.setBinding(topState.binding.forgetPrimed) // forget the previous assignments
+    val erased = lastState.binding.forgetPrimed // forget the previous assignments
     revStack = erased :: revStack
     // finally, shift the primed variables to non-primed, forget the expression
-    topState = topState
-      .setBinding(topState.binding.shiftBinding(consts))
-      .setRex(topState.arena.cellTrue().toNameEx)
+    lastState = lastState
+      .setBinding(lastState.binding.shiftBinding(consts))
+      .setRex(lastState.arena.cellTrue().toNameEx)
     // that is the result of this step
     shiftTypes(consts)
     // clean the prepared transitions
@@ -225,8 +230,9 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     * @return a snapshot
     */
   def snapshot(): ExecutorSnapshot[ExecCtxT] = {
-    val stack = (topState +: revStack).reverse
-    new ExecutorSnapshot[ExecCtxT](controlState, stack, preparedTransitions, ctx.snapshot())
+    val path = (lastState.binding +: revStack).reverse
+    new ExecutorSnapshot[ExecCtxT](controlState,
+      ReducedExecution(lastState.arena, path), preparedTransitions, ctx.snapshot())
   }
 
   /**
@@ -236,9 +242,9 @@ class TransitionExecutor[ExecCtxT](consts: Set[String], vars: Set[String], ctx: 
     */
   def recover(snapshot: ExecutorSnapshot[ExecCtxT]): Unit = {
     ctx.recover(snapshot.ctxSnapshot)
-    val rs = snapshot.stack.reverse
-    topState = rs.head
-    topState.updateArena(_.setSolver(ctx.solver))
+    val rs = snapshot.execution.path.reverse
+    val arena = snapshot.execution.arena.setSolver(ctx.solver)
+    lastState = new SymbState(arena.cellTrue().toNameEx, arena, rs.head)
     revStack = rs.tail
     preparedTransitions = snapshot.preparedTransitions
     controlState = snapshot.controlState
