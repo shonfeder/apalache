@@ -168,7 +168,7 @@ class TestSymbStateRewriterSet extends RewriterBase with TestingPredefs {
 
     val state = new SymbState(ex, arena, Binding())
     val rewriter = create()
-    assertThrows[TypeInferenceError] {
+    assertThrows[TypeInferenceException] {
       rewriter.rewriteUntilDone(state)
     }
   }
@@ -489,7 +489,7 @@ class TestSymbStateRewriterSet extends RewriterBase with TestingPredefs {
       tla.setminus(setOfOne, setOfOne))
     val state = new SymbState(ex, arena, Binding())
     val rewriter = create()
-    assertThrows[TypeInferenceError] {
+    assertThrows[TypeInferenceException] {
       rewriter.rewriteUntilDone(state)
     }
   }
@@ -759,7 +759,7 @@ class TestSymbStateRewriterSet extends RewriterBase with TestingPredefs {
 
     val state = new SymbState(mapSet, arena, Binding())
     val rewriter = create()
-    assertThrows[TypeInferenceError](rewriter.rewriteUntilDone(state))
+    assertThrows[TypeInferenceException](rewriter.rewriteUntilDone(state))
   }
 
   test("""SE-SET-MAP[1-2]: <<2, true>> \in {<<x, y>>: x \in {1,2,3}, y \in {FALSE, TRUE}} ~~> $B$k""") {
