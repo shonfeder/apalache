@@ -418,10 +418,10 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
         tla.exists(
           tla.name("t"),
           tla.enumSet(tla.int(20), tla.int(10)),
-          tla.in(tla.prime(tla.name("N")), tla.enumSet(tla.name("t")))
+          mkAssign("N", tla.name("t"))
         )) ////
 
-    val notInv = tla.gt(tla.prime(tla.name("x")), tla.name("N")) // ~(x <= N)
+    val notInv = tla.gt(tla.name("x"), tla.name("N")) // ~(x <= N)
     val dummyModule = new TlaModule("root", List(TlaConstDecl("N"), TlaVarDecl("x")))
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, Some(cInit), List((tla.not(notInv), notInv)))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
