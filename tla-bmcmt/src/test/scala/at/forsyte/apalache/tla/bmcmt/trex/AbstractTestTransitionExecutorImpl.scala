@@ -22,7 +22,8 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
-    trex.prepareTransition(3, init)
+    val isTranslated = trex.prepareTransition(3, init)
+    assert(isTranslated)
     // assume that one of the prepared transitions fires
     trex.pickTransition()
     // advance the computation: forget the non-primed variables, rename primed to non-primed
@@ -43,7 +44,8 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
-    trex.prepareTransition(1, init)
+    val isTranslated = trex.prepareTransition(1, init)
+    assert(isTranslated)
     // check, whether the transition is enabled
     trex.assumeTransition(1)
     assert(trex.sat(60).contains(false))
@@ -56,7 +58,8 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
-    trex.prepareTransition(3, init)
+    val isTranslated = trex.prepareTransition(3, init)
+    assert(isTranslated)
     // assume that the transition has fired
     trex.assumeTransition(3)
     // create a snapshot for a later rollback
@@ -78,8 +81,6 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     val nextTrans = tla.and(
       mkAssign("x", tla.name("y")),
       mkAssign("y", tla.plus(tla.name("x"), tla.name("y"))))
-    // 3 = x /\ 3 = y
-    val inv = tla.ge(tla.name("y"), tla.name("x"))
     val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.prepareTransition(1, init)
     trex.pickTransition()
@@ -118,6 +119,29 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     val state4 = exe.path(4)
     assertValid(trex, tla.eql(state4("x").toNameEx, tla.int(3)))
     assertValid(trex, tla.eql(state4("y").toNameEx, tla.int(5)))
+  }
+
+  test("mayChangeAssertion") { exeCtx: ExecutorContextT =>
+    // x' <- 1 /\ y' <- 1
+    val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
+    // x' <- x /\ y' <- x + y
+    val nextTrans = tla.and(
+      mkAssign("x", tla.name("x")),
+      mkAssign("y", tla.plus(tla.name("x"), tla.name("y"))))
+    // push Init
+    val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
+    trex.prepareTransition(1, init)
+    trex.pickTransition()
+    trex.nextState()
+    // prepare Next
+    trex.prepareTransition(1, nextTrans)
+    // check what has changed
+    val inv1 = tla.ge(tla.name("x"), tla.int(3))
+    val mayChange1 = trex.mayChangeAssertion(1, inv1)
+    assert(!mayChange1)
+    val inv2 = tla.ge(tla.name("y"), tla.name("x"))
+    val mayChange2 = trex.mayChangeAssertion(1, inv2)
+    assert(mayChange2)
   }
 
   private def mkAssign(name: String, value: Int) =

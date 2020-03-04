@@ -1,8 +1,8 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, SparseOracle}
+import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
 import at.forsyte.apalache.tla.lir.TlaEx
 import com.typesafe.scalalogging.LazyLogging
 
@@ -122,6 +122,37 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     }
 
     controlState = Picked()
+  }
+
+  /**
+    * A syntactic test on whether a translated transition may change satisfiability of an assertion.
+    * It tests, whether all variables mentioned in the assertion belong to the unchanged set of the transition.
+    *
+    * @param transitionNo the index of a previously prepared transition
+    * @param assertion    a state expression
+    * @return true, if the transition may affect satisfiability of the assertion
+    */
+  override def mayChangeAssertion(transitionNo: Int, assertion: TlaEx): Boolean = {
+    val trans = preparedTransitions(transitionNo)
+    val binding = trans.binding
+
+    // copied from SymbState.changed. Remove it from SymbState?
+    def addOrSkipVar(set: Set[String], name: String): Set[String] = {
+      if (name.endsWith("'")) {
+        val nonPrimed = name.substring(0, name.length - 1)
+        if (!binding.contains(nonPrimed) || binding(nonPrimed) != binding(name)) {
+          set + name
+        } else {
+          set
+        }
+      } else {
+        set
+      }
+    }
+
+    val changedPrimes = binding.toMap.keySet.foldLeft(Set[String]())(addOrSkipVar)
+    val used = TlaExUtil.findUsedNames(assertion).map(_ + "'")
+    used.intersect(changedPrimes).nonEmpty
   }
 
   /**

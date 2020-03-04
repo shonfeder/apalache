@@ -19,7 +19,8 @@ import at.forsyte.apalache.tla.lir.TlaEx
 trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[ExecutorContextT]] {
 
   /**
-    * The step that is currently encoded.
+    * The step that is currently encoded. Step 0 is reserved for CONSTANTS and the Init predicate.
+    * The transitions from Next should be applied to steps 1, 2, ...
     */
   def stepNo: Int
 
@@ -48,9 +49,19 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
     * whether a prepared transition is enabled.
     * This method should be called after prepareTransition.
     *
-    * @param transitionNo the number of a previously prepared transition
+    * @param transitionNo the index of a previously prepared transition
     */
   def assumeTransition(transitionNo: Int): Unit
+
+  /**
+    * A syntactic test on whether a translated transition may change satisfiability of an assertion.
+    * It tests, whether all variables mentioned in the assertion belong to the unchanged set of the transition.
+    *
+    * @param transitionNo the index of a previously prepared transition
+    * @param assertion a state expression
+    * @return true, if the transition may affect satisfiability of the assertion
+    */
+  def mayChangeAssertion(transitionNo: Int, assertion: TlaEx): Boolean
 
   /**
     * Push an assertion about the current controlState.
