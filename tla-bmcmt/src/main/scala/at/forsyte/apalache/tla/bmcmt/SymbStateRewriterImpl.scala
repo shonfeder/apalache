@@ -26,17 +26,38 @@ import scala.collection.mutable
   *
   * <p>TODO: rename this class to RewriterImpl?</p>
   *
-  * @param solverContext  a fresh solver context that will be populated with constraints
+  * @param _solverContext  a fresh solver context that will be populated with constraints
   * @param typeFinder     a type finder (assuming that typeFinder.inferAndSave has been called already)
   * @param exprGradeStore a labeling scheme that associated a grade with each expression;
   *                       it is required to distinguish between state-level and action-level expressions.
   *
   * @author Igor Konnov
   */
-class SymbStateRewriterImpl(val solverContext: SolverContext,
+class SymbStateRewriterImpl(private var _solverContext: SolverContext,
                             var typeFinder: TypeFinder[CellT],
                             val exprGradeStore: ExprGradeStore = new ExprGradeStoreImpl())
     extends SymbStateRewriter with Serializable with Recoverable[SymbStateRewriterSnapshot] {
+
+
+  /**
+    * <p>A solver context that is populated by the rewriter.</p>
+    *
+    * <p>This method will be removed when solving #105.</p>
+    */
+  override def solverContext: SolverContext = _solverContext
+
+  /**
+    * <p>Set the new solver context. Warning: the new context should be at the same stack depth as the rewriter.
+    * Otherwise, pop may produce unexpected results.</p>
+    *
+    * <p>This method will be removed when solving #105.</p>
+    *
+    * @param newContext new context
+    */
+  override def solverContext_=(newContext: SolverContext): Unit = {
+    _solverContext = newContext
+  }
+
   /**
     * We collect the sequence of expressions in the rewriting process,
     * in order to diagnose an error when an exception occurs. The latest expression in on top.
@@ -430,6 +451,7 @@ class SymbStateRewriterImpl(val solverContext: SolverContext,
 
   /**
     * Recover a previously saved snapshot (not necessarily saved by this object).
+    * Note that caches have a reference to SolverContext, which is not recovered!
     *
     * @param shot a snapshot
     */

@@ -19,6 +19,8 @@ import at.forsyte.apalache.tla.lir.TlaEx
   *
   * <p>TODO: rename to Rewriter?</p>
   *
+  * <p>FIXME: typeFinder should implement StackableContext!</p>
+  *
   * @author Igor Konnov
   */
 trait SymbStateRewriter extends StackableContext with MessageStorage with Recoverable[SymbStateRewriterSnapshot] {
@@ -26,6 +28,13 @@ trait SymbStateRewriter extends StackableContext with MessageStorage with Recove
     * A solver context that is populated by the rewriter.
     */
   def solverContext: SolverContext
+
+  /**
+    * Set the new solver context. Warning: the new context should be at the same stack depth as the rewriter.
+    * Otherwise, pop may produce unexpected results.
+    * @param newContext new context
+    */
+  def solverContext_=(newContext: SolverContext): Unit
 
   /**
     * Get the current context level, that is the difference between the number of pushes and pops made so far.

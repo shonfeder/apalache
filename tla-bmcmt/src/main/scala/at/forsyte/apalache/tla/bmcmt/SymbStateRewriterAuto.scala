@@ -17,7 +17,7 @@ import at.forsyte.apalache.tla.lir.TlaEx
   *
   * @author Igor Konnov
   */
-class SymbStateRewriterAuto(val solverContext: SolverContext) extends SymbStateRewriter {
+class SymbStateRewriterAuto(private var _solverContext: SolverContext) extends SymbStateRewriter {
   /**
     * The names that are treated as constants.
     */
@@ -30,6 +30,22 @@ class SymbStateRewriterAuto(val solverContext: SolverContext) extends SymbStateR
   var config: RewriterConfig = new RewriterConfig
 
   val typeFinder = new TrivialTypeFinder()
+
+
+  /**
+    * A solver context that is populated by the rewriter.
+    */
+  override def solverContext: SolverContext = _solverContext
+
+  /**
+    * Set the new solver context. Warning: the new context should be at the same stack depth as the rewriter.
+    * Otherwise, pop may produce unexpected results.
+    *
+    * @param newContext new context
+    */
+  override def solverContext_=(newContext: SolverContext): Unit = {
+    _solverContext = newContext
+  }
 
   private val exprGradeStoreImpl = new ExprGradeStoreImpl()
   private val exprGradeAnalysis = new ExprGradeAnalysis(exprGradeStoreImpl)

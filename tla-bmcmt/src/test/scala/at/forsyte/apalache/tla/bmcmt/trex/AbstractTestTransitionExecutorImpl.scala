@@ -1,34 +1,24 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
-import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateRewriter, SymbStateRewriterImpl}
-import at.forsyte.apalache.tla.bmcmt.analyses._
-import at.forsyte.apalache.tla.bmcmt.smt.Z3SolverContext
-import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.fixture
 
-@RunWith(classOf[JUnitRunner])
-class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
-  private var typeFinder: TrivialTypeFinder = new TrivialTypeFinder()
-  private var solver: Z3SolverContext = new Z3SolverContext()
-  private var rewriter = new SymbStateRewriterImpl(solver, typeFinder, new ExprGradeStoreImpl())
-  private var execCtx = new IncrementalExecutorContext(rewriter, typeFinder)
+/**
+  * An abstract test suite that is parameterized by the snapshot type.
+  *
+  * @author Igor Konnov
+  *
+  * @tparam SnapshotT the snapshot type
+  */
+abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.FunSuite {
+  type ExecutorContextT = ExecutorContext[SnapshotT]
+  type FixtureParam = ExecutorContextT
 
-  before {
-    // initialize the executor context
-    typeFinder = new TrivialTypeFinder()
-    solver = new Z3SolverContext()
-    rewriter = new SymbStateRewriterImpl(solver, typeFinder, new ExprGradeStoreImpl())
-    execCtx = new IncrementalExecutorContext(rewriter, typeFinder)
-  }
-
-  test("push 1 transition") {
+  test("push 1 transition") { exeCtx: ExecutorContextT =>
     // y' <- 1 /\ x' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
-    val trex = new TransitionExecutor(Set.empty, Set("x", "y"), execCtx)
+    val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
@@ -43,13 +33,13 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
     assert(trex.sat(60).contains(true))
   }
 
-  test("check enabled and discard") {
+  test("check enabled and discard") { exeCtx: ExecutorContextT =>
     // an obviously disabled transition: y' <- 1 /\ y' <- 2
     val init = tla.and(
       mkAssign("y", 1),
       tla.eql(tla.prime(tla.name("y")), tla.int(2)),
       mkAssign("x", 3))
-    val trex = new TransitionExecutor(Set.empty, Set("x", "y"), execCtx)
+    val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
@@ -59,10 +49,10 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
     assert(trex.sat(60).contains(false))
   }
 
-  test("check an invariant after transition") {
+  test("check an invariant after transition") { exeCtx: ExecutorContextT =>
     // y' <- 1 /\ x' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
-    val trex = new TransitionExecutor(Set.empty, Set("x", "y"), execCtx)
+    val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.debug = true
     assert(trex.stepNo == 0)
     // init is a potential transition with index 3 (the index is defined by the input spec)
@@ -81,7 +71,7 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
     assert(trex.sat(60).contains(true))
   }
 
-  test("Init + 3x Next") {
+  test("Init + 3x Next") { exeCtx: ExecutorContextT =>
     // x' <- 1 /\ y' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
     // x' <- y /\ y' <- x + y
@@ -90,7 +80,7 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
       mkAssign("y", tla.plus(tla.name("x"), tla.name("y"))))
     // 3 = x /\ 3 = y
     val inv = tla.ge(tla.name("y"), tla.name("x"))
-    val trex = new TransitionExecutor(Set.empty, Set("x", "y"), execCtx)
+    val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.prepareTransition(1, init)
     trex.pickTransition()
     trex.nextState()
@@ -136,7 +126,7 @@ class TestTransitionExecutor extends FunSuite with BeforeAndAfter {
   private def mkAssign(name: String, rhs: TlaEx) =
     tla.assignPrime(tla.name(name), rhs)
 
-  protected def assertValid(trex: TransitionExecutor[IncrementalSnapshot], assertion: TlaEx): Unit = {
+  protected def assertValid(trex: TransitionExecutorImpl[SnapshotT], assertion: TlaEx): Unit = {
     var snapshot = trex.snapshot()
     trex.assertState(assertion)
     assert(trex.sat(0).contains(true))

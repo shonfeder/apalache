@@ -1,16 +1,13 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
 import at.forsyte.apalache.tla.bmcmt.SymbStateRewriter
-import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 
 /**
   * An executor context for an incremental SMT solver.
   *
   * @param rewriter an expression rewriter
-  * @param typeFinder a type finder
   */
-class IncrementalExecutorContext(val rewriter: SymbStateRewriter,
-                                 val typeFinder: TypeFinder[CellT])
+class IncrementalExecutorContext(val rewriter: SymbStateRewriter)
     extends ExecutorContext[IncrementalSnapshot] {
   /**
     * Create a snapshot of the context. This method is non-destructive, that is,
@@ -38,12 +35,13 @@ class IncrementalExecutorContext(val rewriter: SymbStateRewriter,
     * @throws IllegalStateException when recovery is impossible
     */
   override def recover(snapshot: IncrementalSnapshot): Unit = {
-    val npops = rewriter.contextLevel - snapshot.rewriterLevel
-    if (npops < 0) {
+    val nPops = rewriter.contextLevel - snapshot.rewriterLevel
+    if (nPops < 0) {
       throw new IllegalStateException("Impossible to recover context to level %d from level %d"
         .format(snapshot.rewriterLevel, rewriter.contextLevel))
     }
 
-    rewriter.pop(npops)
+    rewriter.pop(nPops)
+    rewriter.typeFinder.reset(snapshot.varTypes)
   }
 }

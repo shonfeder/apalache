@@ -15,8 +15,8 @@ import at.forsyte.apalache.tla.bmcmt.types.{CellT, TypeFinder}
 trait ExecutorContext[SnapshotT] extends Recoverable[SnapshotT] {
   type SnapT = SnapshotT
 
-  val rewriter: SymbStateRewriter
-  val typeFinder: TypeFinder[CellT]
+  def rewriter: SymbStateRewriter
 
+  def typeFinder: TypeFinder[CellT] = rewriter.typeFinder
   def solver: SolverContext = rewriter.solverContext
 }
