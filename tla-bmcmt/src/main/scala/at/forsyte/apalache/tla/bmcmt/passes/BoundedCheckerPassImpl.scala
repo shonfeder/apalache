@@ -2,6 +2,7 @@ package at.forsyte.apalache.tla.bmcmt.passes
 
 import java.nio.file.Path
 
+import at.forsyte.apalache.infra.ExceptionAdapter
 import at.forsyte.apalache.infra.passes.{Pass, PassOptions}
 import at.forsyte.apalache.tla.assignments.ModuleAdapter
 import at.forsyte.apalache.tla.bmcmt._
@@ -30,6 +31,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
                                         exprGradeStore: ExprGradeStore,
                                         sourceStore: SourceStore,
                                         changeListener: ChangeListener,
+                                        exceptionAdapter: ExceptionAdapter,
                                         @Named("AfterChecker") nextPass: Pass)
       extends BoundedCheckerPass with LazyLogging {
 
@@ -79,8 +81,13 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
           try {
             val checker = createModelChecker(rank, sharedState, params, input, tuning)
             val outcome = checker.run()
-            logger.info(s"Worker $rank: The outcome is $outcome")
+            logger.info(s"Worker $rank: The outcome is: $outcome")
           } catch {
+            case e: Exception if exceptionAdapter.toMessage.isDefinedAt(e) =>
+              val message = exceptionAdapter.toMessage(e)
+              logger.info(s"Worker $rank: The outcome is: Error")
+              logger.error("Worker %s: %s".format(rank, message))
+
             case e: Throwable =>
               logger.error(s"Worker $rank has thrown an exception", e)
               System.exit(EXITCODE_ON_EXCEPTION)
