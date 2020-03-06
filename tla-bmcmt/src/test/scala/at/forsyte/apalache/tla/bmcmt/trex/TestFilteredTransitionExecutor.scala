@@ -105,6 +105,36 @@ class TestFilteredTransitionExecutor extends fixture.FunSuite {
     assert(mayChange22)
   }
 
+  test("regression on #108") { exeCtx: ExecutorContextT =>
+    // y' <- 1
+    val init = tla.and(mkAssign("y", 1))
+    // y' <- y + 1
+    val nextTrans = mkAssign("y", tla.plus(tla.name("y"), tla.int(1)))
+    // push Init
+    val invFilter = "(1|2)"
+    val impl = new TransitionExecutorImpl(Set.empty, Set("y"), exeCtx)
+    val trex = new FilteredTransitionExecutor[SnapshotT]("", invFilter, impl)
+    trex.prepareTransition(1, init)
+    trex.pickTransition()
+    // the user told us not to check the invariant in state 0
+    val notInv = tla.bool(false)
+    val mayChange1 = trex.mayChangeAssertion(1, notInv)
+    assert(!mayChange1)
+    trex.nextState()
+    // apply Next
+    trex.prepareTransition(1, nextTrans)
+    // we must check the invariant right now, as it was skipped earlier
+    val mayChange2 = trex.mayChangeAssertion(1, notInv)
+    assert(mayChange2)
+    trex.pickTransition()
+    trex.nextState()
+    // apply Next
+    trex.prepareTransition(1, nextTrans)
+    // this time we should skip the check
+    val mayChange3 = trex.mayChangeAssertion(1, notInv)
+    assert(!mayChange3)
+  }
+
   private def mkAssign(name: String, value: Int) =
     tla.assignPrime(tla.name(name), tla.int(value))
 

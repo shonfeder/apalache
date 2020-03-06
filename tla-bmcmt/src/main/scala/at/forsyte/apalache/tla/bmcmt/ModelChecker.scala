@@ -837,7 +837,7 @@ class ModelChecker(val checkerInput: CheckerInput,
 
     // if the previous step was filtered, we cannot use the unchanged optimization
     val prevMatchesInvFilter =
-      params.invFilter == "" || (stepNo - 1).toString.matches("^" + params.invFilter + "$")
+      (stepNo == 0) || ((params.invFilter == "") || (stepNo - 1).toString.matches("^" + params.invFilter + "$"))
     val changedPrimed =
       if (prevMatchesInvFilter) {
         // only check an invariant if it touches the changed variables
@@ -851,7 +851,8 @@ class ModelChecker(val checkerInput: CheckerInput,
     def refersToChanged(notInv: TlaEx): Boolean = {
       // add primes as the invariant is referring to the unprimed variables
       val used = TlaExUtil.findUsedNames(notInv).map(_ + "'")
-      used.intersect(changedPrimed).nonEmpty
+      // either the invariant is only referring to CONSTANTS, or it uses the CHANGED variables (bugfix for #108)
+      used.isEmpty || used.intersect(changedPrimed).nonEmpty
     }
 
     // keep the invariant negations that refer to the changed variables

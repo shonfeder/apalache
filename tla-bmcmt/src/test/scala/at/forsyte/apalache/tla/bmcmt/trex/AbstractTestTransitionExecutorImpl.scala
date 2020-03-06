@@ -144,6 +144,28 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     assert(mayChange2)
   }
 
+  test("regression on #108") { exeCtx: ExecutorContextT =>
+    // y' <- 1
+    val init = tla.and(mkAssign("y", 1))
+    // y' <- y + 1
+    val nextTrans = mkAssign("y", tla.plus(tla.name("y"), tla.int(1)))
+    // push Init
+    val trex = new TransitionExecutorImpl(Set.empty, Set("y"), exeCtx)
+    trex.prepareTransition(1, init)
+    trex.pickTransition()
+    // The invariant negation does not refer to any variables.
+    // We flag that it's satisfiability may change, as it could not be checked before
+    val notInv = tla.bool(false)
+    val mayChange1 = trex.mayChangeAssertion(1, notInv)
+    assert(mayChange1)
+    trex.nextState()
+    // apply Next
+    trex.prepareTransition(1, nextTrans)
+    // this time the invariant's validity should not change
+    val mayChange2 = trex.mayChangeAssertion(1, notInv)
+    assert(!mayChange2)
+  }
+
   private def mkAssign(name: String, value: Int) =
     tla.assignPrime(tla.name(name), tla.int(value))
 
