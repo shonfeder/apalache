@@ -520,7 +520,9 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         z3context.mkNot(toExpr(OperEx(TlaOper.eq, lhs, rhs)).asInstanceOf[BoolExpr])
 
       case OperEx(TlaBoolOper.and, es@_*) =>
-        if (es.size < 1000) {
+        if(es.isEmpty)
+          z3context.mkTrue()
+        else if (es.size < 1000) {
           val newEs = es.map(e => toExpr(e).asInstanceOf[BoolExpr])
           z3context.mkAnd(newEs: _*)
         } else {
@@ -529,7 +531,9 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         }
 
       case OperEx(TlaBoolOper.or, es@_*) =>
-        if (es.size < 1000) {
+        if(es.isEmpty)
+          z3context.mkFalse()
+        else if (es.size < 1000) {
           val mapped_es = es map toExpr
           // check the assertion before casting, to make debugging easier
           assert(mapped_es.forall(e => e.isInstanceOf[BoolExpr]))
