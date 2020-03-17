@@ -923,6 +923,9 @@ class TrivialTypeFinder extends TypeFinder[CellT]
     case ex@OperEx(BmcOper.`skolem`, _) =>
       BoolT()
 
+    case ex@OperEx(BmcOper.`constCard`, _) =>
+      BoolT()
+
     case ex@OperEx(BmcOper.expand, _) =>
       argTypes.head
 
