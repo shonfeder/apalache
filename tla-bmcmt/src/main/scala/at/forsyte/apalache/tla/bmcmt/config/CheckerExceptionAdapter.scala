@@ -32,10 +32,6 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
       logger.info("  [https://github.com/konnov/apalache/blob/unstable/docs/manual.md#assignments]")
       NormalErrorMessage("Assignment error: " + err.getMessage)
 
-    case err: TypeInferenceError =>
-      val msg = "%s: type error: %s".format(findLoc(err.origin), err.getMessage)
-      NormalErrorMessage(msg)
-
     // tool failures
     case err: NoRuleException =>
       val msg =
