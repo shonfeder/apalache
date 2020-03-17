@@ -5,7 +5,6 @@ import java.util.concurrent.TimeUnit
 
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle}
 import at.forsyte.apalache.tla.bmcmt.search._
-import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir._
@@ -835,6 +834,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return List.empty
     }
 
+      // Bugfix to #108: never filter out the initial step
     // if the previous step was filtered, we cannot use the unchanged optimization
     val prevMatchesInvFilter =
       (stepNo == 0) || ((params.invFilter == "") || (stepNo - 1).toString.matches("^" + params.invFilter + "$"))
