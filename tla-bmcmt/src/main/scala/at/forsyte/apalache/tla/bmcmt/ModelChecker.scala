@@ -285,6 +285,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     context = WorkerContext.recover(context.rank, node, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
     //    context = WorkerContext.load(getNodeFile(tree), context.rank)
     context.solver.log(";;;;;;;;;;;;; RECOVERY FROM node %d".format(context.activeNode.id))
+    logger.debug(s"Worker ${context.rank} synchronized")
   }
 
   private def checkOneTransition(): Boolean = {
