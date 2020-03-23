@@ -15,6 +15,27 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
   type ExecutorContextT = ExecutorContext[SnapshotT]
   type FixtureParam = ExecutorContextT
 
+  test("constant initialization") { exeCtx: ExecutorContextT =>
+    // N' <- 1
+    val trex = new TransitionExecutorImpl(Set("N"), Set("x", "y"), exeCtx)
+    trex.debug = true
+    assert(trex.stepNo == 0)
+    val constInit = mkAssign("N", 10)
+    trex.initializeConstants(constInit)
+    val init = tla.and(mkAssign("x", tla.name("N")), mkAssign("y", 1))
+    // init is a potential transition with index 3 (the index is defined by the input spec)
+    val isTranslated = trex.prepareTransition(3, init)
+    assert(isTranslated)
+    // assume that one of the prepared transitions fires
+    trex.pickTransition()
+    // advance the computation: forget the non-primed variables, rename primed to non-primed
+    trex.nextState()
+    assert(trex.stepNo == 1)
+    // assert something about the current state
+    trex.assertState(tla.eql(tla.name("x"), tla.int(5)))
+    assert(trex.sat(60).contains(false))
+  }
+
   test("push 1 transition") { exeCtx: ExecutorContextT =>
     // y' <- 1 /\ x' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))

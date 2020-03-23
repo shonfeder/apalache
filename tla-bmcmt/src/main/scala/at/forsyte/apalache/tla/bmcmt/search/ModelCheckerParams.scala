@@ -15,9 +15,13 @@ class ModelCheckerParams(checkerInput: CheckerInput,
                          tuningOptions: Map[String, String] = Map(),
                          val debug: Boolean) {
   /**
-    * If lucky is set to true, there will be no check of whether a transition is enabled.
+    * If pruneDisabled is set to false, there will be no check of whether a transition is enabled.
     */
-  var lucky: Boolean = false
+  var pruneDisabled: Boolean = true
+  /**
+    * If checkForDeadlocks is true, then the model checker should find deadlocks.
+    */
+  var checkForDeadlocks: Boolean = true
 
   /**
     * The set of CONSTANTS, which are special (rigid) variables, as they do not change in the course of execution.
@@ -64,8 +68,8 @@ class ModelCheckerParams(checkerInput: CheckerInput,
     */
   def idleTimeoutMs: Long = idleTimeoutSec * 1000
 
-  val invariantTimeout: Long =
-    BigInt(tuningOptions.getOrElse("search.invariant.timeout", "0")).toLong
+  val smtTimeoutSec: Long =
+    BigInt(tuningOptions.getOrElse("search.smt.timeout", "0")).toLong
 
   // does the transition number satisfy the given filter at the given step?
   def stepMatchesFilter(stepNo: Int, transitionNo: Int): Boolean = {

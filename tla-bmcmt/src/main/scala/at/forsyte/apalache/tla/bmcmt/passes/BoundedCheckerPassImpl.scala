@@ -5,11 +5,13 @@ import java.nio.file.Path
 import at.forsyte.apalache.infra.ExceptionAdapter
 import at.forsyte.apalache.infra.passes.{Pass, PassOptions}
 import at.forsyte.apalache.tla.assignments.ModuleAdapter
+import at.forsyte.apalache.tla.bmcmt.Checker.Outcome
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
 import at.forsyte.apalache.tla.bmcmt.search._
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
+import at.forsyte.apalache.tla.bmcmt.trex._
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.NullEx
@@ -71,15 +73,70 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val debug = options.getOrElse("general", "debug", false)
     val saveDir = options.getOrError("io", "outdir").asInstanceOf[Path].toFile
 
-    val sharedState = new SharedSearchState(nworkers)
     val params = new ModelCheckerParams(input, stepsBound, saveDir, tuning, debug)
-    params.lucky = options.getOrElse("checker", "lucky", false)
+    params.pruneDisabled = !options.getOrElse("checker", "allEnabled", false)
+    params.checkForDeadlocks = !options.getOrElse("checker", "noDeadlocks", false)
+
+    options.getOrElse("checker", "algo", "incremental") match {
+      case "parallel" => runParallelChecker(params, input, tuning, nworkers)
+      case "incremental" => runIncrementalChecker(params, input, tuning)
+      case "offline" => runOfflineChecker(params, input, tuning)
+      case algo => throw new IllegalArgumentException(s"Unexpected checker.algo=$algo")
+    }
+
+  }
+
+  private def runIncrementalChecker(params: ModelCheckerParams,
+                                    input: CheckerInput,
+                                    tuning: Map[String, String]): Boolean = {
+    val profile = options.getOrElse("smt", "prof", false)
+    val solverContext: RecordingZ3SolverContext = RecordingZ3SolverContext(None, params.debug, profile)
+
+    val typeFinder = new TrivialTypeFinder
+    val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
+    rewriter.formulaHintsStore = hintsStore
+    rewriter.config = RewriterConfig(tuning)
+
+    val executorContext = new IncrementalExecutorContext(rewriter)
+    val trex = new TransitionExecutorImpl[IncrementalSnapshot](params.consts, params.vars, executorContext)
+    val stepFilter = tuning.getOrElse("search.transitionFilter", "")
+    val filteredTrex = new FilteredTransitionExecutor[IncrementalSnapshot](stepFilter, params.invFilter, trex)
+
+    val checker = new SeqModelChecker[IncrementalSnapshot](params, input, filteredTrex)
+    checker.run() == Outcome.NoError
+  }
+
+  private def runOfflineChecker(params: ModelCheckerParams,
+                                input: CheckerInput,
+                                tuning: Map[String, String]): Boolean = {
+    val profile = options.getOrElse("smt", "prof", false)
+    val solverContext: RecordingZ3SolverContext = RecordingZ3SolverContext(None, params.debug, profile)
+
+    val typeFinder = new TrivialTypeFinder
+    val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
+    rewriter.formulaHintsStore = hintsStore
+    rewriter.config = RewriterConfig(tuning)
+
+    val executorContext = new OfflineExecutorContext(rewriter)
+    val trex = new TransitionExecutorImpl[OfflineSnapshot](params.consts, params.vars, executorContext)
+    val stepFilter = tuning.getOrElse("search.transitionFilter", "")
+    val filteredTrex = new FilteredTransitionExecutor[OfflineSnapshot](stepFilter, params.invFilter, trex)
+
+    val checker = new SeqModelChecker[OfflineSnapshot](params, input, filteredTrex)
+    checker.run() == Outcome.NoError
+  }
+
+  private def runParallelChecker(params: ModelCheckerParams,
+                                 input: CheckerInput,
+                                 tuning: Map[String, String],
+                                 nworkers: Int): Boolean = {
+    val sharedState = new SharedSearchState(nworkers)
 
     def createCheckerThread(rank: Int): Thread = {
       new Thread {
         override def run(): Unit = {
           try {
-            val checker = createModelChecker(rank, sharedState, params, input, tuning)
+            val checker = createParallelWorker(rank, sharedState, params, input, tuning)
             val outcome = checker.run()
             logger.info(s"Worker $rank: The outcome is: $outcome")
           } catch {
@@ -107,7 +164,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     sharedState.workerStates.values.forall(_ == BugFreeState())
   }
 
-  private def createModelChecker(rank: Int,
+  private def createParallelWorker(rank: Int,
                                  sharedState: SharedSearchState,
                                  params: ModelCheckerParams,
                                  input: CheckerInput,

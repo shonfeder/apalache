@@ -32,6 +32,13 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
   def execution: ReducedExecution
 
   /**
+    * Initialize CONSTANTS by applying assignments within a given expression.
+    *
+    * @param constInit a constant initializer that contains assignments to primed constants.
+    */
+  def initializeConstants(constInit: TlaEx): Unit
+
+  /**
     * Translate a transition into SMT and save it under the given number. This method returns false,
     * if the transition was found to be disabled during the translation. In this case, the translation result
     * is still saved in the SMT context. It is user's responsibility to pop the context, e.g., by recovering from
@@ -43,6 +50,13 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
     *         false, if the translation has found that the transition is disabled
     */
   def prepareTransition(transitionNo: Int, transitionEx: TlaEx): Boolean
+
+  /**
+    * Get the numbers of prepared transitions.
+    *
+    * @return a sequence of numbers
+    */
+  def preparedTransitionNumbers: Set[Int]
 
   /**
     * Assume that a previously prepared transition fires. Use this method to check,

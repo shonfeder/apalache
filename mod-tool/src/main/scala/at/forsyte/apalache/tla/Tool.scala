@@ -139,7 +139,9 @@ object Tool extends App with LazyLogging {
       executor.options.set("checker.cinit", check.cinit)
     executor.options.set("checker.nworkers", check.nworkers)
     executor.options.set("checker.length", check.length)
-    executor.options.set("checker.lucky", check.lucky)
+    executor.options.set("checker.allEnabled", check.enabled)
+    executor.options.set("checker.noDeadlocks", check.noDeadlocks)
+    executor.options.set("checker.algo", check.algo)
 
     val result = executor.run()
     if (result.isDefined) {

@@ -91,11 +91,29 @@ class FilteredTransitionExecutor[SnapshotT](stepFilter: String,
   override def assertState(assertion: TlaEx): Unit = trex.assertState(assertion)
 
   /**
+    * Initialize CONSTANTS by applying assignments within a given expression.
+    *
+    * @param constInit a constant initializer that contains assignments to primed constants.
+    */
+  override def initializeConstants(constInit: TlaEx): Unit = {
+    trex.initializeConstants(constInit)
+  }
+
+  /**
     * Pick non-deterministically one transition among the transitions that are prepared
     * in the current step. Further, assume that the picked transition has fired.
     * This method must be called after at least one call to prepareTransition.
     */
   override def pickTransition(): SparseOracle = trex.pickTransition()
+
+  /**
+    * Get the numbers of prepared transitions.
+    *
+    * @return a sequence of numbers
+    */
+  override def preparedTransitionNumbers: Set[Int] = {
+    trex.preparedTransitionNumbers
+  }
 
   /**
     * Advance symbolic execution by renaming primed variables to non-primed.

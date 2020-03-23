@@ -768,7 +768,7 @@ class ModelChecker(val checkerInput: CheckerInput,
       return (nextState, DisabledTransition(1))
     }
 
-    if (params.lucky) {
+    if (!params.pruneDisabled) {
       // feeling lucky, do not check whether the transition is enabled
       logger.debug(s"Worker ${context.rank}: Feeling lucky. Transition $transitionNo is enabled.")
       return (nextState, EnabledTransition(1, findTransitionInvariants(stepNo, transitionNo, nextState)))
@@ -878,7 +878,7 @@ class ModelChecker(val checkerInput: CheckerInput,
     checkTypes(vc.notInv)
     val notInvState = context.rewriter.rewriteUntilDone(state.setRex(vc.notInv))
     context.solver.assertGroundExpr(notInvState.ex)
-    context.solver.satOrTimeout(params.invariantTimeout) match {
+    context.solver.satOrTimeout(params.smtTimeoutSec) match {
       case Some(true) =>
         // TODO: take a snapshot and return InvalidVC instead?
         val filename = s"counterexample-vc$vcNo-w${context.rank}.tla"

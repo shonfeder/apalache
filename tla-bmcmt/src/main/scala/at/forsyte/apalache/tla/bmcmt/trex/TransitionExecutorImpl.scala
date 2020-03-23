@@ -53,6 +53,31 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
   override def execution = ReducedExecution(lastState.arena, (lastState.binding +: revStack).reverse)
 
   /**
+    * Initialize CONSTANTS by applying assignments within a given expression.
+    *
+    * @param constInit a constant initializer that contains assignments to primed constants.
+    */
+  override def initializeConstants(constInit: TlaEx): Unit = {
+    assert(controlState == Preparing())
+    if (_stepNo > 0 || preparedTransitions.nonEmpty) {
+      throw new IllegalStateException(s"initializeConstants should be called only against the initial state")
+    }
+    logger.debug("Initializing CONSTANTS")
+    inferTypes(constInit)
+    lastState = ctx.rewriter.rewriteUntilDone(lastState.setRex(constInit))
+    // check, whether all constants have been assigned
+    val shiftedBinding = lastState.binding.shiftBinding(Set.empty)
+    if (shiftedBinding.toMap.keySet != consts) {
+      val diff = consts -- shiftedBinding.toMap.keySet
+      throw new IllegalStateException("CONSTANTS are not initialized: " + diff.mkString(", "))
+    }
+
+    shiftTypes(Set.empty) // treat constants as variables
+
+    lastState = lastState.setBinding(shiftedBinding)
+  }
+
+  /**
     * Translate a transition into SMT and save it under the given number. This method returns false,
     * if the transition was found to be disabled during the translation. In this case, the translation result
     * is still saved in the SMT context. It is user's responsibility to pop the context, e.g., by recovering from
@@ -164,6 +189,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     *                  though it may be an action expression.
     */
   override def assertState(assertion: TlaEx): Unit = {
+    inferTypes(assertion)
     val nextState = ctx.rewriter.rewriteUntilDone(lastState.setRex(assertion))
     ctx.rewriter.solverContext.assertGroundExpr(nextState.ex)
     lastState = nextState.setRex(lastState.ex) // propagate the arena and binding, but keep the old expression
@@ -222,6 +248,15 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     controlState = Picked()
     // the sparse oracle is mapping the oracle values to the transition numbers
     new SparseOracle(oracle, preparedTransitions.keySet)
+  }
+
+  /**
+    * Get the numbers of prepared transitions.
+    *
+    * @return a sequence of numbers
+    */
+  def preparedTransitionNumbers: Set[Int] = {
+    preparedTransitions.keySet
   }
 
   /**
@@ -286,7 +321,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
 
   // infer the types and throw an exception if type inference has failed
   private def inferTypes(expr: TlaEx): Unit = {
-    logger.debug("Inferring types...")
+//    logger.debug("Inferring types...")
     ctx.typeFinder.inferAndSave(expr)
     if (ctx.typeFinder.typeErrors.nonEmpty) {
       throw new TypeInferenceException(ctx.typeFinder.typeErrors)
