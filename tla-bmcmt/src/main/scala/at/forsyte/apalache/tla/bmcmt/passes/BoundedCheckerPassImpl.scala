@@ -168,7 +168,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
                                  sharedState: SharedSearchState,
                                  params: ModelCheckerParams,
                                  input: CheckerInput,
-                                 tuning: Map[String, String]): ModelChecker = {
+                                 tuning: Map[String, String]): ParModelChecker = {
     val profile = options.getOrElse("smt", "prof", false)
     val solverContext: RecordingZ3SolverContext = RecordingZ3SolverContext(None, params.debug, profile)
 
@@ -178,7 +178,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     rewriter.config = RewriterConfig(tuning)
     val context = new WorkerContext(rank, sharedState.searchRoot, solverContext, rewriter, typeFinder)
 
-    new ModelChecker(input, params, sharedState, context, changeListener, sourceStore)
+    new ParModelChecker(input, params, sharedState, context, changeListener, sourceStore)
   }
 
   private def createShutdownHook(workerThreads: Seq[Thread]): Thread = {

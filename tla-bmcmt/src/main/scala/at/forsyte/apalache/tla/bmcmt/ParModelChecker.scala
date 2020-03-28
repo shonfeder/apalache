@@ -14,7 +14,7 @@ import com.typesafe.scalalogging.LazyLogging
 import scala.collection.immutable.HashMap
 
 /**
-  * <p>A bounded model checker using SMT. The checker implements symbolic breadth-first search with splitting.
+  * <p>A bounded model checker with SMT. The checker implements parallel symbolic breadth-first search with splitting.
   * The TLA+ specification of the search algorithm is available in `./docs/specs/search/ParBMC.tla`.
   * </p>
   *
@@ -22,12 +22,12 @@ import scala.collection.immutable.HashMap
   *
   * @author Igor Konnov
   */
-class ModelChecker(val checkerInput: CheckerInput,
-                   val params: ModelCheckerParams,
-                   val sharedState: SharedSearchState,
-                   var context: WorkerContext,
-                   changeListener: ChangeListener,
-                   sourceStore: SourceStore)
+class ParModelChecker(val checkerInput: CheckerInput,
+                      val params: ModelCheckerParams,
+                      val sharedState: SharedSearchState,
+                      var context: WorkerContext,
+                      changeListener: ChangeListener,
+                      sourceStore: SourceStore)
   extends Checker with LazyLogging {
 
   import Checker._

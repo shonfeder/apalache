@@ -21,7 +21,7 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 @RunWith(classOf[JUnitRunner])
-class TestModelChecker extends FunSuite with BeforeAndAfter {
+class TestParModelChecker extends FunSuite with BeforeAndAfter {
   private var typeFinder: TrivialTypeFinder = new TrivialTypeFinder()
   private var exprGradeStore: ExprGradeStore = new ExprGradeStoreImpl()
   private var hintsStore: FormulaHintsStoreImpl = new FormulaHintsStoreImpl()
@@ -62,7 +62,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val nextTrans = List(mkAssign("x", 2))
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List.empty)
     val params = new ModelCheckerParams(checkerInput, stepsBound = 0, new File("."), Map(), false)
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -75,7 +75,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List.empty)
     val params = new ModelCheckerParams(checkerInput, stepsBound = 0, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -87,7 +87,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List.empty)
     val params = new ModelCheckerParams(checkerInput, stepsBound = 0, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -100,7 +100,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List.empty)
     val params = new ModelCheckerParams(checkerInput, stepsBound = 1, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -121,7 +121,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     hintsStore.store.put(nextTrans.head.ID, FormulaHintsStore.HighAnd())
     val params = new ModelCheckerParams(checkerInput, stepsBound = 1, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -142,7 +142,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithXandY(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 2, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -161,7 +161,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 2, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -177,7 +177,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List())
     val params = new ModelCheckerParams(checkerInput, stepsBound = 1, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -190,7 +190,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List())
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -206,7 +206,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List())
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Deadlock == outcome)
   }
@@ -221,7 +221,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -237,7 +237,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // initialize the model checker
     val tuning = Map("search.invariant.learnFromUnsat" -> "true")
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), tuning, false)
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -253,7 +253,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // initialize the model checker
     val tuning = Map("search.invariant.split" -> "false")
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), tuning, false)
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -268,7 +268,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -285,7 +285,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 3, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -302,7 +302,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 2, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -319,7 +319,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     // We require the invariant to be checked only after the second step. So we will miss invariant violation.
     val tuning = Map("search.invariantFilter" -> "2")
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), tuning, false)
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -335,7 +335,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List())
     val params = new ModelCheckerParams(checkerInput, stepsBound = 3, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -382,7 +382,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithXandY(), List(init), List(next1, next2), None, List((inv, tla.not(inv))))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 2, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -399,7 +399,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(mkModuleWithX(), initTrans, nextTrans, None, List((tla.not(notInv), notInv)))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -426,7 +426,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val checkerInput = new CheckerInput(dummyModule, initTrans, nextTrans, Some(cInit), List((tla.not(notInv), notInv)))
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), Map(), false)
     // initialize the model checker
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.Error == outcome)
   }
@@ -444,7 +444,7 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val filter = "0,0,0,0,0,0,0,0,0,0,0" // execute initTrans once and trans1 10 times
     val tuning = Map("search.transitionFilter" -> filter)
     val params = new ModelCheckerParams(checkerInput, stepsBound = 10, new File("."), tuning, false)
-    val checker = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
     val outcome = checker.run()
     assert(Checker.Outcome.NoError == outcome)
   }
@@ -467,13 +467,13 @@ class TestModelChecker extends FunSuite with BeforeAndAfter {
     val typeFinder1 = new TrivialTypeFinder()
     val rewriter1 = new SymbStateRewriterImpl(solver1, typeFinder1, exprGradeStore)
     val context1 = new WorkerContext(rank = 1, sharedState.searchRoot, solver1, rewriter1, typeFinder1)
-    val checker1 = new ModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
+    val checker1 = new ParModelChecker(checkerInput, params, sharedState, context1, changeListener, sourceStore)
 
     val solver2 = RecordingZ3SolverContext(None, debug = false, profile = false)
     val typeFinder2 = new TrivialTypeFinder
     val rewriter2 = new SymbStateRewriterImpl(solver2, typeFinder2, exprGradeStore)
     val context2 = new WorkerContext(rank = 2, sharedState.searchRoot, solver2, rewriter2, typeFinder2)
-    val checker2 = new ModelChecker(checkerInput, params, sharedState, context2, changeListener, sourceStore)
+    val checker2 = new ParModelChecker(checkerInput, params, sharedState, context2, changeListener, sourceStore)
 
     val future1 = Future {
       Thread.sleep(100)

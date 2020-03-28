@@ -271,6 +271,10 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     lastState = lastState
       .setBinding(lastState.binding.shiftBinding(consts))
       .setRex(lastState.arena.cellTrue().toNameEx)
+    // save the types of the cells that are bound to the previous variables types,
+    // so the transition executor can process assertions over state variables of the whole execution
+    vars.map(name => lastState.binding(name))
+      .foreach(cell => ctx.typeFinder.extendWithCellType(cell))
     // that is the result of this step
     shiftTypes(consts)
     // clean the prepared transitions
@@ -335,8 +339,12 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     */
   private def shiftTypes(constants: Set[String]): Unit = {
     val types = ctx.typeFinder.varTypes
+    // keep the types of prime variables, cells, and constants
+    def keep(name: String): Boolean = {
+      name.endsWith("'") || ArenaCell.isValidName(name) || constants.contains(name)
+    }
     val nextTypes =
-      types.filter(p => p._1.endsWith("'") || constants.contains(p._1))
+      types.filter(p => keep(p._1))
         .map(p => (p._1.stripSuffix("'"), p._2))
     ctx.typeFinder.reset(nextTypes)
   }
