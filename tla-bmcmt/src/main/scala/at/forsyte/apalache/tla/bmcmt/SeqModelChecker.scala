@@ -95,6 +95,7 @@ class SeqModelChecker[ExecutorContextT](val params: ModelCheckerParams,
               snapshot = Some(assumeSnapshot) // recover to the state before the transition was fired
 
             case Some(false) =>
+              logger.debug(s"Step %d: Transition #%d is disabled".format(trex.stepNo, no))
               ()                              // recover the transition before the transition was prepared
 
             case None =>

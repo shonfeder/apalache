@@ -104,8 +104,6 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     // translate the transition to SMT
     lastState = ctx.rewriter.rewriteUntilDone(erased.setRex(transitionEx))
     ctx.rewriter.flushStatistics()
-    // the transition can be accessed
-    preparedTransitions += transitionNo -> ReducedTransition(lastState.asCell, lastState.binding)
 
     if (debug) {
       // This is a debugging feature that allows us to find incorrect rewriting rules. Disable it in production.
@@ -120,12 +118,16 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     }
 
     // check, whether all variables have been assigned
-    val assignedVars = lastState.binding.toMap.
+    val newBinding = lastState.binding
+    lastState = lastState.setBinding(lastState.binding.forgetPrimed) // forget the assignments
+    val assignedVars = newBinding.toMap.
       collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1) }
     if (assignedVars.toSet == vars) {
+      // the transition can be accessed
+      preparedTransitions += transitionNo -> ReducedTransition(lastState.asCell, newBinding)
       true // the transition is probably enabled
     } else {
-      logger.debug(s"Transition $transitionNo produces partial assignment. It is disabled.")
+      logger.debug(s"Transition $transitionNo produces partial assignment. Disabled.")
       false // the transition is disabled
     }
   }
@@ -143,7 +145,9 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     if (!preparedTransitions.contains(transitionNo)) {
       throw new IllegalStateException(s"Use prepareTransition before calling assumeTransition for $transitionNo")
     } else {
-      ctx.rewriter.solverContext.assertGroundExpr(preparedTransitions(transitionNo).trigger.toNameEx)
+      val transition = preparedTransitions(transitionNo)
+      ctx.rewriter.solverContext.assertGroundExpr(transition.trigger.toNameEx)
+      lastState = lastState.setBinding(transition.binding)
     }
 
     controlState = Picked()
@@ -215,8 +219,8 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     if (sortedTransitions.isEmpty) {
       throw new IllegalArgumentException("unable to pick transitions from empty set")
     } else if (sortedTransitions.lengthCompare(1) == 0) {
-      ctx.solver.assertGroundExpr(lastState.ex)
-      lastState = oracleState
+      ctx.solver.assertGroundExpr(sortedTransitions.head._2.trigger.toNameEx)
+      lastState = oracleState.setBinding(sortedTransitions.head._2.binding)
     } else {
       // if oracle = i, then the ith transition is enabled
       ctx.solver.assertGroundExpr(oracle.caseAssertions(oracleState, sortedTransitions.map(_._2.trigger.toNameEx)))

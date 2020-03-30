@@ -103,7 +103,9 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val filteredTrex = new FilteredTransitionExecutor[IncrementalSnapshot](stepFilter, params.invFilter, trex)
 
     val checker = new SeqModelChecker[IncrementalSnapshot](params, input, filteredTrex)
-    checker.run() == Outcome.NoError
+    val outcome = checker.run()
+    logger.info(s"The outcome is: " + outcome)
+    outcome == Outcome.NoError
   }
 
   private def runOfflineChecker(params: ModelCheckerParams,
@@ -123,7 +125,9 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val filteredTrex = new FilteredTransitionExecutor[OfflineSnapshot](stepFilter, params.invFilter, trex)
 
     val checker = new SeqModelChecker[OfflineSnapshot](params, input, filteredTrex)
-    checker.run() == Outcome.NoError
+    val outcome = checker.run()
+    logger.info(s"The outcome is: " + outcome)
+    outcome == Outcome.NoError
   }
 
   private def runParallelChecker(params: ModelCheckerParams,

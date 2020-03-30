@@ -32,6 +32,10 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
       logger.info("  [https://github.com/konnov/apalache/blob/unstable/docs/manual.md#assignments]")
       NormalErrorMessage("Assignment error: " + err.getMessage)
 
+    case err: TypeInferenceException =>
+      val msg = "%s\n%s".format(err.getMessage, err.errors.map(ofTypeInferenceError).mkString("\n"))
+      NormalErrorMessage(msg)
+
     // tool failures
     case err: NoRuleException =>
       val msg =
@@ -48,10 +52,6 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
 
     case err: TypeException =>
       FailureMessage("%s: type error: %s".format(findLoc(err.causeExpr), err.getMessage))
-
-    case err: TypeInferenceException =>
-      val msg = "%s\n%s".format(err.getMessage, err.errors.map(ofTypeInferenceError).mkString("\n"))
-      FailureMessage(msg)
 
     case err: InvalidTlaExException =>
       val msg = "%s: unexpected TLA+ expression: %s".format(findLoc(err.causeExpr), err.getMessage)
