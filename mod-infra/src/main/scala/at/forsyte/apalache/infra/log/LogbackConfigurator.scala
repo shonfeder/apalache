@@ -9,7 +9,7 @@ import ch.qos.logback.core.{ConsoleAppender, FileAppender}
 import org.slf4j.LoggerFactory
 
 /**
-  * A hand-written configurator for logback, as it fails to discover logback-old.xml in some environments.
+  * A hand-written configurator for logback, as it fails to discover logback.xml in some environments.
   *
   * @author Igor Konnov
   */

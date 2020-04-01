@@ -355,22 +355,6 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
         case Status.UNSATISFIABLE => Some(false)
         case Status.UNKNOWN => None
       }
-
-      /*
-      // XXX: this produces a segfault sometimes...
-      val satFuture: Future[Boolean] = Future {
-        sat()
-      }(ExecutionContext.global)
-
-      try {
-        Some(Await.result(satFuture, Duration(timeoutSec, TimeUnit.SECONDS)))
-      } catch {
-        case _: TimeoutException | _: InterruptedException =>
-          z3context.interrupt()
-          log(s";; timeout")
-          None
-      }
-      */
     }
   }
 

@@ -3,7 +3,9 @@ package at.forsyte.apalache.tla.bmcmt
 import at.forsyte.apalache.tla.bmcmt.Checker.Outcome
 import at.forsyte.apalache.tla.bmcmt.search.ModelCheckerParams
 import at.forsyte.apalache.tla.bmcmt.trex.{ExecutorSnapshot, TransitionExecutor}
-import at.forsyte.apalache.tla.lir.TlaEx
+import at.forsyte.apalache.tla.lir.io.CounterexampleWriter
+import at.forsyte.apalache.tla.lir.values.TlaBool
+import at.forsyte.apalache.tla.lir.{TlaEx, ValEx}
 import com.typesafe.scalalogging.LazyLogging
 
 /**
@@ -55,8 +57,18 @@ class SeqModelChecker[ExecutorContextT](val params: ModelCheckerParams,
       logger.debug(s"Step %d: checking for deadlocks".format(trex.stepNo))
       trex.sat(params.smtTimeoutSec) match {
         case Some(true) => ()                       // OK
-        case Some(false) => return Outcome.Deadlock // deadlock
-        case None => return Outcome.RuntimeError    // UNKNOWN or timeout
+
+        case Some(false) =>
+          if (trex.sat(0).contains(true)) {
+            val filenames = dumpCounterexample(ValEx(TlaBool(true)))
+            logger.error(s"Found a deadlock. Check the counterexample in: ${filenames.mkString(", ")}")
+          } else {
+            logger.error(s"Found a deadlock. No SMT model.")
+          }
+          return Outcome.Deadlock // deadlock
+
+        case None =>
+          return Outcome.RuntimeError    // UNKNOWN or timeout
       }
     }
 
@@ -110,6 +122,12 @@ class SeqModelChecker[ExecutorContextT](val params: ModelCheckerParams,
     }
 
     if (trex.preparedTransitionNumbers.isEmpty) {
+      if (trex.sat(0).contains(true)) {
+        val filenames = dumpCounterexample(ValEx(TlaBool(true)))
+        logger.error(s"Found a deadlock. Check the counterexample in: ${filenames.mkString(", ")}")
+      } else {
+        logger.error(s"Found a deadlock. No SMT model.")
+      }
       (Outcome.Deadlock, Set.empty)
     } else {
       // pick one transition
@@ -130,9 +148,17 @@ class SeqModelChecker[ExecutorContextT](val params: ModelCheckerParams,
         trex.assertState(notInv)
 
         trex.sat(params.smtTimeoutSec) match {
-          case Some(true) => return Outcome.Error   // the invariant violated
-          case Some(false) => ()                    // the invariant holds true
-          case None => return Outcome.RuntimeError  // UNKNOWN or timeout
+          case Some(true) =>
+            val filenames = dumpCounterexample(notInv)
+            logger.error("Invariant %s violated. Check the counterexample in: %s"
+              .format(invNo, filenames.mkString(", ")))
+            return Outcome.Error   // the invariant violated
+
+          case Some(false) =>
+            ()                    // the invariant holds true
+
+          case None =>
+            return Outcome.RuntimeError  // UNKNOWN or timeout
         }
 
         // rollback the context
@@ -141,5 +167,11 @@ class SeqModelChecker[ExecutorContextT](val params: ModelCheckerParams,
     }
 
     Outcome.NoError
+  }
+
+  private def dumpCounterexample(notInv: TlaEx): List[String] = {
+    val exec = trex.decodedExecution()
+    val states = exec.path.map(p => (p._2.toString, p._1))
+    CounterexampleWriter.writeAllFormats(checkerInput.rootModule, notInv, states)
   }
 }

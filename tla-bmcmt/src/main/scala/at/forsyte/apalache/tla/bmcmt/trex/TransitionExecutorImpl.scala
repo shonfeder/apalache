@@ -1,7 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, SparseOracle}
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle, SparseOracle}
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
 import at.forsyte.apalache.tla.lir.TlaEx
 import com.typesafe.scalalogging.LazyLogging
@@ -36,7 +36,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
   // the latest symbolic state that is produced by the rewriter
   var lastState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
   // the stack of the variable bindings, one per state, in reverse order, excluding the binding in topState
-  private var revStack: List[Binding] = List()
+  private var revStack: List[(Binding, Oracle)] = List((Binding(), new MockOracle(0)))
 
   // the transitions that are translated with prepareTransition in the current step
   private var preparedTransitions: Map[Int, ReducedTransition] = Map[Int, ReducedTransition]()
@@ -50,7 +50,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     * Retrieve the translated symbolic execution
     * @return the accumulated execution
     */
-  override def execution = ReducedExecution(lastState.arena, (lastState.binding +: revStack).reverse)
+  override def execution = ReducedExecution(lastState.arena, revStack.reverse)
 
   /**
     * Initialize CONSTANTS by applying assignments within a given expression.
@@ -75,6 +75,9 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     shiftTypes(Set.empty) // treat constants as variables
 
     lastState = lastState.setBinding(shiftedBinding)
+
+    // update the execution stack in place, as we are dealing with the special case of constant initialization
+    revStack = List((shiftedBinding, revStack.head._2))
   }
 
   /**
@@ -148,6 +151,8 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
       val transition = preparedTransitions(transitionNo)
       ctx.rewriter.solverContext.assertGroundExpr(transition.trigger.toNameEx)
       lastState = lastState.setBinding(transition.binding)
+      // add the binding and the oracle on the stack
+      revStack = (lastState.binding.shiftBinding(consts), new MockOracle(transitionNo)) :: revStack
     }
 
     controlState = Picked()
@@ -204,7 +209,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     * in the current step. Further, assume that the picked transition has fired.
     * This method must be called after at least one call to prepareTransition.
     */
-  override def pickTransition(): SparseOracle = {
+  override def pickTransition(): Oracle = {
     assert(controlState == Preparing())
     // assert that there is at least one prepared transition
     logger.info("Step %d, level %d: picking a transition out of %d transition(s)"
@@ -221,6 +226,10 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     } else if (sortedTransitions.lengthCompare(1) == 0) {
       ctx.solver.assertGroundExpr(sortedTransitions.head._2.trigger.toNameEx)
       lastState = oracleState.setBinding(sortedTransitions.head._2.binding)
+      val transitionNo = sortedTransitions.head._1
+      // use a fixed transition
+      val mockOracle = new MockOracle(transitionNo)
+      revStack = (lastState.binding.shiftBinding(consts), mockOracle) :: revStack
     } else {
       // if oracle = i, then the ith transition is enabled
       ctx.solver.assertGroundExpr(oracle.caseAssertions(oracleState, sortedTransitions.map(_._2.trigger.toNameEx)))
@@ -244,14 +253,16 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
       val finalVarBinding = Binding(primedVars.toSeq map (n => (n, pickVar(n))): _*) // variables only
       val constBinding = Binding(oracleState.binding.toMap.filter(p => consts.contains(p._1)))
       lastState = nextState.setBinding(finalVarBinding ++ constBinding)
+      // the sparse oracle is mapping the oracle values to the transition numbers
+      val sparseOracle = new SparseOracle(oracle, preparedTransitions.keySet)
+      revStack = (lastState.binding.shiftBinding(consts), sparseOracle) :: revStack
       if (debug && !ctx.solver.sat()) {
         throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", lastState.ex)
       }
     }
 
     controlState = Picked()
-    // the sparse oracle is mapping the oracle values to the transition numbers
-    new SparseOracle(oracle, preparedTransitions.keySet)
+    revStack.head._2
   }
 
   /**
@@ -269,8 +280,6 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     */
   override def nextState(): Unit = {
     assert(controlState == Picked())
-    val erased = lastState.binding.forgetPrimed // forget the previous assignments
-    revStack = erased :: revStack
     // finally, shift the primed variables to non-primed, forget the expression
     lastState = lastState
       .setBinding(lastState.binding.shiftBinding(consts))
@@ -300,6 +309,18 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     ctx.rewriter.solverContext.satOrTimeout(timeoutSec)
   }
 
+  override def decodedExecution(): DecodedExecution = {
+    val decoder = new SymbStateDecoder(ctx.solver, ctx.rewriter)
+
+    def decodePair(binding: Binding, oracle: Oracle): (Map[String, TlaEx], Int) = {
+      val transitionNo = oracle.evalPosition(ctx.solver, lastState)
+      val decodedState = decoder.decodeStateVariables(lastState.setBinding(binding))
+      (decodedState, transitionNo)
+    }
+
+    new DecodedExecution(execution.path.map(p => decodePair(p._1, p._2)))
+  }
+
   /**
     * Create a snapshot of the current symbolic execution. The user should not access
     * the snapshot, which is an opaque object.
@@ -307,9 +328,8 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     * @return a snapshot
     */
   def snapshot(): ExecutorSnapshot[ExecCtxT] = {
-    val path = (lastState.binding +: revStack).reverse
-    new ExecutorSnapshot[ExecCtxT](controlState,
-      ReducedExecution(lastState.arena, path), preparedTransitions, ctx.snapshot())
+    val exe = new ReducedExecution(lastState.arena, ((lastState.binding, new MockOracle(0)) :: revStack).reverse)
+    new ExecutorSnapshot[ExecCtxT](controlState, exe, preparedTransitions, ctx.snapshot())
   }
 
   /**
@@ -321,7 +341,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     ctx.recover(snapshot.ctxSnapshot)
     val rs = snapshot.execution.path.reverse
     val arena = snapshot.execution.arena.setSolver(ctx.solver)
-    lastState = new SymbState(arena.cellTrue().toNameEx, arena, rs.head)
+    lastState = new SymbState(arena.cellTrue().toNameEx, arena, rs.head._1)
     revStack = rs.tail
     preparedTransitions = snapshot.preparedTransitions
     controlState = snapshot.controlState

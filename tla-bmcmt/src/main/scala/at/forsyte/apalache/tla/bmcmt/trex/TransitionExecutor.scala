@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
-import at.forsyte.apalache.tla.bmcmt.rules.aux.SparseOracle
+import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
 import at.forsyte.apalache.tla.lir.TlaEx
 
 /**
@@ -90,7 +90,7 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
     * in the current step. Further, assume that the picked transition has fired.
     * This method must be called after at least one call to prepareTransition.
     */
-  def pickTransition(): SparseOracle
+  def pickTransition(): Oracle
 
   /**
     * Advance symbolic execution by renaming primed variables to non-primed.
@@ -107,4 +107,11 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
     *         None, if the solver timed out or reported *unknown*.
     */
   def sat(timeoutSec: Long): Option[Boolean]
+
+  /**
+    * Decode the current symbolic execution
+    *
+    * @return the decoded execution
+    */
+  def decodedExecution(): DecodedExecution
 }

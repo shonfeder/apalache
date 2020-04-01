@@ -1,5 +1,5 @@
 package at.forsyte.apalache.tla.bmcmt.trex
-import at.forsyte.apalache.tla.bmcmt.rules.aux.SparseOracle
+import at.forsyte.apalache.tla.bmcmt.rules.aux.{Oracle, SparseOracle}
 import at.forsyte.apalache.tla.lir.TlaEx
 
 /**
@@ -104,7 +104,7 @@ class FilteredTransitionExecutor[SnapshotT](stepFilter: String,
     * in the current step. Further, assume that the picked transition has fired.
     * This method must be called after at least one call to prepareTransition.
     */
-  override def pickTransition(): SparseOracle = trex.pickTransition()
+  override def pickTransition(): Oracle = trex.pickTransition()
 
   /**
     * Get the numbers of prepared transitions.
@@ -144,4 +144,11 @@ class FilteredTransitionExecutor[SnapshotT](stepFilter: String,
     * @param shot a snapshot
     */
   override def recover(shot: ExecutorSnapshot[SnapshotT]): Unit = trex.recover(shot)
+
+  /**
+    * Decode the current symbolic execution
+    *
+    * @return the decoded execution
+    */
+  override def decodedExecution(): DecodedExecution = trex.decodedExecution()
 }

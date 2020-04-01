@@ -1,5 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 
+import at.forsyte.apalache.tla.bmcmt.Binding
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla
 import org.scalatest.fixture
@@ -99,22 +100,50 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     // x' <- 1 /\ y' <- 1
     val init = tla.and(mkAssign("y", 1), mkAssign("x", 1))
     // x' <- y /\ y' <- x + y
-    val nextTrans = tla.and(
+    val trans1 = tla.and(
       mkAssign("x", tla.name("y")),
       mkAssign("y", tla.plus(tla.name("x"), tla.name("y"))))
+    val trans2 = tla.and(
+      mkAssign("x", tla.name("x")),
+      mkAssign("y", tla.name("y")))
     val trex = new TransitionExecutorImpl(Set.empty, Set("x", "y"), exeCtx)
     trex.prepareTransition(1, init)
     trex.pickTransition()
     trex.nextState()
-    trex.prepareTransition(1, nextTrans)
+    trex.prepareTransition(1, trans1)
     trex.pickTransition()
     trex.nextState()
-    trex.prepareTransition(1, nextTrans)
+    trex.prepareTransition(1, trans1)
     trex.pickTransition()
     trex.nextState()
-    trex.prepareTransition(1, nextTrans)
+    trex.prepareTransition(1, trans1)
+    trex.prepareTransition(2, trans2)
     trex.pickTransition()
     trex.nextState()
+
+    // a decoded counterexample needs the SMT model
+    assert(trex.sat(0).contains(true))
+    // test the decoded execution
+    val decPath = trex.decodedExecution().path
+    assert(decPath.length == 5)
+    // state 0 is produced by transition 0
+    assert(0 == decPath(0)._2)
+    assert(Binding().toMap == decPath(0)._1)
+    // state 1 is produced by transition 1
+    assert(1 == decPath(1)._2)
+    assert(Map("x" -> tla.int(1), "y" -> tla.int(1)) == decPath(1)._1)
+    // state 2 is produced by transition 1
+    assert(1 == decPath(2)._2)
+    assert(Map("x" -> tla.int(1), "y" -> tla.int(2)) == decPath(2)._1)
+    // state 3 is produced by transition 1
+    assert(1 == decPath(3)._2)
+    assert(Map("x" -> tla.int(2), "y" -> tla.int(3)) == decPath(3)._1)
+    // state 4 is produced either by transition 1, or by transition 2
+    assert(1 == decPath(4)._2 || 2 == decPath(4)._2)
+    assert(
+      Map("x" -> tla.int(2), "y" -> tla.int(3)) == decPath(4)._1
+        || Map("x" -> tla.int(3), "y" -> tla.int(5)) == decPath(4)._1)
+
     // test the symbolic execution
     val exe = trex.execution
     assert(exe.path.length == 5)
@@ -122,24 +151,30 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
     // state 0 is not restricted, as there are no parameters
 
     // state 1 is the state right after Init, that is, Init(state0)
-    val state1 = exe.path(1)
+    val state1 = exe.path(1)._1
     assertValid(trex, tla.eql(state1("x").toNameEx, tla.int(1)))
     assertValid(trex, tla.eql(state1("y").toNameEx, tla.int(1)))
 
     // state 2 is the state Next(Init(state0))
-    val state2 = exe.path(2)
+    val state2 = exe.path(2)._1
     assertValid(trex, tla.eql(state2("x").toNameEx, tla.int(1)))
     assertValid(trex, tla.eql(state2("y").toNameEx, tla.int(2)))
 
     // state 3 is the state Next(Next(Init(state0)))
-    val state3 = exe.path(3)
+    val state3 = exe.path(3)._1
     assertValid(trex, tla.eql(state3("x").toNameEx, tla.int(2)))
     assertValid(trex, tla.eql(state3("y").toNameEx, tla.int(3)))
 
     // state 4 is the state Next(Next(Next(Init(state0)))
-    val state4 = exe.path(4)
-    assertValid(trex, tla.eql(state4("x").toNameEx, tla.int(3)))
-    assertValid(trex, tla.eql(state4("y").toNameEx, tla.int(5)))
+    val state4 = exe.path(4)._1
+    assertValid(trex,
+      tla.or(
+        tla.eql(state4("x").toNameEx, tla.int(2)),
+        tla.eql(state4("x").toNameEx, tla.int(3))))
+    assertValid(trex,
+      tla.or(
+        tla.eql(state4("y").toNameEx, tla.int(3)),
+        tla.eql(state4("y").toNameEx, tla.int(5))))
   }
 
   test("mayChangeAssertion") { exeCtx: ExecutorContextT =>
