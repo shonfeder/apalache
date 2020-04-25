@@ -44,6 +44,22 @@ class ParModelChecker(val checkerInput: CheckerInput,
     */
   private val DEADLOCK_TIMEOUT_MS = 30000
 
+  // initialize a new node with the transitions
+  private def openNode(node: HyperNode, transitions: Seq[TlaEx]): Unit = {
+    if (params.pruneDisabled) {
+      // schedule transitions to be explored
+      val newTransitions = transitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
+      node.openTransitions = HashMap(newTransitions: _*)
+      node.closedTransitions = HashMap.empty
+    } else {
+      // all transitions are unconditionally enabled, all invariants could be changed
+      val vcs = checkerInput.invariantsAndNegations.map(p => InvariantVC(p._2)).zipWithIndex
+      val enabledTransitions = transitions.zipWithIndex map { case (e, i) => (i, (e, EnabledTransition(1, vcs))) }
+      node.openTransitions = HashMap.empty
+      node.closedTransitions = HashMap(enabledTransitions :_*)
+    }
+  }
+
   /**
     * Check all executions of a TLA+ specification up to a bounded number of steps.
     *
@@ -65,8 +81,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
             context.activeNode.isChecked = true // nothing to check, as Init has not been applied yet
             context.saveSnapshotToActiveNode()
             // the root node contains the list of transitions to be explored
-            val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
-            context.activeNode.openTransitions = HashMap(statuses: _*)
+            openNode(context.activeNode, checkerInput.initTransitions)
             context.activeNode.jailTimeoutSec = params.jailTimeoutMinSec // set the initial timeout
           }
         }
@@ -563,8 +578,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
       // schedule the transitions to check
       if (!reachedCeiling) {
-        val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
-        newNode.openTransitions = HashMap(statuses: _*)
+        openNode(newNode, checkerInput.nextTransitions)
       } else {
         logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants will be checked")
         newNode.isExplored = true
