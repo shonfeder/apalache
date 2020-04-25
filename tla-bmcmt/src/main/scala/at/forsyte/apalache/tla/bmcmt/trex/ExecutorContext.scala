@@ -19,4 +19,10 @@ trait ExecutorContext[SnapshotT] extends Recoverable[SnapshotT] {
 
   def typeFinder: TypeFinder[CellT] = rewriter.typeFinder
   def solver: SolverContext = rewriter.solverContext
+
+  /**
+    * Dispose the resources that are associated with the context: rewriter, solver, type finder.
+    * The context should not be used after the call to dispose.
+    */
+  def dispose(): Unit
 }

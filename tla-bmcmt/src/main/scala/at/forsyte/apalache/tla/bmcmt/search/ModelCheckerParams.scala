@@ -33,8 +33,8 @@ class ModelCheckerParams(checkerInput: CheckerInput,
     */
   val vars = Set(checkerInput.rootModule.varDeclarations.map(_.name): _*)
 
-  val stepFilters: Seq[String] =
-    tuningOptions.getOrElse("search.transitionFilter", ".*").split(",")
+  val transitionFilter: String =
+    tuningOptions.getOrElse("search.transitionFilter", "")
 
   val invFilter: String =
     tuningOptions.getOrElse("search.invariantFilter", "")
@@ -73,10 +73,10 @@ class ModelCheckerParams(checkerInput: CheckerInput,
 
   // does the transition number satisfy the given filter at the given step?
   def stepMatchesFilter(stepNo: Int, transitionNo: Int): Boolean = {
-    if (stepFilters.size <= stepNo) {
+    if (transitionFilter.size <= stepNo) {
       true // no filter applied
     } else {
-      transitionNo.toString.matches("^%s$".format(stepFilters(stepNo)))
+      transitionNo.toString.matches("^%s$".format(transitionFilter(stepNo)))
     }
   }
 

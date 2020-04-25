@@ -47,4 +47,14 @@ class OfflineExecutorContext(var rewriter: SymbStateRewriter)
     newRewriter.typeFinder.reset(snapshot.varTypes)
     rewriter = newRewriter
   }
+
+  /**
+    * Dispose the resources that are associated with the context: rewriter, solver, type finder.
+    * The context should not be used after the call to dispose.
+    */
+  override def dispose(): Unit = {
+    // dispose the rewriter, which will, in turn, dispose the solver
+    rewriter.dispose()
+    // nothing to dispose in the type finder
+  }
 }

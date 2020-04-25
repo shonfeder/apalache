@@ -1,28 +1,22 @@
 package at.forsyte.apalache.tla.bmcmt.search
 
 import java.io._
-import java.util.Calendar
 
-import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
-import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.bmcmt.{SymbState, SymbStateDecoder, SymbStateRewriter, SymbStateRewriterImpl}
-import at.forsyte.apalache.tla.lir.io.PrettyWriter
-import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaFunOper, TlaOper}
-import at.forsyte.apalache.tla.lir.values.{TlaBool, TlaStr}
+import at.forsyte.apalache.tla.bmcmt.trex.{ExecutorSnapshot, OfflineExecutorContext, OfflineSnapshot, TransitionExecutor}
 import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.lir.io.CounterexampleWriter
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * A context that maintains the search stack, rewriter, solver context, type finder, etc.
   * Most importantly, the context can be saved and restored. This is essential for the multi-core algorithm.
+  * The snapshot/recovery functions were extracted into ExecutorContext.
   *
   * @author Igor Konnov
   */
 class WorkerContext(var rank: Int,
                     initNode: HyperNode,
-                    var solver: RecordingZ3SolverContext,
-                    var rewriter: SymbStateRewriter,
-                    var typeFinder: TrivialTypeFinder) extends Serializable {
+                    val trex: TransitionExecutor[OfflineSnapshot]) extends Serializable with LazyLogging {
   /**
     * A local copy of the worker state.
     */
@@ -35,45 +29,53 @@ class WorkerContext(var rank: Int,
 
   /**
     * Get the step number.
+    *
     * @return the step number
     */
-  def stepNo: Int = {
-    // the constants are initialized at depth 0 and the initial states are computed at step 0: from depth 0 to depth 1
-    activeNode.depth
-  }
+  def stepNo: Int = trex.stepNo
 
   // TODO: when solver is removed from Arena, fix that
-  def state: SymbState = activeNode.snapshot.get.state.updateArena(_.setSolver(solver))
+//  def state: SymbState = activeNode.snapshot.get.state.updateArena(_.setSolver(solver))
 
-  def makeSnapshot(state: SymbState, oracle: Oracle): SearchSnapshot = {
-    val smtLog = solver.extractLog()
-    val rewriterSnapshot = rewriter.snapshot()
-    // TODO: when solver is removed from Arena, fix that
-    val safeState = state.updateArena(_.setSolver(null))
-    new SearchSnapshot(rewriterSnapshot, smtLog, safeState, oracle)
+  /**
+    * Produce a snapshot of the context.
+    *
+    * @return a snapshot produced by TransitionExecutor
+    */
+  def saveSnapshotToActiveNode(): Unit = {
+    assert(activeNode.snapshot.isEmpty)
+    activeNode.snapshot = Some(trex.snapshot())
   }
+
+  /**
+    * Recover from a snapshot
+    * @param node a node to synchronize with
+    */
+  def recoverFromNodeAndActivate(node: HyperNode): Unit = {
+    logger.debug(s"Worker $rank is synchronizing with tree node ${node.id}")
+    trex.recover(node.snapshot.get)
+    this.activeNode = node
+    //    context.solver.log(";;;;;;;;;;;;; RECOVERY FROM node %d".format(context.activeNode.id))
+    logger.debug(s"Worker $rank synchronized")
+  }
+
+
 
   /**
     * Dispose the resources that are associated with the context
     */
   def dispose(): Unit = {
-    rewriter.dispose()
+    trex.dispose()
   }
 
-  def saveToFile(file: File): Unit = {
-    val fos = new FileOutputStream(file, false)
-    val oos = new ObjectOutputStream(fos)
-    try {
-      oos.writeObject(WorkerContext.getClass.getName)
-      oos.writeObject(this)
-      oos.flush()
-      fos.flush()
-    } finally {
-      oos.close()
-      fos.close()
-    }
+  def dumpCounterexample(rootModule: TlaModule, notInv: TlaEx): List[String] = {
+    val exec = trex.decodedExecution()
+    val states = exec.path.map(p => (p._2.toString, p._1))
+    // TODO: add a prefix to the filename to avoid overwriting the output by other nodes
+    CounterexampleWriter.writeAllFormats(rootModule, notInv, states)
   }
 
+  /*
   def dumpCounterexample(filename: String, notInv: TlaEx): Unit = {
     def findStates: Option[HyperNode] => List[SymbState] = {
       // TODO: when solver is removed from Arena, fix that
@@ -131,48 +133,10 @@ class WorkerContext(var rank: Int,
     writer.println("\\* https://github.com/konnov/apalache")
     writer.close()
   }
-
+  */
 }
 
 object WorkerContext {
-  def load(file: File, newRank: Int): WorkerContext = {
-    val fis = new FileInputStream(file)
-    val ois = new ObjectInputStream(fis)
-    try {
-      val className = ois.readObject().asInstanceOf[String]
-      if (className != WorkerContext.getClass.getName) {
-        throw new IOException("Corrupted serialized file: " + file)
-      } else {
-        val context = ois.readObject().asInstanceOf[WorkerContext]
-        context.rank = newRank
-        context
-      }
-    } finally {
-      ois.close()
-      fis.close()
-    }
-  }
-
-  def recover(rank: Int,
-              node: HyperNode,
-              params: ModelCheckerParams,
-              protoRewriter: SymbStateRewriterImpl): WorkerContext = {
-    assert(node.snapshot.isDefined)
-    recover(rank, node, node.snapshot.get, params, protoRewriter)
-  }
-
-  def recover(rank: Int,
-              node: HyperNode,
-              snapshot: SearchSnapshot,
-              params: ModelCheckerParams,
-              protoRewriter: SymbStateRewriterImpl): WorkerContext = {
-    val solver = RecordingZ3SolverContext(Some(snapshot.smtLog), params.debug, profile = false)
-    val typeFinder = new TrivialTypeFinder()
-    // XXX: the rewriter recovery is still a hack
-    val rewriter = new SymbStateRewriterImpl(solver, typeFinder, protoRewriter.exprGradeStore)
-    rewriter.formulaHintsStore = protoRewriter.formulaHintsStore
-    rewriter.config = protoRewriter.config
-    rewriter.recover(snapshot.rewriterSnapshot)
-    new WorkerContext(rank, node, solver, rewriter, typeFinder)
-  }
+  type TrexT = TransitionExecutor[OfflineExecutorContext]
+  type SnapshotT = ExecutorSnapshot[OfflineSnapshot]
 }

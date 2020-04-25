@@ -3,6 +3,7 @@ package at.forsyte.apalache.tla.bmcmt.search
 import java.io.{File, FileWriter, PrintWriter}
 import java.util.concurrent.atomic.AtomicLong
 
+import at.forsyte.apalache.tla.bmcmt.trex.OfflineSnapshot
 import at.forsyte.apalache.tla.lir.TlaEx
 
 
@@ -59,7 +60,7 @@ class HyperNode private(val id: Long, val transition: HyperTransition) extends S
   /**
     * The snapshot that is made after exploring the node.
     */
-  var snapshot: Option[SearchSnapshot] = None
+  var snapshot: Option[WorkerContext.SnapshotT] = None
 
   /**
     * The timeout that is used to jail a transition. It is set by ModelChecker.

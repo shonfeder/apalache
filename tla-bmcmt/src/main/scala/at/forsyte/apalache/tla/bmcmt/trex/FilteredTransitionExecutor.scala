@@ -1,5 +1,5 @@
 package at.forsyte.apalache.tla.bmcmt.trex
-import at.forsyte.apalache.tla.bmcmt.rules.aux.{Oracle, SparseOracle}
+import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
 import at.forsyte.apalache.tla.lir.TlaEx
 
 /**
@@ -151,4 +151,9 @@ class FilteredTransitionExecutor[SnapshotT](stepFilter: String,
     * @return the decoded execution
     */
   override def decodedExecution(): DecodedExecution = trex.decodedExecution()
+
+  /**
+    * Dispose the transition executor together with its context.
+    */
+  override def dispose(): Unit = trex.dispose()
 }

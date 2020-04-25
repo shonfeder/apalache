@@ -114,4 +114,9 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
     * @return the decoded execution
     */
   def decodedExecution(): DecodedExecution
+
+  /**
+    * Dispose the transition executor together with its context.
+    */
+  def dispose(): Unit
 }

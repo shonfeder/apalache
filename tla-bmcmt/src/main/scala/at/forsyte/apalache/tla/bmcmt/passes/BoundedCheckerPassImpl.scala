@@ -99,8 +99,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
 
     val executorContext = new IncrementalExecutorContext(rewriter)
     val trex = new TransitionExecutorImpl[IncrementalSnapshot](params.consts, params.vars, executorContext)
-    val stepFilter = tuning.getOrElse("search.transitionFilter", "")
-    val filteredTrex = new FilteredTransitionExecutor[IncrementalSnapshot](stepFilter, params.invFilter, trex)
+    val filteredTrex = new FilteredTransitionExecutor[IncrementalSnapshot](params.transitionFilter, params.invFilter, trex)
 
     val checker = new SeqModelChecker[IncrementalSnapshot](params, input, filteredTrex)
     val outcome = checker.run()
@@ -121,8 +120,7 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
 
     val executorContext = new OfflineExecutorContext(rewriter)
     val trex = new TransitionExecutorImpl[OfflineSnapshot](params.consts, params.vars, executorContext)
-    val stepFilter = tuning.getOrElse("search.transitionFilter", "")
-    val filteredTrex = new FilteredTransitionExecutor[OfflineSnapshot](stepFilter, params.invFilter, trex)
+    val filteredTrex = new FilteredTransitionExecutor[OfflineSnapshot](params.transitionFilter, params.invFilter, trex)
 
     val checker = new SeqModelChecker[OfflineSnapshot](params, input, filteredTrex)
     val outcome = checker.run()
@@ -180,9 +178,13 @@ class BoundedCheckerPassImpl @Inject() (val options: PassOptions,
     val rewriter: SymbStateRewriterImpl = new SymbStateRewriterImpl(solverContext, typeFinder, exprGradeStore)
     rewriter.formulaHintsStore = hintsStore
     rewriter.config = RewriterConfig(tuning)
-    val context = new WorkerContext(rank, sharedState.searchRoot, solverContext, rewriter, typeFinder)
 
-    new ParModelChecker(input, params, sharedState, context, changeListener, sourceStore)
+    val executorContext = new OfflineExecutorContext(rewriter)
+    val trex = new TransitionExecutorImpl[OfflineSnapshot](params.consts, params.vars, executorContext)
+    val filteredTrex = new FilteredTransitionExecutor[OfflineSnapshot](params.transitionFilter, params.invFilter, trex)
+    val context = new WorkerContext(rank, sharedState.searchRoot, filteredTrex)
+
+    new ParModelChecker(input, params, sharedState, context)
   }
 
   private def createShutdownHook(workerThreads: Seq[Thread]): Thread = {

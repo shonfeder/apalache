@@ -15,6 +15,7 @@ import at.forsyte.apalache.tla.bmcmt.smt.SmtLog
   *
   * @author Igor Konnov
   */
+@deprecated("Use ExecutorSnapshot instead")
 class SearchSnapshot(val rewriterSnapshot: SymbStateRewriterSnapshot,
                      val smtLog: SmtLog,
                      val state: SymbState,

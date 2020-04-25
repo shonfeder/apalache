@@ -347,6 +347,14 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     controlState = snapshot.controlState
   }
 
+  /**
+    * Dispose the transition executor together with its context.
+    */
+  def dispose(): Unit = {
+    ctx.dispose()
+  }
+
+
   // infer the types and throw an exception if type inference has failed
   private def inferTypes(expr: TlaEx): Unit = {
 //    logger.debug("Inferring types...")

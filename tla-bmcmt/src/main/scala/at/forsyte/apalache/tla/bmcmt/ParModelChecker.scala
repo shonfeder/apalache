@@ -1,14 +1,10 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import java.io.{File, PrintWriter, StringWriter}
+import java.io.File
 import java.util.concurrent.TimeUnit
 
-import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle}
 import at.forsyte.apalache.tla.bmcmt.search._
-import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
-import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir._
-import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.collection.immutable.HashMap
@@ -25,9 +21,7 @@ import scala.collection.immutable.HashMap
 class ParModelChecker(val checkerInput: CheckerInput,
                       val params: ModelCheckerParams,
                       val sharedState: SharedSearchState,
-                      var context: WorkerContext,
-                      changeListener: ChangeListener,
-                      sourceStore: SourceStore)
+                      var context: WorkerContext)
   extends Checker with LazyLogging {
 
   import Checker._
@@ -56,25 +50,22 @@ class ParModelChecker(val checkerInput: CheckerInput,
     * @return a verification outcome
     */
   def run(): Outcome.Value = {
-    // FIXME: move to TransitionExecutor
-    val initialArena = Arena.create(context.solver)
-    val dummyState = new SymbState(initialArena.cellTrue().toNameEx, initialArena, Binding())
-    // FIXME: END
     val outcome =
       try {
         logger.info(s"Worker ${context.rank} is initializing")
         if (context.rank == 1) {
           // the leading worker is initializing the shared state
-          val initConstState = initializeConstants(dummyState)
+          if (checkerInput.constInitPrimed.isDefined) {
+            // initialize CONSTANTS
+            context.trex.initializeConstants(checkerInput.constInitPrimed.get)
+          }
           // push state 0 -- the state after initializing the parameters
-          val filteredTransitions = filterTransitions(0, checkerInput.initTransitions)
-          val statuses = filteredTransitions map { case (e, i) => (i, (e, NewTransition())) }
-
           context.activeNode.synchronized {
             context.activeNode = sharedState.searchRoot // start with the root
             context.activeNode.isChecked = true // nothing to check, as Init has not been applied yet
-            saveContextInActiveNode(initConstState, new MockOracle(0)) // save for later recovery
+            context.saveSnapshotToActiveNode()
             // the root node contains the list of transitions to be explored
+            val statuses = checkerInput.initTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
             context.activeNode.openTransitions = HashMap(statuses: _*)
             context.activeNode.jailTimeoutSec = params.jailTimeoutMinSec // set the initial timeout
           }
@@ -99,48 +90,11 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
         case _: InterruptedException =>
           Outcome.Interrupted
-
-        case err: CheckerException =>
-          // try to get any info about the problematic source location
-          printRewriterSourceLoc()
-          throw err
       }
+
     // flush the logs
-    context.rewriter.dispose()
+    context.dispose()
     outcome
-  }
-
-  /**
-    * Use the provided expression to initialize the constants
-    *
-    * @param state an initial state
-    * @return a new state with the constants initialized
-    */
-  private def initializeConstants(state: SymbState): SymbState = {
-    // XXX: move to TransitionExecutor
-    val newState =
-      if (checkerInput.constInitPrimed.isEmpty) {
-        logger.info(s"Worker ${context.rank}: No CONSTANT initializer given")
-        state
-      } else {
-        logger.info(s"Worker ${context.rank}: Initializing CONSTANTS with the provided operator")
-        checkTypes(checkerInput.constInitPrimed.get)
-        val nextState = context.rewriter.rewriteUntilDone(state.setRex(checkerInput.constInitPrimed.get))
-        // importantly, assert the constraints that are imposed by the expression
-        context.solver.assertGroundExpr(nextState.ex)
-        // as the initializer was defined over the primed versions of the constants, shift them back to non-primed
-        shiftTypes(Set())
-        nextState.setBinding(nextState.binding.shiftBinding(Set()))
-      }
-
-    val constants = checkerInput.rootModule.constDeclarations.map(_.name)
-    val uninitialized = constants.filter(n => !newState.binding.contains(n))
-    if (uninitialized.nonEmpty) {
-      logger.error("Worker %d: The following CONSTANTS are not initialized: %s".
-        format(context.rank, uninitialized.mkString(", ")))
-      throw new CancelSearchException(Checker.Outcome.RuntimeError)
-    }
-    newState
   }
 
   /**
@@ -162,7 +116,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
       // TODO: introduce a function that checks the preconditions and selects one action
       // TODO: the current implementation has too many collisions on the locks
       val appliedAction =
-        borrowTransition() || checkOneTransition || splitNodeOnLowLoad() ||
+      borrowTransition() || checkOneTransition || splitNodeOnLowLoad() ||
         proveOneCondition() || increaseDepth() || closeDisabledNode() || switchNode() || finishBugFree()
 
       val jsonFile: File = new File("search-tree.json")
@@ -263,66 +217,77 @@ class ParModelChecker(val checkerInput: CheckerInput,
     }
   }
 
-  /**
-    * Serialize the context and save it to the file that is named after the active node.
-    *
-    * This method must be called under a lock on the node!
-    */
-  private def saveContextInActiveNode(state: SymbState, oracle: Oracle): Unit = {
-    assert(context.activeNode.snapshot.isEmpty)
-    context.activeNode.snapshot = Some(context.makeSnapshot(state, oracle))
-  }
-
-  /**
-    * Recover the worker context from a snapshot.
-    *
-    * @param node the root of the tree to use for recovery
-    */
-  private def recoverContext(node: HyperNode): Unit = {
-    logger.debug(s"Worker ${context.rank} is synchronizing with tree node ${node.id}")
-    context.dispose() // free the resources
-    // XXX: using a type cast
-    context = WorkerContext.recover(context.rank, node, params, context.rewriter.asInstanceOf[SymbStateRewriterImpl])
-    //    context = WorkerContext.load(getNodeFile(tree), context.rank)
-    context.solver.log(";;;;;;;;;;;;; RECOVERY FROM node %d".format(context.activeNode.id))
-    logger.debug(s"Worker ${context.rank} synchronized")
-  }
-
   private def checkOneTransition(): Boolean = {
     context.workerState match {
       case ExploringState(borrowed) =>
         // check the borrowed transition
-        recoverContext(context.activeNode) // recover the context
-      // do not push, keep the context offline, recover from the snapshot later
-        // FIXME: use TransitionExecutor
-      val (_, status) = applyOneTransition(context.stepNo,
-        context.state, borrowed.trEx, borrowed.trNo, checkForErrors = true, timeout = 0)
-        context.rewriter.exprCache.disposeActionLevel() // leave only the constants
+        context.recoverFromNodeAndActivate(context.activeNode)
 
-        status match {
-          case TimedOutTransition(_) =>
-            throw new IllegalStateException("No timeouts anymore")
+        val trex = context.trex
 
-          case _ =>
-            // The transition has been checked. Isolate it if the transition is enabled and slow.
-            val node: HyperNode =
-              status match {
-                case EnabledTransition(_, _) => jailBorrowedTransitionIfSlow(borrowed, status)
-                case _ => context.activeNode // DisabledTransition
+        val startTimeMs = System.currentTimeMillis()
+
+        // translate the transition with the transition executor
+        val translatedOk = trex.prepareTransition(borrowed.trNo, borrowed.trEx)
+        val isEnabled =
+          if (!translatedOk) {
+            logger.debug(s"Step %d: Transition #%d is syntactically disabled".format(trex.stepNo, borrowed.trNo))
+            false
+          } else {
+            if (params.pruneDisabled) {
+              // check, whether the transition is enabled in SMT
+              // assume that the transition is fired and check, whether the constraints are satisfiable
+              trex.assumeTransition(borrowed.trNo)
+              trex.sat(params.smtTimeoutSec) match {
+                case Some(true) =>
+                  true // keep the transition and collect the invariants
+
+                case None => // UNKNOWN or timeout
+                  logger.debug(s"Step %d: Transition #%d timed out. Keeping enabled.".format(trex.stepNo, borrowed.trNo))
+                  true
+
+                case Some(false) =>
+                  logger.debug(s"Step %d: Transition #%d is disabled".format(trex.stepNo, borrowed.trNo))
+                  false // recover the transition before the transition was prepared
               }
+            } else {
+              logger.debug(s"Step %d: Transition #%d added unconditionally (pruneDisabled = false)"
+                .format(trex.stepNo, borrowed.trNo))
+              true // consider it enabled without checking
+            }
+          }
 
-            // Close the transition.
-            node.synchronized {
-              node.openTransitions -= borrowed.trNo
-              node.closedTransitions += borrowed.trNo -> (borrowed.trEx, status)
-            }
-            sharedState.synchronized {
-              context.workerState = IdleState()
-              sharedState.workerStates += context.rank -> context.workerState
-            }
-            logger.debug("Worker %d: Transition %d is %s (elapsed time %d ms).".
-              format(context.rank, borrowed.trNo, status, status.elapsedMs))
+        // compute the new transition status
+        val durationMs = System.currentTimeMillis() - startTimeMs
+        val newStatus =
+          if (!isEnabled) {
+            DisabledTransition(durationMs)
+          } else {
+            // find the invariants that may changed after the enabled transition has been fired
+            val invs = checkerInput.invariantsAndNegations.map(_._2)
+            val vcsWithIndex = invs.zipWithIndex.filter(p => trex.mayChangeAssertion(borrowed.trNo, p._1))
+            val timeMs = 0
+            EnabledTransition(timeMs, vcsWithIndex.map(p => (InvariantVC(p._1), p._2)))
+          }
+
+        // if it took us too long to check the transition, move it to a separate node
+        val newNode =
+          newStatus match {
+            case EnabledTransition(_, _) => jailBorrowedTransitionIfSlow(borrowed, newStatus)
+            case _ => context.activeNode // DisabledTransition
+          }
+
+        // close the transition
+        newNode.synchronized {
+          newNode.openTransitions -= borrowed.trNo
+          newNode.closedTransitions += borrowed.trNo -> (borrowed.trEx, newStatus)
         }
+        sharedState.synchronized {
+          context.workerState = IdleState()
+          sharedState.workerStates += context.rank -> context.workerState
+        }
+        logger.debug("Worker %d: Transition %d is %s (elapsed time %d ms).".
+          format(context.rank, borrowed.trNo, newStatus, newStatus.elapsedMs))
 
         true // the action ran successfully
 
@@ -362,11 +327,27 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
     // check the condition
     val startTimeMs = System.currentTimeMillis()
-    recoverContext(context.activeNode) // recover the context
-    // FIXME: call TransitionExecutor
-    val result = checkOneInvariant(context.activeNode.depth, context.state, vcNo, vc)
+    context.recoverFromNodeAndActivate(context.activeNode)
+
+    // check the invariant
+    context.trex.assertState(vc.notInv)
+
+    val newStatus =
+      context.trex.sat(params.smtTimeoutSec) match {
+        case Some(true) | None =>
+          // treat timeout as a violation
+          // TODO: add a more precise treatment
+          val filenames = context.dumpCounterexample(checkerInput.rootModule, vc.notInv)
+          logger.error("Invariant %s violated. Check the counterexample in: %s"
+            .format(vcNo, filenames.mkString(", ")))
+          InvalidVC(vc)
+
+        case Some(false) =>
+          ValidVC(vc) // the invariant holds true
+      }
+
     val diffMs = System.currentTimeMillis() - startTimeMs
-    val newState = result match {
+    val newState = newStatus match {
       case InvalidVC(_) =>
         logger.info(s"Worker ${context.rank}: VC $vcNo is violated in $diffMs ms. Going to the buggy state.")
         BuggyState()
@@ -378,7 +359,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
     val activeNode = context.activeNode
     activeNode.synchronized {
-      activeNode.provenVCs += (vcNo -> result)
+      activeNode.provenVCs += (vcNo -> newStatus)
       activeNode.unprovenVCs -= vcNo
       activeNode.isChecked = activeNode.unprovenVCs.isEmpty
       context.workerState = newState
@@ -507,7 +488,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
         }
 
       case is: IdleState =>
-//        logger.debug("Idle worker since %d ms".format(is.timeSinceStartMs()))
+        //        logger.debug("Idle worker since %d ms".format(is.timeSinceStartMs()))
         false
 
       case _ =>
@@ -519,9 +500,6 @@ class ParModelChecker(val checkerInput: CheckerInput,
     if (context.workerState != IdleState() || context.activeNode.isExplored) {
       return false // the worker is busy or the node has been explored, nothing to check
     }
-
-    // TODO: this method updates openTransitions even if the action does not take place
-    markSlowTransitions() // move the slow transitions, if needed
 
     context.activeNode.synchronized {
       if (context.activeNode.openTransitions.isEmpty) {
@@ -550,9 +528,6 @@ class ParModelChecker(val checkerInput: CheckerInput,
       return false // the worker is busy or the node has been explored, nothing to check
     }
 
-    // TODO: this method updates openTransitions even if the action does not take place
-    markSlowTransitions() // move the slow transitions, if needed
-
     // an arbitrary worker may close its active node, saves the SMT context, and other workers have to catch up
     context.activeNode.synchronized {
       enabled = context.activeNode.closedTransitions.
@@ -569,7 +544,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
       // close the tree node, nothing to explore in this node
       logger.info("Worker %d: CLOSING NODE %d".format(context.rank, context.activeNode.id))
-      recoverContext(context.activeNode)
+      context.recoverFromNodeAndActivate(context.activeNode)
 
       // introduce a new node, unless the depth is too high
       val newNode = HyperNode(HyperTransition(enabled.map(_._2): _*))
@@ -588,19 +563,20 @@ class ParModelChecker(val checkerInput: CheckerInput,
 
       // schedule the transitions to check
       if (!reachedCeiling) {
-        val filteredTransitions = filterTransitions(context.stepNo + 1, checkerInput.nextTransitions)
-        val statuses = filteredTransitions map { case (e, i) => (i, (e, NewTransition())) }
+        val statuses = checkerInput.nextTransitions.zipWithIndex map { case (e, i) => (i, (e, NewTransition())) }
         newNode.openTransitions = HashMap(statuses: _*)
       } else {
         logger.info(s"Worker ${context.rank}: node ${newNode.id} is at max depth, only invariants will be checked")
         newNode.isExplored = true
       }
+      // apply all enabled transitions
       newNode.synchronized {
         context.activeNode.append(newNode)
-        // apply the transitions and push the new state in the new node
         // TODO: can we do that outside of the critical section?
-        // FIXME: call TransitionExecutor
-        val (nextState, nextOracle) = applyEnabledThenPush(context.stepNo, context.state, enabled)
+        // apply the enabled transitions and switch to the next state
+        enabled.foreach(t => context.trex.prepareTransition(t._2, t._1))
+        context.trex.pickTransition()
+        context.trex.nextState()
         // mark the node as explored in the end, so the finishing actions do not prematurely terminate
         context.activeNode.isExplored = true
         if (context.activeNode.unprovenVCs.isEmpty) {
@@ -608,7 +584,8 @@ class ParModelChecker(val checkerInput: CheckerInput,
         }
         // switch to the new node
         context.activeNode = newNode
-        saveContextInActiveNode(nextState, nextOracle)
+        assert(context.activeNode.snapshot.isEmpty)
+        context.saveSnapshotToActiveNode()
       }
       logger.info("Worker %d: INTRODUCED NODE %d with %d open transitions".
         format(context.rank, context.activeNode.id, context.activeNode.openTransitions.size))
@@ -636,317 +613,6 @@ class ParModelChecker(val checkerInput: CheckerInput,
       } else {
         false
       }
-    }
-  }
-
-  // find slow transitions in the active node and move them to slowTransitions
-  private def markSlowTransitions(): Unit = {
-    // FIXME: figure out why we need it!
-    /*
-    context.activeNode.synchronized {
-      val slow = context.activeNode.openTransitions.collect {
-        case (trNo, (_, borrowed@BorrowedTransition(_, _, _)))
-          if borrowed.timeoutMs <= (System.currentTimeMillis() - borrowed.startTimeMs) =>
-          trNo
-      }
-
-      for (trNo <- slow) {
-        context.activeNode.openTransitions -= trNo
-      }
-      context.activeNode.slowTransitions ++= slow
-    }
-    */
-  }
-
-  // FIXME: move to TransitionExecutor
-  private def applyEnabledThenPush(stepNo: Int, startingState: SymbState,
-                                   transitionsWithIndex: List[(TlaEx, Int)]): (SymbState, Oracle) = {
-    // second, apply the enabled transitions and collect their effects
-    logger.info("Worker %d: Step %d, level %d: collecting %d enabled transition(s)"
-      .format(context.rank, stepNo, context.rewriter.contextLevel, transitionsWithIndex.size))
-    assert(transitionsWithIndex.nonEmpty)
-
-    def applyTrans(state: SymbState, ts: List[(TlaEx, Int)]): List[SymbState] =
-      ts match {
-        case List() =>
-          List(state) // the final state may contain additional cells, add it
-
-        case (transition, transitionNo) :: tail =>
-          val erased = state.setBinding(state.binding.forgetPrimed)
-          // note that the constraints are added at the current level, without an additional push
-          val (nextState, _) = applyOneTransition(stepNo, erased, transition, transitionNo, 0, checkForErrors = false)
-          context.rewriter.exprCache.disposeActionLevel() // leave only the constants
-          // collect the variables of the enabled transition
-          nextState +: applyTrans(nextState, tail)
-      }
-
-    val producedStates = applyTrans(startingState, transitionsWithIndex)
-    // the last state contains the latest arena
-    val lastState = producedStates.last
-    val statesAfterTransitions = producedStates.slice(0, producedStates.length - 1)
-
-    // pick an index j \in { 0..k } of the fired transition
-    val picker = new CherryPick(context.rewriter)
-    val (oracleState, oracle) = picker.oracleFactory.newDefaultOracle(lastState, statesAfterTransitions.length)
-
-    if (statesAfterTransitions.isEmpty) {
-      throw new IllegalArgumentException("enabled must be non-empty")
-    } else if (statesAfterTransitions.lengthCompare(1) == 0) {
-      val resultingState = oracleState.setBinding(lastState.binding.shiftBinding(params.consts))
-      context.solver.assertGroundExpr(lastState.ex)
-      shiftTypes(params.consts)
-      (resultingState, oracle)
-    } else {
-      // if oracle = i, then the ith transition is enabled
-      context.solver.assertGroundExpr(oracle.caseAssertions(oracleState, statesAfterTransitions.map(_.ex)))
-
-      // glue the computed states S_0, ..., S_k together:
-      // for every variable x', pick c_x from { S_1[x'], ..., S_k[x'] }
-      //   and require \A i \in { 0.. k-1}. j = i => c_x = S_i[x']
-      // Then, the final state binds x' -> c_x for every x' \in Vars'
-      def getAssignedVars(st: SymbState) = st.binding.forgetNonPrimed(Set()).toMap.keySet
-
-      val primedVars = getAssignedVars(statesAfterTransitions.head) // only VARIABLES, not CONSTANTS
-      var finalState = oracleState
-      if (statesAfterTransitions.exists(getAssignedVars(_) != primedVars)) {
-        // TODO: we should not throw an exception here, but ignore the transitions that do not have all assignments.
-        // The reason is that the assignment solver guarantees that every transition has the assignments.
-        // The only case when this situation may happen is when the rewriter uses short-circuiting logic.
-        val index = statesAfterTransitions.indexWhere(getAssignedVars(_) != primedVars)
-        val otherSet = getAssignedVars(statesAfterTransitions(index))
-        val diff = otherSet.union(primedVars).diff(otherSet.intersect(primedVars))
-        val msg =
-          "Worker %d: [Step %d] Next states 0 and %d disagree on the set of assigned variables: %s"
-            .format(context.rank, stepNo, index, diff.mkString(", "))
-        throw new InternalCheckerError(msg, finalState.ex)
-      }
-
-      def pickVar(x: String): ArenaCell = {
-        val toPickFrom = statesAfterTransitions map (_.binding(x))
-        finalState = picker.pickByOracle(finalState,
-          oracle, toPickFrom, finalState.arena.cellFalse().toNameEx) // no else case
-        finalState.asCell
-      }
-
-      val finalVarBinding = Binding(primedVars.toSeq map (n => (n, pickVar(n))): _*) // variables only
-      val constBinding = Binding(oracleState.binding.toMap.filter(p => params.consts.contains(p._1)))
-      finalState = finalState.setBinding(finalVarBinding ++ constBinding)
-      if (params.debug && !context.solver.sat()) {
-        throw new InternalCheckerError(s"Error picking next variables (step $stepNo). Report a bug.", finalState.ex)
-      }
-      // finally, shift the primed variables to non-primed
-      finalState = finalState.setBinding(finalState.binding.shiftBinding(params.consts))
-      // that is the result of this step
-      shiftTypes(params.consts)
-      // here we save the transition index, not the oracle, which will be shown to the user
-      (finalState, oracle)
-    }
-  }
-
-  // warning: this method updates the context and does not recover it
-  // FIXME: move to TransitionExecutor
-  private def applyOneTransition(stepNo: Int,
-                                 state: SymbState,
-                                 transition: TlaEx,
-                                 transitionNo: Int,
-                                 timeout: Long,
-                                 checkForErrors: Boolean): (SymbState, TransitionStatus) = {
-    logger.debug("Worker %d: Step #%d, transition #%d, SMT context level %d, checking error %b."
-      .format(context.rank, stepNo, transitionNo, context.rewriter.contextLevel, checkForErrors))
-    logger.debug("Worker %d: Finding types of the variables...".format(context.rank))
-    checkTypes(transition)
-    context.solver.log("; ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d {"
-      .format(stepNo, context.rewriter.contextLevel, transitionNo))
-    logger.debug("Worker %d: Applying rewriting rules...".format(context.rank))
-    val nextState = context.rewriter.rewriteUntilDone(state.setRex(transition))
-    context.rewriter.flushStatistics()
-
-    val assignedVars = nextState.binding.toMap.
-      collect { case (name, _) if name.endsWith("'") => name.substring(0, name.length - 1) }
-    if (assignedVars.toSet != params.vars) {
-      logger.debug(s"Worker ${context.rank}: Transition $transitionNo produces partial assignment. Disabled.")
-      return (nextState, DisabledTransition(1))
-    }
-
-    if (!params.pruneDisabled) {
-      // feeling lucky, do not check whether the transition is enabled
-      logger.debug(s"Worker ${context.rank}: Feeling lucky. Transition $transitionNo is enabled.")
-      return (nextState, EnabledTransition(1, findTransitionInvariants(stepNo, transitionNo, nextState)))
-    }
-
-    if (checkForErrors && params.debug) {
-      // This is a debugging feature that allows us to find incorrect rewriting rules.
-      // Disable it in production.
-      logger.debug("Worker %d: Finished rewriting. Checking satisfiability of the pushed constraints.".
-        format(context.rank))
-      context.solver.satOrTimeout(timeout) match {
-        case Some(false) =>
-          // this is a clear sign of a bug in one of the translation rules
-          logger.debug("Worker %d: UNSAT after pushing transition constraints".format(context.rank))
-          throw new CheckerException("A contradiction introduced in rewriting. Report a bug.", state.ex)
-
-        case Some(true) => () // SAT
-          logger.debug("Worker %d: The transition constraints are OK.".format(context.rank))
-
-        case None => // interpret it as sat
-          logger.debug("Worker %d: Timeout. Assuming the transition constraints to be OK.".format(context.rank))
-      }
-    }
-    if (!checkForErrors) {
-      // just return the state, no verification conditions
-      (nextState, EnabledTransition(1, List.empty))
-      // LEVEL + 0
-    } else {
-      // assume the constraint constructed by this transition
-      context.solver.assertGroundExpr(nextState.ex)
-      // check whether this transition violates some assertions
-      logger.debug(s"Worker ${context.rank}: Checking whether transition $transitionNo is enabled.")
-      val startTimeMs = System.currentTimeMillis()
-      context.solver.satOrTimeout(timeout) match {
-        case Some(true) =>
-          val durationMs = System.currentTimeMillis() - startTimeMs
-          val vcs = findTransitionInvariants(stepNo, transitionNo, nextState)
-          context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d".format(stepNo, context.rewriter.contextLevel))
-          (nextState, EnabledTransition(durationMs, vcs))
-
-        case r: Option[Boolean] => // unsat or timeout
-          val durationMs = System.currentTimeMillis() - startTimeMs
-          if (r.isDefined) { // the transition is not feasible in the current symbolic state
-            logger.debug("Worker %d: Transition #%d is disabled.".format(context.rank, transitionNo))
-            context.solver.log("; } ------- STEP: %d, STACK LEVEL: %d TRANSITION: %d"
-              .format(stepNo, context.rewriter.contextLevel, transitionNo))
-            (nextState, DisabledTransition(durationMs))
-          } else { // it takes too long to check the transition
-            logger.debug("Worker %d: Transition %d is slow. It should be separated.".format(context.rank, transitionNo))
-            (nextState, TimedOutTransition(durationMs))
-          }
-      }
-    }
-  }
-
-  // schedule the invariants to be checked after the transition was fired
-  // FIXME: move to TransitionExecutor?
-  private def findTransitionInvariants(stepNo: Int,
-                                       transitionNo: Int,
-                                       nextState: SymbState): List[(VerificationCondition, Int)] = {
-    // skip the check if the user told us to skip the invariant at this step
-    val matchesInvFilter = params.invFilter == "" || stepNo.toString.matches("^" + params.invFilter + "$")
-    if (!matchesInvFilter) {
-      return List.empty
-    }
-
-      // Bugfix to #108: never filter out the initial step
-    // if the previous step was filtered, we cannot use the unchanged optimization
-    val prevMatchesInvFilter =
-      (stepNo == 0) || ((params.invFilter == "") || (stepNo - 1).toString.matches("^" + params.invFilter + "$"))
-    val changedPrimed =
-      if (prevMatchesInvFilter) {
-        // only check an invariant if it touches the changed variables
-        nextState.changed
-      } else {
-        // check an invariant in any case, as it could be violated at the previous step (the invariant was filtered before)
-        nextState.binding.toMap.keySet
-      }
-
-    // is the invariant non-trivial, that is, it refers to the changed variables
-    def refersToChanged(notInv: TlaEx): Boolean = {
-      // add primes as the invariant is referring to the unprimed variables
-      val used = TlaExUtil.findUsedNames(notInv).map(_ + "'")
-      // either the invariant is only referring to CONSTANTS, or it uses the CHANGED variables (bugfix for #108)
-      used.isEmpty || used.intersect(changedPrimed).nonEmpty
-    }
-
-    // keep the invariant negations that refer to the changed variables
-    val invNegs = checkerInput.invariantsAndNegations.map(_._2).zipWithIndex.filter(p => refersToChanged(p._1))
-    if (invNegs.nonEmpty) {
-      logger.debug("Worker %d, step %d, transition %d: scheduled invariants %s"
-        .format(context.rank, stepNo, transitionNo, invNegs.map(_._2).mkString(", ")))
-      invNegs.map(p => (InvariantVC(p._1), p._2))
-    } else {
-      logger.debug("Worker %d, step %d, transition %d: no invariants to check"
-        .format(context.rank, stepNo, transitionNo))
-      List.empty
-    }
-  }
-
-  // FIXME: move to TransitionExecutor
-  private def checkOneInvariant(stepNo: Int,
-                                state: SymbState,
-                                vcNo: Int,
-                                vc: InvariantVC): VCStatus = {
-    // check the types first
-    checkTypes(vc.notInv)
-    val notInvState = context.rewriter.rewriteUntilDone(state.setRex(vc.notInv))
-    context.solver.assertGroundExpr(notInvState.ex)
-    context.solver.satOrTimeout(params.smtTimeoutSec) match {
-      case Some(true) =>
-        // TODO: take a snapshot and return InvalidVC instead?
-        val filename = s"counterexample-vc$vcNo-w${context.rank}.tla"
-        context.dumpCounterexample(filename, vc.notInv)
-        logger.error("Worker %d: Invariant %d is violated at depth %d. Check the counterexample in %s".
-          format(context.rank, vcNo, stepNo, filename))
-        if (params.debug) {
-          logger.warn("Worker %d: Dumping the arena into smt.log. This may take some time...".format(context.rank))
-          // dump everything in the log
-          val writer = new StringWriter()
-          new SymbStateDecoder(context.solver, context.rewriter).dumpArena(notInvState, new PrintWriter(writer))
-          context.solver.log(writer.getBuffer.toString)
-        }
-
-        InvalidVC(vc)
-
-      case Some(false) =>
-        logger.debug(s"Worker ${context.rank}: The invariant $vcNo holds true.")
-        ValidVC(vc)
-
-      case None =>
-        logger.debug(s"Worker ${context.rank}: Timeout when checking invariant $vcNo.")
-        UnknownVC(vc)
-    }
-  }
-
-  private def checkTypes(expr: TlaEx): Unit = {
-    context.typeFinder.inferAndSave(expr)
-    if (context.typeFinder.typeErrors.nonEmpty) {
-      throw new TypeInferenceException(context.typeFinder.typeErrors)
-    }
-  }
-
-  /**
-    * Remove the non-primed variables (except provided constants)
-    * and rename the primed variables to their non-primed versions.
-    * After that, remove the type finder to contain the new types only.
-    */
-  private def shiftTypes(constants: Set[String]): Unit = {
-    val types = context.typeFinder.varTypes
-    val nextTypes =
-      types.filter(p => p._1.endsWith("'") || constants.contains(p._1))
-        .map(p => (p._1.stripSuffix("'"), p._2))
-    context.typeFinder.reset(nextTypes)
-  }
-
-  // filter the transitions by the search.transitionFilter
-  private def filterTransitions(stepNo: Int, transitions: List[TlaEx]): List[(TlaEx, Int)] = {
-    transitions.zipWithIndex.filter { case (_, i) => params.stepMatchesFilter(stepNo, i) }
-  }
-
-  // FIXME: should it be implemented at a higher level?
-  private def printRewriterSourceLoc(): Unit = {
-    def getSourceLocation(ex: TlaEx) = {
-      val sourceLocator: SourceLocator = SourceLocator(
-        sourceStore.makeSourceMap,
-        changeListener
-      )
-      sourceLocator.sourceOf(ex)
-    }
-
-    context.rewriter.getRewritingStack().find(getSourceLocation(_).isDefined) match {
-      case None =>
-        logger.error("Unable find the source of the problematic expression")
-
-      case Some(ex) =>
-        val loc = getSourceLocation(ex).get
-        logger.error(s"The problem occurs around the source location $loc")
     }
   }
 }
