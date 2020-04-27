@@ -345,6 +345,9 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     revStack = rs.tail
     preparedTransitions = snapshot.preparedTransitions
     controlState = snapshot.controlState
+    // revStack starts with the pre-init state that describes the system before Init has been applied
+    // Hence, the step number of the size of the stack, except the pre-init state
+    _stepNo = revStack.length - 1
   }
 
   /**

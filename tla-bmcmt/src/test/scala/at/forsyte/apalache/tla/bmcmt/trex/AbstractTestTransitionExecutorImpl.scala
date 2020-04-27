@@ -175,6 +175,17 @@ abstract class AbstractTestTransitionExecutorImpl[SnapshotT] extends fixture.Fun
       tla.or(
         tla.eql(state4("y").toNameEx, tla.int(3)),
         tla.eql(state4("y").toNameEx, tla.int(5))))
+
+    // regression in multi-core
+    val snapshot = trex.snapshot()
+    val savedStepNo = trex.stepNo
+
+    trex.prepareTransition(1, trans1)
+    trex.pickTransition()
+    trex.nextState()
+
+    trex.recover(snapshot)
+    assert(savedStepNo == trex.stepNo)
   }
 
   test("mayChangeAssertion") { exeCtx: ExecutorContextT =>
