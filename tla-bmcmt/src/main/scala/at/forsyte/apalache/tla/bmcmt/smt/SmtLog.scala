@@ -35,9 +35,20 @@ class SmtLog(val parentLog: Option[SmtLog], val records: List[SmtLog.Record]) {
       case None => ()
     }
 
-    // then, reply the diff
+    // then, replay the diff
     for (record <- records) {
       applyRecord(record)
+    }
+  }
+
+  /**
+    * Compute the number of records, including the records in the parent.
+    * @return the total number of records, all way up to the root.
+    */
+  def lengthRec: Int = {
+    parentLog match {
+      case None => records.length
+      case Some(parent) => records.length + parent.lengthRec
     }
   }
 

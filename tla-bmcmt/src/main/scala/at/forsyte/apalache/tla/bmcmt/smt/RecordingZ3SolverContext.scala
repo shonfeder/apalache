@@ -46,33 +46,6 @@ class RecordingZ3SolverContext private (parentLog: Option[SmtLog], var debug: Bo
     new SmtLog(parentLog, newRecords)
   }
 
-  /**
-    * Deserialize the context log by smashing SMT contexts. Defining custom serialization for Serializable.
-    * @param ois object input stream
-    */
-  private def readObject(ois: ObjectInputStream): Unit = {
-    logger.debug("Started readObject")
-    debug = ois.readObject().asInstanceOf[Boolean]
-    profile = ois.readObject().asInstanceOf[Boolean]
-    lastLogRev = ois.readObject().asInstanceOf[List[Record]]
-    logStackRev = List()
-
-    logger.debug("Read the stream. Starting to replay with Z3.")
-    solver = new Z3SolverContext(debug, profile)
-    replayLog()
-    logger.debug("Replayed the log.")
-  }
-
-  /**
-    * Serialize the context log. Defining custom serialization for Serializable.
-    * @param oos object output stream
-    */
-  private def writeObject(oos: ObjectOutputStream): Unit = {
-    oos.writeObject(debug)
-    oos.writeObject(profile)
-    oos.writeObject(lastLogRev ++ logStackRev.flatten)
-  }
-
   private def replayLog(): Unit = {
     def applyRecord: Record => Unit = {
       case DeclareCellRecord(cell) => solver.declareCell(cell)

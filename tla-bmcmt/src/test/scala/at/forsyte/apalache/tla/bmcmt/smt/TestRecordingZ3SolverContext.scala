@@ -28,19 +28,15 @@ class TestRecordingZ3SolverContext extends FunSuite {
     solver.assertGroundExpr(tla.eql(x.toNameEx, tla.int(42)))
     assert(solver.sat())
     assert(solver.evalGroundExpr(x.toNameEx) == tla.int(42))
-    // save the object
-    val arrayStream = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(arrayStream)
-    oos.writeObject(solver)
-    oos.close()
+    // save the log
+    val log = solver.extractLog()
     // update the context
     solver.assertGroundExpr(tla.gt(x.toNameEx, tla.int(1000)))
     assert(!solver.sat())
-    val inputStream = new ObjectInputStream(new ByteArrayInputStream(arrayStream.toByteArray))
-    // read the object
-    val restoredContext = inputStream.readObject().asInstanceOf[RecordingZ3SolverContext]
+    // restore the context
+    val restoredSolver = RecordingZ3SolverContext(Some(log), false, false)
     // the restored context should be satisfiable
-    assert(restoredContext.sat())
-    assert(restoredContext.evalGroundExpr(x.toNameEx) == tla.int(42))
+    assert(restoredSolver.sat())
+    assert(restoredSolver.evalGroundExpr(x.toNameEx) == tla.int(42))
   }
 }

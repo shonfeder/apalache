@@ -2,6 +2,7 @@ package at.forsyte.apalache.tla.bmcmt.trex
 
 import at.forsyte.apalache.tla.bmcmt.{SymbStateRewriter, SymbStateRewriterImpl}
 import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * An executor context for an offline SMT solver.
@@ -9,7 +10,7 @@ import at.forsyte.apalache.tla.bmcmt.smt.RecordingZ3SolverContext
   * @param rewriter an expression rewriter
   */
 class OfflineExecutorContext(var rewriter: SymbStateRewriter)
-    extends ExecutorContext[OfflineSnapshot] {
+    extends ExecutorContext[OfflineSnapshot] with LazyLogging {
 
   /**
     * Create a snapshot of the context. This method is non-destructive, that is,
@@ -20,6 +21,7 @@ class OfflineExecutorContext(var rewriter: SymbStateRewriter)
   override def snapshot(): OfflineSnapshot = {
     val rs = rewriter.snapshot()
     val smtLog = rewriter.solverContext.asInstanceOf[RecordingZ3SolverContext].extractLog()
+    logger.debug("Offline snapshot has %d entries".format(smtLog.lengthRec))
     new OfflineSnapshot(rs, smtLog, typeFinder.varTypes)
   }
 
