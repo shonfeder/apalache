@@ -268,7 +268,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
       // a type annotation for a recursive function call
       case OperEx(BmcOper.withType, ex @ OperEx(TlaFunOper.recFunRef), annot) =>
         val annotT = AnnotationParser.fromTla(annot)
-        typeAnnotations += (ex.ID -> annotT)
+        _typeAnnotations += (ex.ID -> annotT)
         Some(annotT)
 
       // a type annotation

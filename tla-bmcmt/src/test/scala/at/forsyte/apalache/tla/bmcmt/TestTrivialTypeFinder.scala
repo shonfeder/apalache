@@ -685,14 +685,14 @@ class TestTrivialTypeFinder extends RewriterBase {
     val typeFinder = new TrivialTypeFinder()
     val recFunRef = tla.recFunRef()
     typeFinder.inferAndSave(recFunRef)
-    assert(typeFinder.getTypeErrors.nonEmpty)
+    assert(typeFinder.typeErrors.nonEmpty)
   }
 
   test("inferAndSave recFunRef with annotation") {
     val typeFinder = new TrivialTypeFinder()
     val recFunRef = tla.withType(tla.recFunRef(), tla.funSet(ValEx(TlaIntSet), ValEx(TlaIntSet)))
     val tp = typeFinder.inferAndSave(recFunRef)
-    assert(typeFinder.getTypeErrors.isEmpty)
+    assert(typeFinder.typeErrors.isEmpty)
     assert(tp.contains(FunT(FinSetT(IntT()), IntT())))
   }
 
@@ -703,7 +703,7 @@ class TestTrivialTypeFinder extends RewriterBase {
     // f[x \in {1, 2}] == f[x]
     val recFun = tla.recFunDef(recFunApply, NameEx("x"), tla.enumSet(tla.int(1), tla.int(2)))
     val tp = typeFinder.inferAndSave(recFun)
-    assert(typeFinder.getTypeErrors.isEmpty)
+    assert(typeFinder.typeErrors.isEmpty)
     assert(tp.contains(FunT(FinSetT(IntT()), IntT())))
   }
 
