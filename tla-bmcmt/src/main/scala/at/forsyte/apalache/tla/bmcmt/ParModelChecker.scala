@@ -521,8 +521,7 @@ class ParModelChecker(val checkerInput: CheckerInput,
     private def isNodeUnexploredOrNotChecked(node: HyperNode): Boolean = {
       val yetToExplore = !node.isExplored && node.openTransitions.values.exists(_._2 == NewTransition())
       val yetToProve = !node.isChecked && node.unprovenVCs.values.exists(_.isInstanceOf[NewVC])
-      val yetToClose = (!node.isExplored && node.openTransitions.isEmpty) &&
-        (!node.isChecked && node.unprovenVCs.isEmpty)
+      val yetToClose = !node.isExplored && node.openTransitions.isEmpty
       yetToExplore || yetToProve || yetToClose
     }
 
