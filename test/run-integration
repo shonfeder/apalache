@@ -130,6 +130,16 @@ function run_tests() {
         && expect_err # the invariant FALSE is trivially violated
     check "Assignments20200309" --length=1 --inv=Inv Assignments20200309.tla \
         && expect_fail # Init does not have an assignment
+    check "Inline" --length=5 Inline.tla \
+        && expect_ok
+    check "Rec1" --length=5 --inv=Inv Rec1.tla \
+        && expect_ok
+    check "Rec3" --length=10 --inv=Inv Rec3.tla \
+        && expect_ok
+    check "Rec8" --length=10 --inv=Inv Rec8.tla \
+        && expect_ok
+    check "Rec9" --length=5 --inv=Inv Rec9.tla \
+        && expect_ok
 }
 
 cd "$DIR"

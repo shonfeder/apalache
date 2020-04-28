@@ -198,7 +198,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
         Some(FinSetT(inferAndSave(mapEx).getOrElse(UnknownT())))
 
       // [x \in S |-> e]
-      case OperEx(TlaFunOper.funDef, funEx, varsAndSets@_*) =>
+      case OperEx(op, funEx, varsAndSets@_*) if op == TlaFunOper.funDef || op == TlaFunOper.recFunDef =>
         val names = varsAndSets.zipWithIndex.collect { case (NameEx(n), i) if i % 2 == 0 => n }
         val sets = varsAndSets.zipWithIndex.collect { case (e, i) if i % 2 == 1 => e }
 
@@ -265,6 +265,12 @@ class TrivialTypeFinder extends TypeFinder[CellT]
             errorThenNone(set, "Expected a finite set, found: " + tp)
         }
 
+      // a type annotation for a recursive function call
+      case OperEx(BmcOper.withType, ex @ OperEx(TlaFunOper.recFunRef), annot) =>
+        val annotT = AnnotationParser.fromTla(annot)
+        typeAnnotations += (ex.ID -> annotT)
+        Some(annotT)
+
       // a type annotation
       case OperEx(BmcOper.withType, ex, annot) =>
         val exT = inferAndSave(ex)
@@ -326,6 +332,8 @@ class TrivialTypeFinder extends TypeFinder[CellT]
     * Call compute recursively to compute the type of a given expression. This function is expensive,
     * use it only when absolutely necessary.
     *
+    * TODO: remove this function and use inferAndSave instead?
+    *
     * @param ex a TLA+ expression
     * @return the resulting type
     */
@@ -338,6 +346,10 @@ class TrivialTypeFinder extends TypeFinder[CellT]
     case OperEx(TlaActionOper.prime, NameEx(_)) =>
       // do not recurse in prime, as the type of a primed variable should be computed directly
       compute(ex)
+
+    case LetInEx(body, _*) =>
+      // compute the type of body, assuming that the types of the bound variables were computed by inferAndSave
+      computeRec(body)
 
     case OperEx(_, args@_*) =>
       compute(ex, args map computeRec: _*)
@@ -662,7 +674,7 @@ class TrivialTypeFinder extends TypeFinder[CellT]
   }
 
   private def computeFunOps(argTypes: Seq[CellT]): PartialFunction[TlaEx, CellT] = {
-    case ex@OperEx(op@TlaFunOper.funDef, e, bindings@_*) =>
+    case ex@OperEx(op, e, bindings@_*) if op == TlaFunOper.funDef || op == TlaFunOper.recFunDef =>
       val resType = argTypes.head
       val setTypes = deinterleave(argTypes.tail, 1, 2)
       val varTypes = deinterleave(argTypes.tail, 0, 2)
@@ -682,6 +694,11 @@ class TrivialTypeFinder extends TypeFinder[CellT]
           FunT(FinSetT(TupleT(elemTypes)), resType)
         }
       }
+
+    case ex @ OperEx(TlaFunOper.recFunRef) =>
+      // no annotation met, produce an error
+      error(ex,"Reference to a recursive function needs type annotation, see:" +
+      " https://github.com/konnov/apalache/blob/unstable/docs/manual.md#ref-fun")
 
     case ex@OperEx(op@TlaFunOper.except, e, bindings@_*) =>
       val funType = argTypes.head
