@@ -34,7 +34,7 @@ class IntCmpRule(rewriter: SymbStateRewriter) extends RewritingRule {
       if (oper == TlaArithOper.lt || oper == TlaArithOper.le
         || oper == TlaArithOper.gt || oper == TlaArithOper.ge)
     =>
-      rewriteGeneral(state, simplifier.simplify(state.ex))
+      rewriteGeneral(state, simplifier.simplifyDeep(state.ex))
 
     case _ =>
       throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

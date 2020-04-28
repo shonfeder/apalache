@@ -226,7 +226,7 @@ class LazyEquality(rewriter: SymbStateRewriter)
       assert(left.cellType.signature == right.cellType.signature)
       // These two sets have the same signature and thus belong to the same sort.
       // Hence, we can use SMT equality. This equality is needed by uninterpreted functions.
-      val eq = simplifier.simplify(tla.equiv(tla.eql(left, right), tla.and(leftToRight.ex, rightToLeft.ex)))
+      val eq = tla.equiv(tla.eql(left, right), tla.and(leftToRight.ex, rightToLeft.ex))
       rewriter.solverContext.assertGroundExpr(eq)
       eqCache.put(left, right, EqCache.EqEntry())
 
@@ -286,15 +286,15 @@ class LazyEquality(rewriter: SymbStateRewriter)
       var newState = cacheEqConstraints(state, leftElems cross rightElems) // cache all the equalities
       def exists(lelem: ArenaCell) = {
         def inAndEq(relem: ArenaCell) = {
-          tla.and(tla.in(relem, right), cachedEq(lelem, relem))
+          simplifier.simplifyShallow(tla.and(tla.in(relem, right), cachedEq(lelem, relem)))
         }
 
         // There are plenty of valid subformulas. Simplify!
-        simplifier.simplify(tla.or(rightElems.map(inAndEq): _*))
+        simplifier.simplifyShallow(tla.or(rightElems.map(inAndEq): _*))
       }
 
       def notInOrExists(lelem: ArenaCell) = {
-        val notInOrExists = simplifier.simplify(tla.or(tla.not(tla.in(lelem, left)), exists(lelem)))
+        val notInOrExists = simplifier.simplifyShallow(tla.or(tla.not(tla.in(lelem, left)), exists(lelem)))
         if (simplifier.isBoolConst(notInOrExists)) {
           notInOrExists // just return the constant
         } else {
@@ -302,12 +302,12 @@ class LazyEquality(rewriter: SymbStateRewriter)
           // BUGFIX: push this query to the solver, in order to avoid constructing enormous assertions
           newState = newState.updateArena(_.appendCell(BoolT()))
           val pred = newState.arena.topCell
-          rewriter.solverContext.assertGroundExpr(tla.equiv(pred, notInOrExists))
+          rewriter.solverContext.assertGroundExpr(simplifier.simplifyShallow(tla.equiv(pred, notInOrExists)))
           pred.toNameEx
         }
       }
 
-      val forEachNotInOrExists = simplifier.simplify(tla.and(leftElems.map(notInOrExists): _*))
+      val forEachNotInOrExists = simplifier.simplifyShallow(tla.and(leftElems.map(notInOrExists): _*))
       newState = newState.updateArena(_.appendCell(BoolT()))
       val pred = newState.arena.topCell
       rewriter.solverContext.assertGroundExpr(tla.eql(pred, forEachNotInOrExists))

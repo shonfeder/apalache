@@ -2,7 +2,7 @@
 #
 # Run the APALACHE model checker
 #
-# Igor Konnov, 2018-2019
+# Igor Konnov, 2018-2020
 
 DIR=`dirname $0`
 DIR=`cd "$DIR/.."; pwd`
@@ -39,6 +39,7 @@ export LD_LIBRARY_PATH="$DIR/3rdparty/lib:${LD_LIBRARY_PATH}"
 JVM_ARGS="-Xmx4096m -Djava.library.path=$DIR/3rdparty/lib"
 # uncomment to track memory usage with: jcmd <pid> VM.native_memory summary
 #JVM_ARGS="${JVM_ARGS} -XX:NativeMemoryTracking=summary"
+#JVM_ARGS="${JVM_ARGS} -agentpath:/Applications/VisualVM.app/Contents/Resources/visualvm/visualvm/lib/deployed/jdk16/mac/libprofilerinterface.jnilib=/Applications/VisualVM.app/Contents/Resources/visualvm/visualvm/lib,5141"
 
 echo "# JVM args: $JVM_ARGS"
 echo "#"

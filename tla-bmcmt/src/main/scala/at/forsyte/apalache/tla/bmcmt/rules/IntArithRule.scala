@@ -38,10 +38,10 @@ class IntArithRule(rewriter: SymbStateRewriter) extends RewritingRule {
         || oper == TlaArithOper.mult || oper == TlaArithOper.div
         || oper == TlaArithOper.mod || oper == TlaArithOper.exp)
     =>
-      rewriteGeneral(state, simplifier.simplify(state.ex))
+      rewriteGeneral(state, simplifier.simplifyDeep(state.ex))
 
     case OperEx(TlaArithOper.uminus, _) =>
-      rewriteGeneral(state, simplifier.simplify(state.ex))
+      rewriteGeneral(state, simplifier.simplifyDeep(state.ex))
 
     case _ =>
       throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

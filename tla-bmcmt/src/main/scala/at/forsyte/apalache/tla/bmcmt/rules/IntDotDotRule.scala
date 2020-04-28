@@ -6,7 +6,9 @@ import at.forsyte.apalache.tla.bmcmt.rewriter.ConstSimplifierForSmt
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.io.UTFPrinter
 import at.forsyte.apalache.tla.lir.oper.TlaArithOper
+import at.forsyte.apalache.tla.lir.transformations.impl.IdleTracker
 import at.forsyte.apalache.tla.lir.values.TlaInt
+import at.forsyte.apalache.tla.pp.ConstSimplifier
 
 /**
   * Rewrites an integer range a..b.
@@ -15,7 +17,7 @@ import at.forsyte.apalache.tla.lir.values.TlaInt
    */
 class IntDotDotRule(rewriter: SymbStateRewriter,
                     intRangeCache: IntRangeCache) extends RewritingRule {
-  private def simplifier = new ConstSimplifierForSmt()
+  private def simplifier = new ConstSimplifier(new IdleTracker)
 
   override def isApplicable(symbState: SymbState): Boolean = {
     symbState.ex match {

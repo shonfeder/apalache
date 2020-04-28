@@ -170,23 +170,9 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   def assertGroundExpr(ex: TlaEx): Unit = {
     smtListener.onSmtAssert(ex)
     log(s";; assert ${UTFPrinter.apply(ex)}")
-    if (!debug) {
-      simplifier.simplify(ex) match {
-        case OperEx(TlaBoolOper.and, args@_*) =>
-          // this optimization slows down model checking
-          args foreach assertGroundExpr // break down into clauses
-
-        case simple@_ =>
-          val z3expr = toExpr(simple)
-          log(s"(assert ${z3expr.toString})")
-          z3solver.add(z3expr.asInstanceOf[BoolExpr])
-      }
-    } else {
-      // preprocessing makes bugs disappear, turn it off in the debugging
-      val z3expr = toExpr(ex)
-      log(s"(assert ${z3expr.toString})")
-      z3solver.add(z3expr.asInstanceOf[BoolExpr])
-    }
+    val z3expr = toExpr(ex)
+    log(s"(assert ${z3expr.toString})")
+    z3solver.add(z3expr.asInstanceOf[BoolExpr])
 
     if (profile) {
       val timeBefore = System.nanoTime()
@@ -207,7 +193,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
     * @return a TLA+ value
     */
   def evalGroundExpr(ex: TlaEx): TlaEx = {
-    val z3expr = z3solver.getModel.eval(toExpr(simplifier.simplify(ex)), true)
+    val z3expr = z3solver.getModel.eval(toExpr(ex), true)
     z3expr match {
       case b: BoolExpr =>
         val isTrue = b.getBoolValue.equals(Z3_lbool.Z3_L_TRUE)
@@ -399,7 +385,7 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
   }
 
   private def toExpr(ex: TlaEx): Expr = {
-    ex match {
+    simplifier.simplifyShallow(ex) match {
       case NameEx(name) =>
         cellCache(ArenaCell.idFromName(name))._1 // the cached cell
 
