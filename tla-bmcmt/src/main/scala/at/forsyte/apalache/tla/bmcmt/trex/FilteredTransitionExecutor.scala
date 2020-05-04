@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.lir.TlaEx
+import at.forsyte.apalache.tla.lir.{NameEx, TlaEx}
 
 /**
   * A transition executor that keeps only the steps and invariants, which are given by the regular expressions.
@@ -88,7 +88,31 @@ class FilteredTransitionExecutor[SnapshotT](stepFilter: String,
     * @param assertion a Boolean-valued TLA+ expression, usually a controlState expression,
     *                  though it may be an action expression.
     */
-  override def assertState(assertion: TlaEx): Unit = trex.assertState(assertion)
+  override def assertState(assertion: TlaEx): Unit = {
+    trex.assertState(assertion)
+  }
+
+
+  /**
+    * Translate a TLA+ state expression in the context of the current execution state.
+    *
+    * @param ex a state expression
+    * @return a name expression that keeps the produced arena cell
+    */
+  override def translateStateExpr(ex: TlaEx): NameEx = {
+    trex.translateStateExpr(ex)
+  }
+
+  /**
+    * Evaluate a name expression, which was previously produced with `translateStateExpr`.
+    * This method can be only called after `sat()` returned `Some(true)`.
+    *
+    * @param nameEx a name expression that is produced by `translateStateExpr`
+    * @return a constant expression that is extracted from the SMT model
+    */
+  override def evalWhenSat(nameEx: NameEx): TlaEx = {
+    trex.evalWhenSat(nameEx)
+  }
 
   /**
     * Initialize CONSTANTS by applying assignments within a given expression.

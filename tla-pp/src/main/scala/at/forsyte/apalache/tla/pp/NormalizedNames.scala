@@ -11,6 +11,7 @@ object NormalizedNames {
   val CONST_INIT = "CInit$0"
   val VC_INV_PREFIX = "VCInv$"
   val VC_NOT_INV_PREFIX = "VCNotInv$"
+  val PRED_PREFIX = "PRED_"
 
   /**
     * Has been an operator declaration produced by the VCGenerator
@@ -21,6 +22,17 @@ object NormalizedNames {
     decl.isInstanceOf[TlaOperDecl] &&
       decl.asInstanceOf[TlaOperDecl].formalParams.isEmpty &&
       (decl.name.startsWith(VC_INV_PREFIX) || decl.name.startsWith(VC_NOT_INV_PREFIX))
+  }
+
+  /**
+    * Is it a predicate for predicate abstraction
+    * @param decl an operator declaration
+    * @return true, if the operator name matches the VC pattern
+    */
+  def isPred(decl: TlaDecl): Boolean = {
+    decl.isInstanceOf[TlaOperDecl] &&
+      decl.asInstanceOf[TlaOperDecl].formalParams.isEmpty &&
+      decl.name.startsWith(PRED_PREFIX)
   }
 
   /**

@@ -1,7 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.trex
 import at.forsyte.apalache.tla.bmcmt.rewriter.Recoverable
 import at.forsyte.apalache.tla.bmcmt.rules.aux.Oracle
-import at.forsyte.apalache.tla.lir.TlaEx
+import at.forsyte.apalache.tla.lir.{NameEx, TlaEx}
 
 /**
   * <p>A general-purpose symbolic transition executor (or T-Rex).
@@ -78,12 +78,29 @@ trait TransitionExecutor[ExecutorContextT] extends Recoverable[ExecutorSnapshot[
   def mayChangeAssertion(transitionNo: Int, assertion: TlaEx): Boolean
 
   /**
-    * Push an assertion about the current controlState.
+    * Push an assertion about the current state.
     *
-    * @param assertion a Boolean-valued TLA+ expression, usually a controlState expression,
+    * @param assertion a Boolean-valued TLA+ expression, usually a state expression,
     *                  though it may be an action expression.
     */
   def assertState(assertion: TlaEx): Unit
+
+  /**
+    * Translate a TLA+ state expression in the context of the current execution state.
+    *
+    * @param ex a state expression
+    * @return a name expression that keeps the produced arena cell
+    */
+  def translateStateExpr(ex: TlaEx): NameEx
+
+  /**
+    * Evaluate a name expression, which was previously produced with `translateStateExpr`.
+    * This method can be only called after `sat()` returned `Some(true)`.
+    *
+    * @param nameEx a name expression that is produced by `translateStateExpr`
+    * @return a constant expression that is extracted from the SMT model
+    */
+  def evalWhenSat(nameEx: NameEx): TlaEx
 
   /**
     * Pick non-deterministically one transition among the transitions that are prepared

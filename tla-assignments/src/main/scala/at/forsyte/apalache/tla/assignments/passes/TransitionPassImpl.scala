@@ -72,8 +72,9 @@ class TransitionPassImpl @Inject()(options: PassOptions,
 
     // Add the constants, variables, and assumptions; then add CInit, Init*, Next*; then add verification conditions.
     val vcDeclarations = inModule.declarations.filter(NormalizedNames.isVC)
+    val predDeclarations = inModule.declarations.filter(NormalizedNames.isPred)
     val newDecls = inModule.constDeclarations ++ inModule.varDeclarations ++ inModule.assumeDeclarations ++
-      cinitDeclarations ++ initDeclarations ++ nextDeclarations ++ vcDeclarations
+      cinitDeclarations ++ initDeclarations ++ nextDeclarations ++ vcDeclarations ++ predDeclarations
 
     logger.info(s"  > Applying unique renaming")
     val outModule = incrementalRenaming.renameInModule(new TlaModule(inModule.name, newDecls))

@@ -3,7 +3,7 @@ package at.forsyte.apalache.tla.bmcmt.trex
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.rules.aux.{CherryPick, MockOracle, Oracle, SparseOracle}
 import at.forsyte.apalache.tla.bmcmt.util.TlaExUtil
-import at.forsyte.apalache.tla.lir.TlaEx
+import at.forsyte.apalache.tla.lir.{NameEx, TlaEx}
 import com.typesafe.scalalogging.LazyLogging
 
 /**
@@ -19,8 +19,8 @@ import com.typesafe.scalalogging.LazyLogging
   *
   * @author Igor Konnov
   */
-class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], ctx: ExecutorContext[ExecCtxT])
-  extends TransitionExecutor[ExecCtxT] with LazyLogging {
+class TransitionExecutorImpl[ExecSnapshotT](consts: Set[String], vars: Set[String], ctx: ExecutorContext[ExecSnapshotT])
+  extends TransitionExecutor[ExecSnapshotT] with LazyLogging {
 
   /**
     * When debug is true, the executor runs additional consistency checks.
@@ -192,16 +192,41 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
   }
 
   /**
+    * Translate a TLA+ state expression in the context of the current execution state.
+    *
+    * @param ex a state expression
+    * @return a name expression that keeps the produced arena cell
+    */
+  override def translateStateExpr(ex: TlaEx): NameEx = {
+    inferTypes(ex)
+    val nextState = ctx.rewriter.rewriteUntilDone(lastState.setRex(ex))
+    lastState = nextState.setRex(lastState.ex) // propagate the arena and binding, but keep the old expression
+    nextState.ex.asInstanceOf[NameEx]
+  }
+
+  /**
     * Push an assertion about the current controlState.
     *
     * @param assertion a Boolean-valued TLA+ expression, usually a controlState expression,
     *                  though it may be an action expression.
     */
   override def assertState(assertion: TlaEx): Unit = {
-    inferTypes(assertion)
-    val nextState = ctx.rewriter.rewriteUntilDone(lastState.setRex(assertion))
-    ctx.rewriter.solverContext.assertGroundExpr(nextState.ex)
-    lastState = nextState.setRex(lastState.ex) // propagate the arena and binding, but keep the old expression
+    // TODO: check that the assertion has Boolean type
+    val nameEx = translateStateExpr(assertion)
+    ctx.solver.assertGroundExpr(nameEx)
+  }
+
+
+  /**
+    * Evaluate a name expression, which was previously produced with `translateStateExpr`.
+    * This method can be only called after `sat()` returned `Some(true)`.
+    *
+    * @param nameEx a name expression that is produced by `translateStateExpr`
+    * @return a constant expression that is extracted from the SMT model
+    */
+  override def evalWhenSat(nameEx: NameEx): TlaEx = {
+    // TODO: check that the previous call to SMT produced SAT
+    ctx.solver.evalGroundExpr(nameEx)
   }
 
   /**
@@ -327,9 +352,9 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     *
     * @return a snapshot
     */
-  def snapshot(): ExecutorSnapshot[ExecCtxT] = {
+  def snapshot(): ExecutorSnapshot[ExecSnapshotT] = {
     val exe = new ReducedExecution(lastState.arena, ((lastState.binding, new MockOracle(0)) :: revStack).reverse)
-    new ExecutorSnapshot[ExecCtxT](controlState, exe, preparedTransitions, ctx.snapshot())
+    new ExecutorSnapshot[ExecSnapshotT](controlState, exe, preparedTransitions, ctx.snapshot())
   }
 
   /**
@@ -337,7 +362,7 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
     *
     * @param snapshot a snapshot that was created by an earlier call to snapshot.
     */
-  def recover(snapshot: ExecutorSnapshot[ExecCtxT]): Unit = {
+  def recover(snapshot: ExecutorSnapshot[ExecSnapshotT]): Unit = {
     ctx.recover(snapshot.ctxSnapshot)
     val rs = snapshot.execution.path.reverse
     val arena = snapshot.execution.arena.setSolver(ctx.solver)
