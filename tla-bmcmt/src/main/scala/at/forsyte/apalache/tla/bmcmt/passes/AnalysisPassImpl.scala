@@ -9,7 +9,8 @@ import at.forsyte.apalache.tla.bmcmt.analyses._
 import at.forsyte.apalache.tla.lir.io.PrettyWriter
 import at.forsyte.apalache.tla.lir.transformations.TransformationTracker
 import at.forsyte.apalache.tla.lir.transformations.standard.ModuleByExTransformer
-import at.forsyte.apalache.tla.lir.{NullEx, TlaAssumeDecl, TlaEx, TlaOperDecl}
+import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.pp.NormalizedNames
 import com.google.inject.Inject
 import com.google.inject.name.Named
 import com.typesafe.scalalogging.LazyLogging
@@ -51,10 +52,16 @@ class AnalysisPassImpl @Inject()(val options: PassOptions,
       ) ///
 
     logger.info(" > Marking skolemizable existentials and sets to be expanded...")
+    // quantifiers in Boolean abstraction should not be skolemized, nor the sets should be expanded (this would be unsound)
+    def skipPreds: TlaDecl => Boolean = {
+      case d: TlaOperDecl => !d.name.startsWith(NormalizedNames.PRED_PREFIX)
+      case _ => false
+    }
+
     val marked = transformationSequence.foldLeft(tlaModule.get) {
       case (m, tr) =>
         logger.info("  > %s".format(tr.getClass.getSimpleName))
-        ModuleByExTransformer(tr).apply(m)
+        ModuleByExTransformer(tr, skipPreds).apply(m)
     }
 
     logger.info(" > Running analyzers...")

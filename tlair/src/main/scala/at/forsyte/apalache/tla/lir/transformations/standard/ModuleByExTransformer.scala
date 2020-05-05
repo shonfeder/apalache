@@ -8,14 +8,23 @@ import at.forsyte.apalache.tla.lir.transformations.{TlaExTransformation, TlaModu
   *
   * @author Igor Konnov
   */
-class ModuleByExTransformer(exTrans: TlaExTransformation) extends TlaModuleTransformation {
+class ModuleByExTransformer(exTrans: TlaExTransformation, whenPred: TlaDecl => Boolean)
+      extends TlaModuleTransformation {
   override def apply(mod: TlaModule): TlaModule = {
     def mapOneDeclaration: TlaDecl => TlaDecl = {
-      case TlaOperDecl(name, params, body) =>
-        TlaOperDecl(name, params, exTrans(body))
+      case d @ TlaOperDecl(name, params, body) =>
+        if (!whenPred(d)) {
+          d
+        } else {
+          TlaOperDecl(name, params, exTrans(body))
+        }
 
-      case TlaAssumeDecl(body) =>
-        TlaAssumeDecl(exTrans(body))
+      case d @ TlaAssumeDecl(body) =>
+        if (!whenPred(d)) {
+          d
+        } else {
+          TlaAssumeDecl(exTrans(body))
+        }
 
       case d => d
     }
@@ -25,5 +34,11 @@ class ModuleByExTransformer(exTrans: TlaExTransformation) extends TlaModuleTrans
 }
 
 object ModuleByExTransformer {
-  def apply(exTrans: TlaExTransformation): ModuleByExTransformer = new ModuleByExTransformer(exTrans)
+  def apply(exTrans: TlaExTransformation): ModuleByExTransformer = {
+    new ModuleByExTransformer(exTrans, _ => true)
+  }
+
+  def apply(exTrans: TlaExTransformation, whenPred: TlaDecl => Boolean): ModuleByExTransformer = {
+    new ModuleByExTransformer(exTrans, whenPred)
+  }
 }

@@ -33,7 +33,7 @@ class BoolSysSmvWriter(writer: PrintWriter, textWidth: Int = 80, indent: Int = 2
     if (cubeDocs.isEmpty) {
       text("TRUE")
     } else {
-      group(lsep(cubeDocs, " |"))
+      group(lsep2(cubeDocs, " |"))
     }
   }
 

@@ -83,11 +83,10 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
   }
 
   private def abstractNext: List[Cube] = {
-    val mainSnapshot = trex.snapshot()
-    val prevPreds = boolifierInput.preds.map(trex.translateStateExpr)
     var cubes = List[Cube]()
     for ((tr, no) <- checkerInput.nextTransitions.zipWithIndex) {
       val snapshot = trex.snapshot()
+      val prevPreds = boolifierInput.preds.map(trex.translateStateExpr)
       val translatedOk = trex.prepareTransition(no, tr)
       if (translatedOk) {
         trex.assumeTransition(no)
@@ -101,7 +100,6 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
       }
       trex.recover(snapshot)
     }
-    trex.recover(mainSnapshot)
     cubes
   }
 }
