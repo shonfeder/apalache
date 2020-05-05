@@ -22,17 +22,17 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
     // construct the Boolean abstraction
     val sys = new BoolSys(boolifierInput.preds.size)
     logger.debug(s"Constructing predicate abstraction of Init with %d predicates".format(boolifierInput.preds.size))
-    sys.init = abstractInit
+    sys.init = abstractInit()
     logger.debug(s"Constructing predicate abstraction of (TypeOK; Next) with %d predicates"
       .format(2 * boolifierInput.preds.size))
     applyTypeOk()
-    sys.next = abstractNext
+    sys.next = abstractNext()
     logger.debug(s"Constructing predicate abstraction of ~Inv with %d predicates".format(boolifierInput.preds.size))
     sys.notInv = abstractNotInv()
     sys
   }
 
-  private def abstractInit: List[Cube] = {
+  private def abstractInit(): List[Cube] = {
     var cubes = List[Cube]()
     for ((tr, no) <- checkerInput.initTransitions.zipWithIndex) {
       val snapshot = trex.snapshot()
@@ -82,7 +82,7 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
     trex.nextState()
   }
 
-  private def abstractNext: List[Cube] = {
+  private def abstractNext(): List[Cube] = {
     var cubes = List[Cube]()
     for ((tr, no) <- checkerInput.nextTransitions.zipWithIndex) {
       val snapshot = trex.snapshot()
