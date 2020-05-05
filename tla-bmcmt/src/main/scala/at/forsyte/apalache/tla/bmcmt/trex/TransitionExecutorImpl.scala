@@ -290,6 +290,8 @@ class TransitionExecutorImpl[ExecCtxT](consts: Set[String], vars: Set[String], c
       .foreach(cell => ctx.typeFinder.extendWithCellType(cell))
     // that is the result of this step
     shiftTypes(consts)
+    // importantly, clean the action-level caches, so the new variables are not mapped to the old variables
+    ctx.rewriter.exprCache.disposeActionLevel()
     // clean the prepared transitions
     preparedTransitions = Map()
     // increase the step number
