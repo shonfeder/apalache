@@ -9,16 +9,10 @@ import org.backuity.clist.{Command, _}
   *
   * @author Igor Konnov
   */
-class CheckCmd extends Command(name = "check",
-  description = "Check a TLA+ specification") with General {
+class BoolifyCmd extends Command(name = "boolify",
+  description = "Abstract a TLA+ specification into a Boolean transition system") with General {
 
   var file: File = arg[File](description = "a file containing a TLA+ specification")
-  var nworkers: Int = opt[Int](
-    name = "nworkers", default = 1,
-    description = "the number of workers for the parallel checker, default: 1")
-  var algo: String = opt[String](
-    name = "algo", default = "incremental",
-    description = "the search algorithm: offline, incremental, parallel, default: incremental")
   var config: String = opt[String](
     name = "config", default = "",
     description = "configuration file in TLC format,\n" +
@@ -37,16 +31,11 @@ class CheckCmd extends Command(name = "check",
   var inv: String =
     opt[String](name = "inv", default = "",
       description = "the name of an invariant operator, e.g., Inv")
+  var typeInit: String = opt[String](
+    name = "typeInit", default = "TypeOK",
+    description = "the name of an inductive invariant over types,\n" +
+      "default: TypeOK")
   var length: Int =
-    opt[Int](name = "length", default = 10,
-      description = "maximal number of Next steps, default: 10")
-  var tuning: String =
-    opt[String](name="tuning", default = "",
-      description = "filename of the tuning options, see docs/tuning.md")
-  var enabled: Boolean = opt[Boolean](
-    name = "all-enabled", default = false,
-    description = "treat all transitions as enabled, to save on SMT queries, default: false")
-  var noDeadlocks: Boolean = opt[Boolean](
-    name = "no-deadlock", default = true,
-    description = "do not check for deadlocks, default: true")
+    opt[Int](name = "length", default = 1,
+      description = "maximal number of Next steps, default: 1")
 }

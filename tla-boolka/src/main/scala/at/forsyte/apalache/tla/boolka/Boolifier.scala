@@ -10,24 +10,24 @@ import com.typesafe.scalalogging.LazyLogging
   *
   * @author Igor Konnov
   */
-class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
-                                   val checkerInput: CheckerInput,
-                                   solver: SolverContext,
-                                   trex: TransitionExecutor[ExecutorContextT]) extends LazyLogging {
+class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
+                                  val boolifierInput: BoolifierInput,
+                                  solver: SolverContext,
+                                  trex: TransitionExecutor[ExecutorContextT]) extends LazyLogging {
   def compute(): BoolSys = {
     // initialize CONSTANTS
     if (checkerInput.constInitPrimed.isDefined) {
       trex.initializeConstants(checkerInput.constInitPrimed.get)
     }
     // construct the Boolean abstraction
-    val sys = new BoolSys(abstractorInput.preds.size)
-    logger.debug(s"Constructing predicate abstraction of Init with %d predicates".format(abstractorInput.preds.size))
+    val sys = new BoolSys(boolifierInput.preds.size)
+    logger.debug(s"Constructing predicate abstraction of Init with %d predicates".format(boolifierInput.preds.size))
     sys.init = abstractInit
     logger.debug(s"Constructing predicate abstraction of (TypeOK; Next) with %d predicates"
-      .format(2 * abstractorInput.preds.size))
+      .format(2 * boolifierInput.preds.size))
     applyTypeOk()
     sys.next = abstractNext
-    logger.debug(s"Constructing predicate abstraction of ~Inv with %d predicates".format(abstractorInput.preds.size))
+    logger.debug(s"Constructing predicate abstraction of ~Inv with %d predicates".format(boolifierInput.preds.size))
     sys.notInv = abstractNotInv()
     sys
   }
@@ -41,7 +41,7 @@ class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
         trex.assumeTransition(no)
         trex.nextState()
         // introduce predicates as cells
-        val predNames = abstractorInput.preds.map(trex.translateStateExpr)
+        val predNames = boolifierInput.preds.map(trex.translateStateExpr)
         // enumerate all cubes
         val transitionCubes = new CubeFinder(solver, predNames).allCubes()
         logger.debug(s"Transition $no introduced ${transitionCubes.length} cubes")
@@ -58,7 +58,7 @@ class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
       val snapshot = trex.snapshot()
       trex.assertState(notInv)
       // introduce predicates as cells
-      val predNames = abstractorInput.preds.map(trex.translateStateExpr)
+      val predNames = boolifierInput.preds.map(trex.translateStateExpr)
       // enumerate all cubes
       val notInvCubes = new CubeFinder(solver, predNames).allCubes()
       logger.debug(s"Transition $no introduced ${notInvCubes.length} cubes")
@@ -71,16 +71,20 @@ class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
 
   private def applyTypeOk(): Unit = {
     // translate TypeOK and collect the predicates after the transition has happened
-    val translatedTypeOk = trex.prepareTransition(0, abstractorInput.typeOkPrimed)
-    if (!translatedTypeOk) {
-      throw new AbstractionException("TypeOK does not encode a valid initialization predicate")
+    for ((tr, no) <- boolifierInput.typeOkPrimed.zipWithIndex) {
+      val translatedOk = trex.prepareTransition(no, tr)
+      if (!translatedOk) {
+        throw new AbstractionException(s"TypeOK does not encode a valid initialization predicate (transition $no)")
+      }
     }
-    trex.assumeTransition(0)
+
+    trex.pickTransition()
     trex.nextState()
   }
 
   private def abstractNext: List[Cube] = {
-    val prevPreds = abstractorInput.preds.map(trex.translateStateExpr)
+    val mainSnapshot = trex.snapshot()
+    val prevPreds = boolifierInput.preds.map(trex.translateStateExpr)
     var cubes = List[Cube]()
     for ((tr, no) <- checkerInput.nextTransitions.zipWithIndex) {
       val snapshot = trex.snapshot()
@@ -89,7 +93,7 @@ class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
         trex.assumeTransition(no)
         trex.nextState()
         // introduce predicates as cells
-        val nextPreds = abstractorInput.preds.map(trex.translateStateExpr)
+        val nextPreds = boolifierInput.preds.map(trex.translateStateExpr)
         // enumerate all cubes
         val transitionCubes = new CubeFinder(solver, prevPreds ++ nextPreds).allCubes()
         logger.debug(s"Transition $no introduced ${transitionCubes.length} cubes")
@@ -97,6 +101,7 @@ class Abstractor[ExecutorContextT](val abstractorInput: AbstractorInput,
       }
       trex.recover(snapshot)
     }
+    trex.recover(mainSnapshot)
     cubes
   }
 }

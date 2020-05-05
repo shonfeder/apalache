@@ -18,7 +18,7 @@ import org.scalatest.{Outcome, fixture}
 import scala.collection.immutable.BitSet
 
 @RunWith(classOf[JUnitRunner])
-class TestAbstractor extends fixture.FunSuite {
+class TestBoolifier extends fixture.FunSuite {
   type ExecutorContextT = IncrementalExecutorContext
   type FixtureParam = (SolverContext, ExecutorContextT)
 
@@ -91,8 +91,8 @@ class TestAbstractor extends fixture.FunSuite {
     // two predicates
     val p1 = tla.in(tla.int(5), tla.name("S"))
     val p2 = tla.in(tla.int(5), tla.name("T"))
-    val abstractorInput = new AbstractorInput(typeOkPrimed, List(p1, p2))
-    val boolSys = new Abstractor[IncrementalSnapshot](abstractorInput, checkerInput, solver, trex).compute()
+    val abstractorInput = new BoolifierInput(List(typeOkPrimed), List(p1, p2))
+    val boolSys = new Boolifier[IncrementalSnapshot](checkerInput, abstractorInput, solver, trex).compute()
     // the abstraction of Init gives us one cube: p1 /\ ~p2
     assert(List(Cube(2, BitSet(0), BitSet(0, 1))) == boolSys.init)
     val mask = BitSet(0, 1, 2, 3)

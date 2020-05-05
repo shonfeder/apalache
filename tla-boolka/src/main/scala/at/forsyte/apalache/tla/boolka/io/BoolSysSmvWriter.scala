@@ -1,7 +1,8 @@
-package at.forsyte.apalache.tla.boolka
+package at.forsyte.apalache.tla.boolka.io
 
 import java.io.PrintWriter
 
+import at.forsyte.apalache.tla.boolka.{BoolSys, Cube}
 import org.bitbucket.inkytonik.kiama.output.PrettyPrinter
 
 /**
@@ -24,7 +25,7 @@ class BoolSysSmvWriter(writer: PrintWriter, textWidth: Int = 80, indent: Int = 2
       nest(lsep(predDecls, text("")), 2) <> line <>
       text("INIT") <> nest(line <> parens(cubeListToDoc(sys.npreds, sys.init)), 2) <> line <>
       text("TRANS") <> nest(line <> parens(cubeListToDoc(sys.npreds, sys.next)), 2) <> line <>
-      text("SPEC") <> space <> "AG" <> space <> "~" <> parens(nest(cubeListToDoc(sys.npreds, sys.notInv), 2))
+      text("SPEC") <> space <> "AG" <> space <> "!" <> parens(nest(cubeListToDoc(sys.npreds, sys.notInv), 2))
   }
 
   def cubeListToDoc(npreds: Int, cubes: List[Cube]): Doc = {
@@ -39,7 +40,7 @@ class BoolSysSmvWriter(writer: PrintWriter, textWidth: Int = 80, indent: Int = 2
   def cubeToDoc(npreds: Int, cube: Cube): Doc = {
     def mkLit(i: Int) = {
       val doc = predToDoc(npreds, i)
-      if (cube.bits(i)) doc else "~" <> doc
+      if (cube.bits(i)) doc else "!" <> doc
     }
 
     val lits = 0.until(cube.nbits).filter(i => cube.mask(i)).map(mkLit)

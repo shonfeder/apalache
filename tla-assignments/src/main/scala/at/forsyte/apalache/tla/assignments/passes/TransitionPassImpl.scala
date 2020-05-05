@@ -62,19 +62,35 @@ class TransitionPassImpl @Inject()(options: PassOptions,
 
         case Some(cinitName) =>
           logger.info(s"  > Found constant initializer $cinitName")
-          val cinitEx = findBodyOf(cinitName + "Primed", inModule.operDeclarations :_*)
+          val cinitEx = findBodyOf(cinitName + "Primed", inModule.operDeclarations: _*)
           // We don't perform the standard assignment-search on cinit,
           // we just replace EVERY x' = e with x' <- e
-          val tr = AssignmentOperatorIntroduction( { _ => true }, tracker )
+          val tr = AssignmentOperatorIntroduction({ _ => true }, tracker)
           val newEx = tr(cinitEx)
           Seq(ModuleAdapter.exprToOperDef(NormalizedNames.CONST_INIT, newEx))
+      }
+
+    // convert an optional TypeOK operator that is used as an initializer
+    val typeInitDeclarations =
+      options.get[String]("boolifier", "typeInit") match {
+        case None => Seq()
+
+        case Some(typeInitName) =>
+          logger.info(s"  > Found type initializer $typeInitName")
+          val typeInitPrimed = typeInitName + "Primed"
+          val typeInitEx = findBodyOf(typeInitPrimed, inModule.operDeclarations: _*)
+          val typeInitDeclarations = extractTransitions(inModule, typeInitPrimed, NormalizedNames.TYPE_INIT_PREFIX)
+          logger.info(s"  > Found ${typeInitDeclarations.size} type initializing transitions")
+          typeInitDeclarations
       }
 
     // Add the constants, variables, and assumptions; then add CInit, Init*, Next*; then add verification conditions.
     val vcDeclarations = inModule.declarations.filter(NormalizedNames.isVC)
     val predDeclarations = inModule.declarations.filter(NormalizedNames.isPred)
-    val newDecls = inModule.constDeclarations ++ inModule.varDeclarations ++ inModule.assumeDeclarations ++
-      cinitDeclarations ++ initDeclarations ++ nextDeclarations ++ vcDeclarations ++ predDeclarations
+    val newDecls =
+      inModule.constDeclarations ++ inModule.varDeclarations ++ inModule.assumeDeclarations ++
+        cinitDeclarations ++ initDeclarations ++ typeInitDeclarations ++ nextDeclarations ++
+        vcDeclarations ++ predDeclarations
 
     logger.info(s"  > Applying unique renaming")
     val outModule = incrementalRenaming.renameInModule(new TlaModule(inModule.name, newDecls))

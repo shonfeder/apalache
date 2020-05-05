@@ -10,9 +10,10 @@ import at.forsyte.apalache.infra.log.LogbackConfigurator
 import at.forsyte.apalache.infra.passes.{PassChainExecutor, TlaModuleMixin}
 import at.forsyte.apalache.infra.{ExceptionAdapter, FailureMessage, NormalErrorMessage, PassOptionException}
 import at.forsyte.apalache.tla.bmcmt.config.CheckerModule
+import at.forsyte.apalache.tla.boolka.config.BoolifierModule
 import at.forsyte.apalache.tla.imp.passes.ParserModule
 import at.forsyte.apalache.tla.tooling.Version
-import at.forsyte.apalache.tla.tooling.opt.{CheckCmd, ParseCmd}
+import at.forsyte.apalache.tla.tooling.opt.{BoolifyCmd, CheckCmd, ParseCmd}
 import com.google.inject.{Guice, Injector}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.configuration2.builder.fluent.Configurations
@@ -66,9 +67,10 @@ object Tool extends App with LazyLogging {
     val startTime = LocalDateTime.now()
     val parseCmd = new ParseCmd
     val checkCmd = new CheckCmd
+    val boolifyCmd = new BoolifyCmd
     try {
       Cli.parse(args).withProgramName("apalache-mc").version(Version.version)
-        .withCommands(parseCmd, checkCmd) match {
+        .withCommands(parseCmd, checkCmd, boolifyCmd) match {
         case Some(parse: ParseCmd) =>
           logger.info("Parse " + parse.file)
           val injector = injectorFactory(parseCmd)
@@ -79,6 +81,12 @@ object Tool extends App with LazyLogging {
             .format(check.file, check.init, check.next, check.inv))
           val injector = injectorFactory(check)
           handleExceptions(injector, runCheck(injector, check, _))
+
+        case Some(boolify: BoolifyCmd) =>
+          logger.info("Boolifier options: filename=%s, init=%s, next=%s, inv=%s"
+            .format(boolify.file, boolify.init, boolify.next, boolify.inv))
+          val injector = injectorFactory(boolify)
+          handleExceptions(injector, runBoolifier(injector, boolify, _))
 
         case _ =>
           OK_EXIT_CODE // nothing to do
@@ -132,10 +140,10 @@ object Tool extends App with LazyLogging {
     executor.options.set("parser.filename", check.file.getAbsolutePath)
     if (check.config != "")
       executor.options.set("checker.config", check.config)
-    if (check.init != "")
-      executor.options.set("checker.init", check.init)
-    if (check.next != "")
-      executor.options.set("checker.next", check.next)
+
+    executor.options.set("checker.init", check.init)
+    executor.options.set("checker.next", check.next)
+
     if (check.inv != "")
       executor.options.set("checker.inv", List(check.inv))
     if (check.cinit != "")
@@ -149,6 +157,34 @@ object Tool extends App with LazyLogging {
     val result = executor.run()
     if (result.isDefined) {
       logger.info("Checker reports no error up to computation length " + check.length)
+    } else {
+      logger.info("Checker has found an error")
+    }
+  }
+
+  private def runBoolifier(injector: Injector, boolify: BoolifyCmd, u: Unit): Unit = {
+    val executor = injector.getInstance(classOf[PassChainExecutor])
+    executor.options.set("io.outdir", createOutputDir())
+    executor.options.set("general.tuning", Map[String, String]())
+    executor.options.set("general.debug", boolify.debug)
+    executor.options.set("smt.prof", boolify.smtprof)
+    executor.options.set("parser.filename", boolify.file.getAbsolutePath)
+    if (boolify.config != "")
+      executor.options.set("checker.config", boolify.config)
+
+    executor.options.set("checker.init", boolify.init)
+    executor.options.set("checker.next", boolify.next)
+    executor.options.set("boolifier.typeInit", boolify.typeInit)
+    executor.options.set("checker.length", boolify.length)
+
+    if (boolify.inv != "")
+      executor.options.set("checker.inv", List(boolify.inv))
+    if (boolify.cinit != "")
+      executor.options.set("checker.cinit", boolify.cinit)
+
+    val result = executor.run()
+    if (result.isDefined) {
+      logger.info("Checker reports no error up to computation length " + boolify.length)
     } else {
       logger.info("Checker has found an error")
     }
@@ -187,6 +223,7 @@ object Tool extends App with LazyLogging {
     cmd match {
       case _: ParseCmd => Guice.createInjector(new ParserModule)
       case _: CheckCmd => Guice.createInjector(new CheckerModule)
+      case _: BoolifyCmd => Guice.createInjector(new BoolifierModule)
       case _ => throw new RuntimeException("Unexpected command: " + cmd)
     }
   }

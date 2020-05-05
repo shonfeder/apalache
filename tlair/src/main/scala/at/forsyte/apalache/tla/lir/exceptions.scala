@@ -19,3 +19,10 @@ class UnexpectedLanguageError(message: String) extends LirError(message)
   * @param message the error message
   */
 class MalformedTlaError(message: String, val causeExpr: TlaEx) extends LirError(message)
+
+/**
+  * This exception should be thrown when an undeclared operator is used.
+  *
+  * @param message the error message
+  */
+class UndeclaredOperatorError(message: String) extends LirError(message)

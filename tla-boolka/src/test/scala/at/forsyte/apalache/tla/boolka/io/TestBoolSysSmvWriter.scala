@@ -1,7 +1,8 @@
-package at.forsyte.apalache.tla.boolka
+package at.forsyte.apalache.tla.boolka.io
 
 import java.io.{PrintWriter, StringWriter}
 
+import at.forsyte.apalache.tla.boolka.{BoolSys, Cube}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{Outcome, fixture}
@@ -33,7 +34,7 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |  (TRUE)
         |TRANS
         |  (TRUE)
-        |SPEC AG ~(TRUE)""".stripMargin
+        |SPEC AG !(TRUE)""".stripMargin
     assert(expected == stringWriter.toString)
   }
 
@@ -50,10 +51,10 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |  p0: boolean;
         |  p1: boolean;
         |INIT
-        |  (p0 & ~p1 | ~p0 & p1)
+        |  (p0 & !p1 | !p0 & p1)
         |TRANS
         |  (TRUE)
-        |SPEC AG ~(TRUE)""".stripMargin
+        |SPEC AG !(TRUE)""".stripMargin
     assert(expected == stringWriter.toString)
   }
 
@@ -72,8 +73,8 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |INIT
         |  (TRUE)
         |TRANS
-        |  (p0 & ~p1 & next(p0) & ~next(p1) | ~p0 & p1 & ~next(p0) & next(p1))
-        |SPEC AG ~(TRUE)""".stripMargin
+        |  (p0 & !p1 & next(p0) & !next(p1) | !p0 & p1 & !next(p0) & next(p1))
+        |SPEC AG !(TRUE)""".stripMargin
     assert(expected == stringWriter.toString)
   }
 
@@ -93,7 +94,7 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |  (TRUE)
         |TRANS
         |  (TRUE)
-        |SPEC AG ~(p0 & ~p1 | ~p0 & p1)""".stripMargin
+        |SPEC AG !(p0 & !p1 | !p0 & p1)""".stripMargin
     assert(expected == stringWriter.toString)
   }
 }

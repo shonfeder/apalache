@@ -6,7 +6,7 @@ import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.types.TypeInferenceError
 import at.forsyte.apalache.tla.imp.SanyException
 import at.forsyte.apalache.tla.imp.src.SourceStore
-import at.forsyte.apalache.tla.lir.{MalformedTlaError, OperEx, TlaEx}
+import at.forsyte.apalache.tla.lir.{MalformedTlaError, OperEx, TlaEx, UndeclaredOperatorError}
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import at.forsyte.apalache.tla.pp.{NotInKeraError, TLCConfigurationError}
 import com.typesafe.scalalogging.LazyLogging
@@ -38,6 +38,9 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
     case err: TypeInferenceException =>
       val msg = "%s\n%s".format(err.getMessage, err.errors.map(ofTypeInferenceError).mkString("\n"))
       NormalErrorMessage(msg)
+
+    case err: UndeclaredOperatorError =>
+      NormalErrorMessage(err.getMessage)
 
     // tool failures
     case err: NoRuleException =>
