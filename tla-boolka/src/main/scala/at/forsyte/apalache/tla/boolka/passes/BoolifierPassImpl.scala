@@ -6,7 +6,6 @@ import java.nio.file.Path
 import at.forsyte.apalache.infra.ExceptionAdapter
 import at.forsyte.apalache.infra.passes.{Pass, PassOptions}
 import at.forsyte.apalache.tla.assignments.ModuleAdapter
-import at.forsyte.apalache.tla.bmcmt.Checker.Outcome
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FormulaHintsStore}
 import at.forsyte.apalache.tla.bmcmt.rewriter.RewriterConfig
@@ -17,7 +16,7 @@ import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.boolka.io.BoolSysSmvWriter
 import at.forsyte.apalache.tla.boolka.{Boolifier, BoolifierInput}
 import at.forsyte.apalache.tla.imp.src.SourceStore
-import at.forsyte.apalache.tla.lir.NullEx
+import at.forsyte.apalache.tla.lir.{NullEx, TlaEx}
 import at.forsyte.apalache.tla.lir.storage.ChangeListener
 import at.forsyte.apalache.tla.lir.transformations.LanguageWatchdog
 import at.forsyte.apalache.tla.lir.transformations.standard.KeraLanguagePred
@@ -80,8 +79,7 @@ class BoolifierPassImpl @Inject()(val options: PassOptions,
 
     // input to the Boolifier
     val typeInitTrans = ModuleAdapter.getTransitionsFromSpec(module, NormalizedNames.TYPE_INIT_PREFIX)
-    val preds = ModuleAdapter.getTransitionsFromSpec(module, NormalizedNames.PRED_PREFIX)
-    val boolifierInput = new BoolifierInput(typeInitTrans.toList, preds.toList)
+    val boolifierInput = new BoolifierInput(typeInitTrans.toList, extractPredicates())
 
     runBoolifier(params, checkerInput, boolifierInput)
     // For now, return true. This may change in the future.
@@ -115,6 +113,16 @@ class BoolifierPassImpl @Inject()(val options: PassOptions,
       writer.close()
     }
     logger.info(" > Done")
+  }
+
+  private def extractPredicates(): List[TlaEx] = {
+    val module = tlaModule.get
+    val predOpers =
+      module.operDeclarations.filter {
+        _.name.startsWith(NormalizedNames.PRED_PREFIX) // transitions end in 0,1,...
+      }
+
+    predOpers.sortBy(_.name).map(_.body).toList
   }
 
   /**

@@ -51,7 +51,7 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |  p0: boolean;
         |  p1: boolean;
         |INIT
-        |  (p0 & !p1 | !p0 & p1)
+        |  ((p0 & !p1) | (!p0 & p1))
         |TRANS
         |  (TRUE)
         |SPEC AG !(TRUE)""".stripMargin
@@ -73,7 +73,7 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |INIT
         |  (TRUE)
         |TRANS
-        |  (p0 & !p1 & next(p0) & !next(p1) | !p0 & p1 & !next(p0) & next(p1))
+        |  ((p0 & !p1 & next(p0) & !next(p1)) | (!p0 & p1 & !next(p0) & next(p1)))
         |SPEC AG !(TRUE)""".stripMargin
     assert(expected == stringWriter.toString)
   }
@@ -94,7 +94,7 @@ class TestBoolSysSmvWriter extends fixture.FunSuite {
         |  (TRUE)
         |TRANS
         |  (TRUE)
-        |SPEC AG !(p0 & !p1 | !p0 & p1)""".stripMargin
+        |SPEC AG !((p0 & !p1) | (!p0 & p1))""".stripMargin
     assert(expected == stringWriter.toString)
   }
 }

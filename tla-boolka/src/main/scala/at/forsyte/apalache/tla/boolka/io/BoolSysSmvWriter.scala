@@ -48,7 +48,7 @@ class BoolSysSmvWriter(writer: PrintWriter, textWidth: Int = 80, indent: Int = 2
     if (lits.isEmpty) {
       text("TRUE")
     } else {
-      group(lsep(lits, " &"))
+      group(parens(lsep(lits, " &")))
     }
   }
 
