@@ -2,7 +2,8 @@ package at.forsyte.apalache.tla.boolka.io
 
 import java.io.PrintWriter
 
-import at.forsyte.apalache.tla.boolka.{BoolSys, Cube}
+import at.forsyte.apalache.tla.boolka.BoolSys
+import at.forsyte.apalache.tla.boolka.cube.Cube
 import org.bitbucket.inkytonik.kiama.output.PrettyPrinter
 
 /**
@@ -48,7 +49,7 @@ class BoolSysSmvWriter(writer: PrintWriter, textWidth: Int = 80, indent: Int = 2
     if (lits.isEmpty) {
       text("TRUE")
     } else {
-      group(parens(lsep(lits, " &")))
+      parens(group(ssep(lits, space <> "&" <> space <> softbreak)))
     }
   }
 

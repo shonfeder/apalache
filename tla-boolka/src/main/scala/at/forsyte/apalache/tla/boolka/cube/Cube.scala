@@ -1,4 +1,4 @@
-package at.forsyte.apalache.tla.boolka
+package at.forsyte.apalache.tla.boolka.cube
 
 import scala.collection.BitSet
 

@@ -2,7 +2,8 @@ package at.forsyte.apalache.tla.boolka.io
 
 import java.io.{PrintWriter, StringWriter}
 
-import at.forsyte.apalache.tla.boolka.{BoolSys, Cube}
+import at.forsyte.apalache.tla.boolka.BoolSys
+import at.forsyte.apalache.tla.boolka.cube.Cube
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{Outcome, fixture}

@@ -1,5 +1,7 @@
 package at.forsyte.apalache.tla.boolka
 
+import at.forsyte.apalache.tla.boolka.cube.Cube
+
 /**
   * A Boolean transition system that is produced by predicate abstraction. It is geared toward an encoding with NuSMV.
   *

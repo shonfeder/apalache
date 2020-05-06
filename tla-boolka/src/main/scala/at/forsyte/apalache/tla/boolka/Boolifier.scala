@@ -3,6 +3,8 @@ package at.forsyte.apalache.tla.boolka
 import at.forsyte.apalache.tla.bmcmt.CheckerInput
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 import at.forsyte.apalache.tla.bmcmt.trex.TransitionExecutor
+import at.forsyte.apalache.tla.boolka.cube.{Cube, CubeBddZipper, CubeFinder, CubeSmtEnumerator}
+import at.forsyte.apalache.tla.lir.NameEx
 import com.typesafe.scalalogging.LazyLogging
 
 /**
@@ -43,7 +45,7 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
         // introduce predicates as cells
         val predNames = boolifierInput.preds.map(trex.translateStateExpr)
         // enumerate all cubes
-        val transitionCubes = new CubeFinder(solver, predNames).allCubes()
+        val transitionCubes = mkEnumerator(predNames).allCubes()
         logger.debug(s"Transition $no introduced ${transitionCubes.length} cubes")
         cubes = cubes ++ transitionCubes
       }
@@ -60,7 +62,7 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
       // introduce predicates as cells
       val predNames = boolifierInput.preds.map(trex.translateStateExpr)
       // enumerate all cubes
-      val notInvCubes = new CubeFinder(solver, predNames).allCubes()
+      val notInvCubes = mkEnumerator(predNames).allCubes()
       logger.debug(s"Transition $no introduced ${notInvCubes.length} cubes")
       cubes = cubes ++ notInvCubes
       trex.recover(snapshot)
@@ -94,12 +96,16 @@ class Boolifier[ExecutorContextT](val checkerInput: CheckerInput,
         // introduce predicates as cells
         val nextPreds = boolifierInput.preds.map(trex.translateStateExpr)
         // enumerate all cubes
-        val transitionCubes = new CubeFinder(solver, prevPreds ++ nextPreds).allCubes()
+        val transitionCubes = mkEnumerator(prevPreds ++ nextPreds).allCubes()
         logger.debug(s"Transition $no introduced ${transitionCubes.length} cubes")
         cubes = cubes ++ transitionCubes
       }
       trex.recover(snapshot)
     }
     cubes
+  }
+
+  private def mkEnumerator(preds: List[NameEx]): CubeFinder = {
+    new CubeBddZipper(new CubeSmtEnumerator(solver, preds))
   }
 }

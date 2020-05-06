@@ -46,6 +46,16 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!--
+          For the quick experiments, use the java library.
+          In the future, use either addlib (on top of cudd), or jsylvan (on top of sylvan)
+          -->
+        <dependency>
+            <groupId>org.bitbucket.vahidi</groupId>
+            <artifactId>jdd</artifactId>
+            <version>108</version>
+        </dependency>
+
         <!-- parent's dependencies -->
         <dependency>
             <groupId>org.lamport</groupId>

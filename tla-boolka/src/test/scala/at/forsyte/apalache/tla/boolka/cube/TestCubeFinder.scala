@@ -1,9 +1,9 @@
-package at.forsyte.apalache.tla.boolka
+package at.forsyte.apalache.tla.boolka.cube
 
-import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell}
 import at.forsyte.apalache.tla.bmcmt.smt.{SolverContext, Z3SolverContext}
 import at.forsyte.apalache.tla.bmcmt.trex.IncrementalExecutorContext
 import at.forsyte.apalache.tla.bmcmt.types.{BoolT, CellT, IntT}
+import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell}
 import at.forsyte.apalache.tla.lir.convenience.tla
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -39,7 +39,7 @@ class TestCubeFinder extends fixture.FunSuite {
         tla.and(tla.not(p0.toNameEx), p1.toNameEx)
       ))
     // abstract it using p0 and p2
-    val finder = new CubeFinder(solver, List(p0, p2).map(_.toNameEx))
+    val finder = new CubeSmtEnumerator(solver, List(p0, p2).map(_.toNameEx))
     val cubes = finder.allCubes()
     // the current naive implementation only computes minterms, so we will have 6 of them
     assert(3 == cubes.size)
@@ -74,7 +74,7 @@ class TestCubeFinder extends fixture.FunSuite {
       tla.eql(y.toNameEx,
         tla.plus(tla.mult(tla.int(2), x.toNameEx), tla.int(1)))))
     // abstract it using p0 and p1
-    val finder = new CubeFinder(solver, List(p0, p1).map(_.toNameEx))
+    val finder = new CubeSmtEnumerator(solver, List(p0, p1).map(_.toNameEx))
     val cubes = finder.allCubes()
     assert(2 == cubes.size)
     val cubeSet = cubes.toSet

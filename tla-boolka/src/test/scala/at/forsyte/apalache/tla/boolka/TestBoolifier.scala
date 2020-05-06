@@ -8,6 +8,7 @@ import at.forsyte.apalache.tla.bmcmt.smt.{SolverContext, Z3SolverContext}
 import at.forsyte.apalache.tla.bmcmt.trex.{IncrementalExecutorContext, IncrementalSnapshot, TransitionExecutorImpl}
 import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
 import at.forsyte.apalache.tla.bmcmt.{CheckerInput, SymbStateRewriterImpl}
+import at.forsyte.apalache.tla.boolka.cube.Cube
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.oper.BmcOper
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx, TlaModule, TlaVarDecl}
@@ -99,11 +100,10 @@ class TestBoolifier extends fixture.FunSuite {
     // the abstraction of Next gives us p1 /\ ~p2 \/ ~p1 /\ p2
     val nextCubes = List(
       Cube(4, BitSet(), mask),
-      Cube(4, BitSet(0, 1, 3), mask),
+      Cube(4, BitSet(0, 1, 3), BitSet(0, 1, 3)),
       Cube(4, BitSet(1, 3), mask),
       Cube(4, BitSet(0, 2), mask),
-      Cube(4, BitSet(0, 3), mask),
-      Cube(4, BitSet(0, 1, 2, 3), mask)
+      Cube(4, BitSet(0, 3), mask)
     ) ///
 
     assert(nextCubes.toSet == boolSys.next.toSet)
