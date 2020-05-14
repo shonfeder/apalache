@@ -195,15 +195,18 @@ ABS_PRED_03 ==
 ABS_PRED_09 ==
   ([type |-> "Commit"] <: MT) \in msgs
 
-ABS_PRED_13 ==
+ABS_PRED_12 ==
   \A rm \in RM:
     rm \in tmPrepared
+
+ABS_PRED_13 ==
+  \A rm \in RM:
+    rmState[rm] = "prepared"
 
 \* ---------------------------
 ABS_PRED_00 ==
   \E rm \in RM:
     rmState[rm] = "prepared"
-
 
 ABS_PRED_01 ==
   \E rm \in RM:
@@ -223,8 +226,7 @@ ABS_PRED_07 ==
     [type |-> "Prepared", rm |-> rm] \in msgs
 
 ABS_PRED_08 ==
-  \A rm \in RM:
-    [type |-> "Prepared", rm |-> rm] \in msgs
+  [type: {"Prepared"}, rm: RM] = msgs
 
 ABS_PRED_10 ==
   ([type |-> "Abort"] <: MT) \in msgs
@@ -233,9 +235,17 @@ ABS_PRED_11 ==
   \A rm \in RM:
     rmState[rm] = "prepared"
 
-ABS_PRED_12 ==
-  \E rm \in RM:
-    rm \in tmPrepared
+ABS_PRED_14 ==
+  { rm \in RM: [type |-> "Prepared", rm |-> rm] \in msgs }
+    \subseteq
+  { rm \in RM: rmState[rm] = "prepared"}
+
+ABS_PRED_15 ==
+  { rm \in RM: rmState[rm] = "working" }
+    \subseteq
+  { rm \in RM: [type |-> "Prepared", rm |-> rm] \in msgs }
+
+
 
 -----------------------------------------------------------------------------
 
