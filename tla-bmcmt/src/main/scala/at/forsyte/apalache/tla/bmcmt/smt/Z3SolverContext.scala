@@ -377,6 +377,9 @@ class Z3SolverContext(debug: Boolean = false, profile: Boolean = false) extends 
           case _ =>
             log(s"(declare-sort $sig 0)")
             z3context.mkUninterpretedSort(sig)
+          // In preliminary experiments, the following trick sped up solving by 30%.
+          // TODO: Figure out whether we can always do that.
+//            z3context.mkUninterpretedSort(sig + "_" + level)
         }
 
       cellSorts += (sig -> (newSort, level))
