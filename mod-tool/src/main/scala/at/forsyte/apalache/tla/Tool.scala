@@ -27,7 +27,7 @@ import scala.collection.JavaConverters._
   * @author Igor Konnov
   */
 object Tool extends App with LazyLogging {
-  lazy val ISSUES_LINK: String = "[https://github.com/konnov/apalache/issues]"
+  lazy val ISSUES_LINK: String = "[https://github.com/informalsystems/apalache/issues]"
   lazy val ERROR_EXIT_CODE = 99
   lazy val OK_EXIT_CODE = 0
 
@@ -105,6 +105,7 @@ object Tool extends App with LazyLogging {
     val executor = injector.getInstance(classOf[PassChainExecutor])
     executor.options.set("io.outdir", createOutputDir())
     executor.options.set("parser.filename", parse.file.getAbsolutePath)
+    executor.options.set("parser.output", parse.output)
 
     val result = executor.run()
     if (result.isDefined) {

@@ -15,7 +15,7 @@
     <packaging>jar</packaging>
 
     <name>tool</name>
-    <url>https://github.com/konnov/apalache</url>
+    <url>https://github.com/informalsystems/apalache</url>
 
     <build>
         <plugins>
@@ -23,7 +23,7 @@
             <plugin>
                 <groupId>pl.project13.maven</groupId>
                 <artifactId>git-commit-id-plugin</artifactId>
-                <version>2.2.5</version>
+                <version>4.0.2</version>
                 <executions>
                     <execution>
                         <id>get-the-git-infos</id>
@@ -112,12 +112,12 @@
         <dependency>
             <groupId>org.backuity.clist</groupId>
             <artifactId>clist-core_2.12</artifactId>
-            <version>3.2.2</version>
+            <version>3.5.1</version>
         </dependency>
         <dependency>
             <groupId>org.backuity.clist</groupId>
             <artifactId>clist-macros_2.12</artifactId>
-            <version>3.2.2</version>
+            <version>3.5.1</version>
         </dependency>
         <dependency>
             <!-- configurations in property files -->
@@ -129,7 +129,7 @@
             <!-- commons-configuration2 uses commons-beanutiles (without declaring it in dependencies?) -->
             <groupId>commons-beanutils</groupId>
             <artifactId>commons-beanutils</artifactId>
-            <version>1.9.3</version>
+            <version>1.9.4</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>

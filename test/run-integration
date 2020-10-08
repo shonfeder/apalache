@@ -23,8 +23,7 @@ function check() {
     OUTF="$TEST.out"
     ERRF="$TEST.err"
     shift
-    echo "$DIR"/bin/apalache-mc check $EXTRA_ARGS $@
-    "$DIR"/bin/apalache-mc check $EXTRA_ARGS $@ 2>"$ERRF" | tee "$OUTF"
+    "$CMD" check $@ 2>"$ERRF" | tee "$OUTF"
 
     if grep -q "The outcome is: NoError" "$OUTF"; then
         RES="1"
@@ -76,9 +75,17 @@ function expect_fail() {
     tail -n 1 "$LOGFILE"
 }
 
+if [[ "$USE_DOCKER" == "true" ]]
+then
+    echo "# Using docker..."
+    CMD="${DIR}/script/run-docker.sh $EXTRA_ARGS"
+    NO_MVN="true"
+else
+    CMD="${DIR}/bin/apalache-mc $EXTRA_ARGS"
+fi
+
 function run_tests() {
     EXTRA_ARGS="$1"
-    echo "# Running the tests for $EXTRA_ARGS"
 
     cd "$DIR/test/tla"
     check "HourClock" --length=10 --init=HCini --next=HCnxt \
@@ -140,6 +147,22 @@ function run_tests() {
         && expect_ok
     check "Rec9" --length=5 --inv=Inv Rec9.tla \
         && expect_ok
+    check "ExistsAsValue" --inv=Inv ExistsAsValue.tla \
+        && expect_ok
+    check "Empty" Empty.tla \
+        && expect_fail
+    check "HourClock" --init=NonExistantInit \
+        HourClock.tla \
+        && expect_fail
+    check "HourClock" --next=NonExistantNext \
+        HourClock.tla \
+        && expect_fail
+    check "HourClock" --inv=NonExistantInv \
+        HourClock.tla \
+        && expect_fail
+    TLA_PATH=./tla-path-tests \
+        check "033-set-TLA_PATH" ./tla-path-tests/ImportingModule.tla \
+        && expect_ok
 }
 
 cd "$DIR"
@@ -149,6 +172,8 @@ else
     echo "# Building the package with Maven"
     mvn package
 fi
+echo "# Running the tests for $EXTRA_ARGS"
+
 
 run_tests "--algo=parallel --nworkers=1"
 run_tests "--algo=incremental"

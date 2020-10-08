@@ -142,7 +142,6 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     assert(elemCell.cellType == elemType) // otherwise, type finder is incorrect
     if (potentialElems.isEmpty) {
       // SE-SET-IN1: the set cell points to no other cell => return false
-//      state.setTheory(BoolTheory()).setRex(NameEx(SolverContext.falseConst))
       state.setRex(state.arena.cellFalse())
     } else {
       var nextState = state.updateArena(_.appendCell(BoolT()))
