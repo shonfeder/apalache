@@ -23,7 +23,7 @@ function check() {
     OUTF="$TEST.out"
     ERRF="$TEST.err"
     shift
-    "$CMD" check $@ 2>"$ERRF" | tee "$OUTF"
+    $CMD check $@ 2>"$ERRF" | tee "$OUTF"
 
     if grep -q "The outcome is: NoError" "$OUTF"; then
         RES="1"
@@ -115,11 +115,11 @@ function run_tests() {
         && expect_err
     check "y2k" --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla \
         && expect_err
-    check "y2k" --length=20 --inv=Safety y2k_instance.tla \
+    check "y2k" --length=19 --inv=Safety y2k_instance.tla \
         && expect_ok
     check "y2k" --length=30 --inv=Safety y2k_instance.tla \
         && expect_err
-    check "y2k" --length=20 --inv=Safety y2k_override.tla \
+    check "y2k" --length=19 --inv=Safety y2k_override.tla \
         && expect_ok
     check "y2k" --length=30 --inv=Safety y2k_override.tla \
         && expect_err
