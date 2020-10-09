@@ -1,190 +1,25 @@
 #!/usr/bin/env bash
 #
-# Run the integration tests
+# Run the integration tests with the appropriate environment.
+# Primarily for use in integration tests
 #
-# Igor Konnov, 2018-2020
+# Shon Feder, 2020
 
-DIR=`dirname $0`
-DIR=`cd "$DIR/.."; pwd`
-echo "# Tool home: $DIR"
-TEST_DIR="$DIR/test/tla"
-nok=0
-nfail=0
-testno=1
-LOGFILE="$TEST_DIR/log.out"
-echo "" >"$LOGFILE"
+# The directory of this file
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-function tm() {
-    date '+%H:%M:%S'
-}
+# Ensure the environment is set
+source "$DIR"/.envrc
 
-function check() {
-    TEST=`printf '%03d-%s\n' $testno $1`
-    OUTF="$TEST.out"
-    ERRF="$TEST.err"
-    shift
-    $CMD check $@ 2>"$ERRF" | tee "$OUTF"
+#run_tests "--algo=parallel --nworkers=1"
+#run_tests "--algo=incremental"
+#run_tests "--algo=offline"
 
-    if grep -q "The outcome is: NoError" "$OUTF"; then
-        RES="1"
-    elif grep -q "The outcome is: Error" "$OUTF"; then
-        RES="0"
-    elif grep -q "The outcome is: Deadlock" "$OUTF"; then
-        RES="0"
-    elif grep -q "EXITCODE: ERROR" "$OUTF"; then
-        RES="99"
-    elif grep -q "REPORT A BUG" "$OUTF"; then
-        RES="500"
-    else
-        RES="10" # unknown bug
-    fi
+# Shadow potential DIR in sourced .envrc
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-    testno=$((testno+1))
-}
+# Ensure the mdx executable is on the path
+eval $(opam env)
 
-function expect_ok() {
-    if [ "$RES" = "1" ]; then
-        printf '%s TEST %-58s [OK]\n' `tm` "$TEST" >>"$LOGFILE"
-        nok=$((nok+1))
-    else
-        printf '%s TEST %-58s [FAIL]\n' `tm` "$TEST" >>"$LOGFILE"
-        nfail=$((nfail+1))
-    fi
-    tail -n 1 "$LOGFILE"
-}
-
-function expect_err() {
-    if [ "$RES" = "0" ]; then
-        printf '%s TEST %-58s [OK]\n' `tm` "$TEST" >>"$LOGFILE"
-        nok=$((nok+1))
-    else
-        printf '%s TEST %-58s [FAIL]\n' `tm` "$TEST" >>"$LOGFILE"
-        nfail=$((nfail+1))
-    fi
-    tail -n 1 "$LOGFILE"
-}
-
-function expect_fail() {
-    if [ "$RES" -gt "1" ]; then
-        printf '%s TEST %-58s [OK]\n' `tm` "$TEST" >>"$LOGFILE"
-        nok=$((nok+1))
-    else
-        printf '%s TEST %-58s [FAIL]\n' `tm` "$TEST" >>"$LOGFILE"
-        nfail=$((nfail+1))
-    fi
-    tail -n 1 "$LOGFILE"
-}
-
-if [[ "$USE_DOCKER" == "true" ]]
-then
-    echo "# Using docker..."
-    CMD="${DIR}/script/run-docker.sh $EXTRA_ARGS"
-    NO_MVN="true"
-else
-    CMD="${DIR}/bin/apalache-mc $EXTRA_ARGS"
-fi
-
-function run_tests() {
-    EXTRA_ARGS="$1"
-
-    cd "$DIR/test/tla"
-    check "HourClock" --length=10 --init=HCini --next=HCnxt \
-        --inv=TypeOK HourClock.tla \
-        && expect_ok
-    check "Bug20190118" --length=1 --init=Init --next=Next \
-        --inv=Inv Bug20190118.tla \
-        && expect_ok
-    check "mis" --length=5 --inv=IsIndependent mis.tla \
-        && expect_ok
-    check "mis_bug" --length=5 --inv=IsIndependent mis_bug.tla \
-        && expect_err
-    # TODO: TypeOK of ast.tla does not work
-    check "ast" --length=5 ast.tla \
-        && expect_ok
-    check "pr" --length=2 pr.tla \
-        && expect_ok
-    check "EWD840" --length=5 --inv=Inv EWD840.tla \
-        && expect_ok
-    check "Paxos" --length=5 --inv=Inv Paxos.tla \
-        && expect_ok
-    check "Bug20190807" --length=1 Bug20190118.tla \
-        && expect_ok
-    check "Bug20190921" --length=5 --cinit=CInit Bug20190921.tla \
-        && expect_ok
-    check "Counter" --length=10 --inv=Inv Counter.tla \
-        && expect_err
-    check "y2k" --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla \
-        && expect_err
-    check "y2k" --length=19 --inv=Safety y2k_instance.tla \
-        && expect_ok
-    check "y2k" --length=30 --inv=Safety y2k_instance.tla \
-        && expect_err
-    check "y2k" --length=19 --inv=Safety y2k_override.tla \
-        && expect_ok
-    check "y2k" --length=30 --inv=Safety y2k_override.tla \
-        && expect_err
-    check "NatCounter" --length=10 --inv=Inv NatCounter.tla \
-        && expect_err
-    check "NeedForTypesWithTypes" --length=10 --cinit=ConstInit --inv=Inv \
-        NeedForTypesWithTypes.tla \
-        && expect_ok
-    check "HandshakeWithTypes" --length=4 --inv=Inv HandshakeWithTypes.tla \
-        && expect_ok
-    # TODO: recover deadlock detection in the parallel algorithm
-    #check "020-HandshakeWithTypes" --length=5 --inv=Inv HandshakeWithTypes.tla \
-    #    && expect_err # deadlock
-    check "Bug20200306" --length=2 --inv=Inv Bug20200306.tla \
-        && expect_err # the invariant FALSE is trivially violated
-    check "Assignments20200309" --length=1 --inv=Inv Assignments20200309.tla \
-        && expect_fail # Init does not have an assignment
-    check "Inline" --length=5 Inline.tla \
-        && expect_ok
-    check "Rec1" --length=5 --inv=Inv Rec1.tla \
-        && expect_ok
-    check "Rec3" --length=10 --inv=Inv Rec3.tla \
-        && expect_ok
-    check "Rec8" --length=10 --inv=Inv Rec8.tla \
-        && expect_ok
-    check "Rec9" --length=5 --inv=Inv Rec9.tla \
-        && expect_ok
-    check "ExistsAsValue" --inv=Inv ExistsAsValue.tla \
-        && expect_ok
-    check "Empty" Empty.tla \
-        && expect_fail
-    check "HourClock" --init=NonExistantInit \
-        HourClock.tla \
-        && expect_fail
-    check "HourClock" --next=NonExistantNext \
-        HourClock.tla \
-        && expect_fail
-    check "HourClock" --inv=NonExistantInv \
-        HourClock.tla \
-        && expect_fail
-    TLA_PATH=./tla-path-tests \
-        check "033-set-TLA_PATH" ./tla-path-tests/ImportingModule.tla \
-        && expect_ok
-}
-
-cd "$DIR"
-if [ "$NO_MVN" != "" ]; then
-    echo "# Skipped mvn package, as NO_MVN=$NO_MVN"
-else
-    echo "# Building the package with Maven"
-    mvn package
-fi
-echo "# Running the tests for $EXTRA_ARGS"
-
-
-run_tests "--algo=parallel --nworkers=1"
-run_tests "--algo=incremental"
-run_tests "--algo=offline"
-
-cat "$LOGFILE"
-
-echo "OK: $nok FAILED: $nfail"
-
-if [ "$nfail" -gt 0 ]; then
-    echo "Some tests failed. Check ${TEST_DIR}/<test>.log."
-    exit 1
-fi
-
+# Execute the wrapper script
+"$DIR"/mdx-test.py
