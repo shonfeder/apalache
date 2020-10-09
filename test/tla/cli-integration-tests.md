@@ -96,288 +96,853 @@ EXITCODE: OK
 
 ## running the check command
 
-### check Bug20190118 succeeds
+### incremental check Bug20190118 succeeds
 
 ```sh
-$ apalache-mc check --length=1 --init=Init --next=Next --inv=Inv Bug20190118.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=incremental --length=1 --init=Init --next=Next --inv=Inv Bug20190118.tla | sed 's/I@.*//'
 ...
 The outcome is: NoError
 ...
 ```
 
-### check mis.tla succeeds
+### offline check Bug20190118 succeeds
 
 ```sh
-$ apalache-mc check --length=5 --inv=IsIndependent mis.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=1 --init=Init --next=Next --inv=Inv Bug20190118.tla | sed 's/I@.*//'
 ...
 The outcome is: NoError
 ...
 ```
 
-### check mis_bug.tla errors
+### parallel check Bug20190118 succeeds
 
 ```sh
-$ apalache-mc check --length=5 --inv=IsIndependent mis_bug.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=parallel --nworkers=1 --length=1 --init=Init --next=Next --inv=Inv Bug20190118.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check mis.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=IsIndependent mis.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check mis.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --inv=IsIndependent mis.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check mis.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=IsIndependent mis.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check mis_bug.tla errors
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=IsIndependent mis_bug.tla | sed 's/I@.*//'
 ...
 The outcome is: Error
 Checker has found an error
 ...
 ```
 
-
-### check ast.tla succeeds
-
-```sh
-$ apalache-mc check --length=5 ast.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check pr.tla suceeds
+### offline check mis_bug.tla errors
 
 ```sh
-$ apalache-mc check --length=2 pr.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check EWD840.tla succeeds
-
-```sh
-$ apalache-mc check --length=5 --inv=Inv EWD840.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Paxos.tla succeeds
-
-```sh
-$ apalache-mc check --length=5 --inv=Inv Paxos.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Bug20190118 succeeds
-
-```sh
-$ apalache-mc check --length=1 Bug20190118.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Bug20190921 succeeds
-
-```sh
-$ apalache-mc check --length=5 --cinit=CInit Bug20190921.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Counter.tla errors
-
-```sh
-$ apalache-mc check --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=5 --inv=IsIndependent mis_bug.tla | sed 's/I@.*//'
 ...
 The outcome is: Error
+Checker has found an error
+...
+```
+
+### parallel check mis_bug.tla errors
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=IsIndependent mis_bug.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+Checker has found an error
+...
+```
+
+### incremental check ast.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 ast.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check ast.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 ast.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check ast.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 ast.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check pr.tla suceeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=2 pr.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check pr.tla suceeds
+
+```sh
+$ apalache-mc check --algo=offline --length=2 pr.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check pr.tla suceeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=2 pr.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check EWD840.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=Inv EWD840.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check EWD840.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --inv=Inv EWD840.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check EWD840.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv EWD840.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Paxos.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=Inv Paxos.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Paxos.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --inv=Inv Paxos.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Paxos.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv Paxos.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Bug20190118 succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=1 Bug20190118.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Bug20190118 succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=1 Bug20190118.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Bug20190118 succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=1 Bug20190118.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Bug20190921 succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --cinit=CInit Bug20190921.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Bug20190921 succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --cinit=CInit Bug20190921.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Bug20190921 succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --cinit=CInit Bug20190921.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=incremental --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+Checker has found an error
+...
+```
+
+### offline check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=offline --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+Checker has found an error
+...
+```
+
+### parallel check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
 Checker has found an error
 ...
 ```
 
 ### y2k.tla
 
-#### check y2k with length 20 and ConstInit errors
+#### incremental check y2k with length 20 and ConstInit errors
 
 ```sh
-$ apalache-mc check --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla  | sed 's/I@.*//'
+$ apalache-mc check --algo=incremental --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla  | sed 's/I@.*//'
 ...
 The outcome is: Error
 Checker has found an error
 ...
 ```
 
-#### check y2k with 19 steps succeeds
+#### offline check y2k with length 20 and ConstInit errors
 
 ```sh
-$ apalache-mc check --length=19 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-#### check y2k with length 30 errors
-
-```sh
-$ apalache-mc check --length=30 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla  | sed 's/I@.*//'
 ...
 The outcome is: Error
 Checker has found an error
 ...
 ```
 
-### check Counter.tla errors
+#### parallel check y2k with length 20 and ConstInit errors
 
 ```sh
-$ apalache-mc check --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=parallel --nworkers=1 --length=20 --inv=Safety --cinit=ConstInit y2k_cinit.tla  | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+Checker has found an error
+...
+```
+
+#### incremental check y2k with 19 steps succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=19 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+#### offline check y2k with 19 steps succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=19 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+#### parallel check y2k with 19 steps succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=19 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+#### incremental check y2k with length 30 errors
+
+```sh
+$ apalache-mc check --algo=incremental --length=30 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
 ...
 The outcome is: Error
 Checker has found an error
 ...
 ```
 
-### check NatCounter.tla errors
+#### offline check y2k with length 30 errors
 
 ```sh
-$ apalache-mc check --length=10 --inv=Inv NatCounter.tla  | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=30 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+Checker has found an error
+...
+```
+
+#### parallel check y2k with length 30 errors
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=30 --inv=Safety y2k_instance.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+Checker has found an error
+...
+```
+
+### incremental check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=incremental --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+Checker has found an error
+...
+```
+
+### offline check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=offline --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+Checker has found an error
+...
+```
+
+### parallel check Counter.tla errors
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --inv=Inv Counter.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+Checker has found an error
+...
+```
+
+### incremental check NatCounter.tla errors
+
+```sh
+$ apalache-mc check --algo=incremental --length=10 --inv=Inv NatCounter.tla  | sed 's/I@.*//'
 ...
 The outcome is: Error
 ...
 ```
 
-### check NeedForTypesWithTypes.tla succeeds
+### offline check NatCounter.tla errors
 
 ```sh
-$ apalache-mc check --length=10 --cinit=ConstInit --inv=Inv NeedForTypesWithTypes.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=10 --inv=Inv NatCounter.tla  | sed 's/I@.*//'
+...
+The outcome is: Error
+...
+```
+
+### parallel check NatCounter.tla errors
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --inv=Inv NatCounter.tla  | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+...
+```
+
+### incremental check NeedForTypesWithTypes.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=10 --cinit=ConstInit --inv=Inv NeedForTypesWithTypes.tla | sed 's/I@.*//'
 ...
 The outcome is: NoError
 ...
 ```
 
-### check HandshakeWithTypes.tla with length 4 succeeds
+### offline check NeedForTypesWithTypes.tla succeeds
 
 ```sh
-$ apalache-mc check --length=4 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=10 --cinit=ConstInit --inv=Inv NeedForTypesWithTypes.tla | sed 's/I@.*//'
 ...
 The outcome is: NoError
 ...
 ```
 
-### check HandshakeWithTypes.tla with lengh 5 deadlocks
+### parallel check NeedForTypesWithTypes.tla succeeds
 
 ```sh
-$ apalache-mc check --length=5 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --cinit=ConstInit --inv=Inv NeedForTypesWithTypes.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check HandshakeWithTypes.tla with length 4 succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=4 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check HandshakeWithTypes.tla with length 4 succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=4 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check HandshakeWithTypes.tla with length 4 succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=4 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check HandshakeWithTypes.tla with lengh 5 deadlocks
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
 ...
 The outcome is: Deadlock
 ...
 ```
 
-### check trivial violation of FALSE invariant
+### offline check HandshakeWithTypes.tla with lengh 5 deadlocks
 
 ```sh
-$ apalache-mc check --length=2 --inv=Inv Bug20200306.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=offline --length=5 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+...
+The outcome is: Deadlock
+...
+```
+
+### parallel check HandshakeWithTypes.tla with lengh 5 deadlocks
+
+The parallel checker does not find deadlocks yet
+
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv HandshakeWithTypes.tla | sed 's/I@.*//'
+...
+The outcome is: Deadlock
+...
+
+### incremental check trivial violation of FALSE invariant
+
+```sh
+$ apalache-mc check --algo=incremental --length=2 --inv=Inv Bug20200306.tla | sed 's/I@.*//'
 ...
 The outcome is: Error
 ...
 ```
 
-### check Init without an assignment fails
+### offline check trivial violation of FALSE invariant
 
 ```sh
-$ apalache-mc check --length=1 --inv=Inv Assignments20200309.tla
+$ apalache-mc check --algo=offline --length=2 --inv=Inv Bug20200306.tla | sed 's/I@.*//'
+...
+The outcome is: Error
+...
+```
+
+### parallel check trivial violation of FALSE invariant
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=2 --inv=Inv Bug20200306.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: Error
+...
+```
+
+### incremental check Init without an assignment fails
+
+```sh
+$ apalache-mc check --algo=incremental --length=1 --inv=Inv Assignments20200309.tla
 ...
 EXITCODE: ERROR (99)
 [99]
 ```
 
-### check Inline.tla suceeds
+### offline check Init without an assignment fails
 
 ```sh
-$ apalache-mc check --length=5 Inline.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Rec1.tla succeeds
-
-```sh
-$ apalache-mc check --length=5 --inv=Inv Rec1.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Rec3.tla succeeds
-```sh
-$ apalache-mc check --length=10 --inv=Inv Rec3.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Rec8.tla succeeds
-
-```sh
-$ apalache-mc check --length=10 --inv=Inv Rec8.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Rec9.tla succeeds
-
-```sh
-$ apalache-mc check --length=5 --inv=Inv Rec9.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check ExistsAsValue.tla succeeds
-
-```sh
-$ apalache-mc check --inv=Inv ExistsAsValue.tla | sed 's/I@.*//'
-...
-The outcome is: NoError
-...
-```
-
-### check Empty.tla fails
-
-```sh
-$ apalache-mc check Empty.tla
+$ apalache-mc check --algo=offline --length=1 --inv=Inv Assignments20200309.tla
 ...
 EXITCODE: ERROR (99)
 [99]
 ```
 
-### check HourClock.tla without Init fails
+### parallel check Init without an assignment fails
 
 ```sh
-$ apalache-mc check --init=NonExistantInit HourClock.tla
+$ apalache-mc check --algo=parallel --nworkers=1 --length=1 --inv=Inv Assignments20200309.tla
 ...
 EXITCODE: ERROR (99)
 [99]
 ```
 
-### check HourClock.tla without Next fails
+### incremental check Inline.tla suceeds
 
 ```sh
-$ apalache-mc check --next=NonExistantNext HourClock.tla
-...
-EXITCODE: ERROR (99)
-[99]
-```
-
-### check HourClock.tla without Inv fails
-
-```sh
-$ apalache-mc check --inv=NonExistantInv HourClock.tla
-...
-EXITCODE: ERROR (99)
-[99]
-```
-
-### check use of TLA_PATH for modules in child directory succeeds
-
-```sh
-$ TLA_PATH=./tla-path-tests apalache-mc check ./tla-path-tests/ImportingModule.tla | sed 's/I@.*//'
+$ apalache-mc check --algo=incremental --length=5 Inline.tla | sed 's/I@.*//'
 ...
 The outcome is: NoError
 ...
 ```
+
+### offline check Inline.tla suceeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 Inline.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Inline.tla suceeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 Inline.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Rec1.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=Inv Rec1.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Rec1.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --inv=Inv Rec1.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Rec1.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv Rec1.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Rec3.tla succeeds
+```sh
+$ apalache-mc check --algo=incremental --length=10 --inv=Inv Rec3.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Rec3.tla succeeds
+```sh
+$ apalache-mc check --algo=offline --length=10 --inv=Inv Rec3.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+### parallel check Rec3.tla succeeds
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --inv=Inv Rec3.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Rec8.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=10 --inv=Inv Rec8.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Rec8.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=10 --inv=Inv Rec8.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Rec8.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=10 --inv=Inv Rec8.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Rec9.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --length=5 --inv=Inv Rec9.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check Rec9.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --length=5 --inv=Inv Rec9.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check Rec9.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv Rec9.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check ExistsAsValue.tla succeeds
+
+```sh
+$ apalache-mc check --algo=incremental --inv=Inv ExistsAsValue.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check ExistsAsValue.tla succeeds
+
+```sh
+$ apalache-mc check --algo=offline --inv=Inv ExistsAsValue.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check ExistsAsValue.tla succeeds
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --inv=Inv ExistsAsValue.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
+### incremental check Empty.tla fails
+
+```sh
+$ apalache-mc check --algo=incremental Empty.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### offline check Empty.tla fails
+
+```sh
+$ apalache-mc check --algo=offline Empty.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### parallel check Empty.tla fails
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 Empty.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### incremental check HourClock.tla without Init fails
+
+```sh
+$ apalache-mc check --algo=incremental --init=NonExistantInit HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### offline check HourClock.tla without Init fails
+
+```sh
+$ apalache-mc check --algo=offline --init=NonExistantInit HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### parallel check HourClock.tla without Init fails
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --init=NonExistantInit HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### incremental check HourClock.tla without Next fails
+
+```sh
+$ apalache-mc check --algo=incremental --next=NonExistantNext HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### offline check HourClock.tla without Next fails
+
+```sh
+$ apalache-mc check --algo=offline --next=NonExistantNext HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### parallel check HourClock.tla without Next fails
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --next=NonExistantNext HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### incremental check HourClock.tla without Inv fails
+
+```sh
+$ apalache-mc check --algo=incremental --inv=NonExistantInv HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### offline check HourClock.tla without Inv fails
+
+```sh
+$ apalache-mc check --algo=offline --inv=NonExistantInv HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### parallel check HourClock.tla without Inv fails
+
+```sh
+$ apalache-mc check --algo=parallel --nworkers=1 --inv=NonExistantInv HourClock.tla
+...
+EXITCODE: ERROR (99)
+[99]
+```
+
+### incremental check use of TLA_PATH for modules in child directory succeeds
+
+```sh
+$ TLA_PATH=./tla-path-tests apalache-mc check --algo=incremental ./tla-path-tests/ImportingModule.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### offline check use of TLA_PATH for modules in child directory succeeds
+
+```sh
+$ TLA_PATH=./tla-path-tests apalache-mc check --algo=offline ./tla-path-tests/ImportingModule.tla | sed 's/I@.*//'
+...
+The outcome is: NoError
+...
+```
+
+### parallel check use of TLA_PATH for modules in child directory succeeds
+
+```sh
+$ TLA_PATH=./tla-path-tests apalache-mc check --algo=parallel --nworkers=1 ./tla-path-tests/ImportingModule.tla | sed 's/I@.*//'
+...
+Worker 1: The outcome is: NoError
+...
+```
+
