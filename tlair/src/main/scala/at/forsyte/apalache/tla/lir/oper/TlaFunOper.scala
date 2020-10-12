@@ -122,7 +122,7 @@ object TlaFunOper {
     * )`
     * </p>
     */
-  val recFunDef = new TlaFunOper {
+  object recFunDef extends TlaFunOper {
     override def arity: OperArity = FixedArity(3)
     override def name: String = "rec-fun-def"
     override def precedence: (Int, Int) = (100, 100) // as the operator declaration
@@ -133,7 +133,7 @@ object TlaFunOper {
     *
     * @see TlaFunOper.recFunDef
     */
-  val recFunRef = new TlaFunOper {
+  object recFunRef extends TlaFunOper {
     /**
       * A unique name that can be used to refer to a recursive function inside its body.
       */
