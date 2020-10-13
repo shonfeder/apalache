@@ -11,10 +11,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 # Ensure the environment is set
 source "$DIR"/.envrc
 
-#run_tests "--algo=parallel --nworkers=1"
-#run_tests "--algo=incremental"
-#run_tests "--algo=offline"
-
 # Shadow potential DIR in sourced .envrc
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
