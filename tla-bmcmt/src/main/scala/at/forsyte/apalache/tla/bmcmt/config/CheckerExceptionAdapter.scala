@@ -1,14 +1,14 @@
 package at.forsyte.apalache.tla.bmcmt.config
 
 import at.forsyte.apalache.infra.{ErrorMessage, ExceptionAdapter, FailureMessage, NormalErrorMessage}
-import at.forsyte.apalache.tla.assignments.AssignmentException
+import at.forsyte.apalache.tla.assignments.{AssignmentException, CoverData}
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.types.TypeInferenceError
 import at.forsyte.apalache.tla.imp.SanyException
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.{MalformedTlaError, OperEx, TlaEx}
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
-import at.forsyte.apalache.tla.pp.{ConfigurationError, IrrecoverablePreprocessingError, NotInKeraError, TLCConfigurationError}
+import at.forsyte.apalache.tla.pp.{ConfigurationError, IrrecoverablePreprocessingError, NotInKeraError, TLCConfigurationError, TlaInputError}
 import com.typesafe.scalalogging.LazyLogging
 import javax.inject.{Inject, Singleton}
 
@@ -29,6 +29,9 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
 
     case err: ConfigurationError =>
       NormalErrorMessage("Configuration error (see the manual): " + err.getMessage)
+
+    case err: TlaInputError =>
+      NormalErrorMessage("Input error (see the manual): " + err.getMessage)
 
     case err: AssignmentException =>
       logger.info("To understand the error, read the manual:")
@@ -80,6 +83,10 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
     case err: MalformedTlaError =>
       val msg = "%s: unexpected TLA+ expression: %s".format(findLoc(err.causeExpr), err.getMessage)
       FailureMessage(msg)
+
+    case err: CoverData.CoverException =>
+      val msg = "Unable to find assignments for all state variables: \n%s\n [see docs/manual.md 7.1]".format(err.getMessage)
+      NormalErrorMessage(msg)
   }
 
   private def findLoc(expr: TlaEx): String = {

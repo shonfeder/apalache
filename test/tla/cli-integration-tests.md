@@ -94,6 +94,19 @@ $ apalache-mc help
 EXITCODE: OK
 ```
 
+## running the parse command
+
+This command parses a TLA+ specification with the SANY parser.
+
+### parse Rec12 succeeds
+
+```sh
+$ apalache-mc parse Rec12.tla | sed 's/I@.*//'
+...
+EXITCODE: OK
+...
+```
+
 ## running the check command
 
 ### incremental check Bug20190118 succeeds
@@ -738,7 +751,6 @@ $ apalache-mc check --algo=incremental --length=10 --inv=Inv Rec8.tla | sed 's/I
 The outcome is: NoError
 ...
 ```
-
 ### offline check Rec8.tla succeeds
 
 ```sh
@@ -782,6 +794,26 @@ $ apalache-mc check --algo=parallel --nworkers=1 --length=5 --inv=Inv Rec9.tla |
 ...
 Worker 1: The outcome is: NoError
 ...
+```
+
+### check Rec10.tla fails without UNROLL_DEFAULT_Fact
+
+```sh
+$ apalache-mc check Rec10.tla | sed 's/[IEW]@.*//'
+...
+Input error (see the manual): Recursive operator Fact requires an annotation UNROLL_DEFAULT_Fact. See: https://github.com/informalsystems/apalache/blob/unstable/docs/manual.md#recursion
+...
+EXITCODE: ERROR (99)
+```
+
+### check Rec11.tla fails without UNROLL_TIMES_Fact
+
+```sh
+$ apalache-mc check Rec11.tla | sed 's/[IEW]@.*//'
+...
+Input error (see the manual): Recursive operator Fact requires an annotation UNROLL_TIMES_Fact. See: https://github.com/informalsystems/apalache/blob/unstable/docs/manual.md#recursion
+...
+EXITCODE: ERROR (99)
 ```
 
 ### incremental check ExistsAsValue.tla succeeds
@@ -927,7 +959,6 @@ $ TLA_PATH=./tla-path-tests apalache-mc check --algo=incremental ./tla-path-test
 The outcome is: NoError
 ...
 ```
-
 ### offline check use of TLA_PATH for modules in child directory succeeds
 
 ```sh
@@ -946,3 +977,108 @@ Worker 1: The outcome is: NoError
 ...
 ```
 
+## configure the check command
+
+Testing various flags that are set via command-line options and the TLC
+configuration file. The CLI has priority over the TLC config. So we have to
+test that it all works together.
+
+### configure default Init and Next
+
+```sh
+$ apalache-mc check Config.tla | sed 's/I@.*//'
+...
+  > Command line option --init is not set. Using Init
+  > Command line option --next is not set. Using Next
+...
+  > Set the initialization predicate to Init
+  > Set the transition predicate to Next
+...
+The outcome is: NoError
+...
+```
+
+### configure an invariant via CLI
+
+```sh
+$ apalache-mc check --inv=Inv Config.tla | sed 's/I@.*//'
+...
+  > Set an invariant to Inv
+...
+The outcome is: NoError
+...
+```
+
+### configure all params via CLI
+
+```sh
+$ apalache-mc check --init=Init1 --next=Next1 --inv=Inv Config.tla | sed 's/I@.*//'
+...
+  > Set the initialization predicate to Init1
+  > Set the transition predicate to Next1
+  > Set an invariant to Inv
+...
+The outcome is: Error
+...
+```
+
+### configure via TLC config
+
+```sh
+$ apalache-mc check --config=Config1.cfg Config.tla | sed 's/[IEW]@.*//'
+...
+  > Loading TLC configuration from Config1.cfg
+...
+  > Config1.cfg: PROPERTY AwesomeLiveness is ignored. Only INVARIANTS are supported.
+...
+  > Set the initialization predicate to Init1
+  > Set the transition predicate to Next1
+  > Set an invariant to Inv1
+...
+The outcome is: NoError
+...
+```
+
+### configure via TLC config and override it via CLI
+
+```sh
+$ apalache-mc check --config=Config1.cfg --init=Init2 --next=Next2 Config.tla | sed 's/[IEW]@.*//'
+...
+  > Loading TLC configuration from Config1.cfg
+...
+  > Set the initialization predicate to Init2
+  > Set the transition predicate to Next2
+  > Set an invariant to Inv1
+...
+The outcome is: Error
+...
+```
+
+### configure missing property in TLC config 
+
+```sh
+$ apalache-mc check --config=Config3.cfg Config.tla | sed 's/[IE]@.*//'
+...
+  > Loading TLC configuration from Config3.cfg
+...
+Configuration error (see the manual): Operator NoLiveness not found (used as a temporal property)
+...
+EXITCODE: ERROR (99)
+```
+
+### configure via TLC config with SPECIFICATION
+
+```sh
+$ apalache-mc check --config=Config2.cfg Config.tla | sed 's/[IEW]@.*//'
+...
+  > Loading TLC configuration from Config2.cfg
+...
+  > Config2.cfg: Using SPECIFICATION Spec2
+...
+  > Set the initialization predicate to Init2
+  > Set the transition predicate to Next2
+  > Set an invariant to Inv2
+...
+The outcome is: NoError
+...
+```
