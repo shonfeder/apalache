@@ -11,7 +11,7 @@ jobs:
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v1
         with:
-          mdbook-version: '0.4.5'
+          mdbook-version: "0.4.5"
 
       - name: Compile mdBook
         run: |
@@ -97,3 +97,24 @@ jobs:
         env:
           USE_DOCKER: true
           APALACHE_TAG: ci
+
+    check-for-release:
+      needs: [unit-tests, integration-tests, docker-tests]
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/setup-java@v1
+          with:
+            java-version: 1.8
+        - name: Cut Release
+          run: |
+            git checkout HEAD~1
+            msg=$(git show -s --format=%s HEAD)
+            if ! [[ "$msg" =~ ^\[release\] ]]
+            then
+                echo "No release to publish"
+            else
+                echo "Publishing release"
+                git config --global user.name "$GITHUB_ACTOR"
+                git config --global user.email "github@actions.ci"
+                ./script/release-publish.sh
+            fi
