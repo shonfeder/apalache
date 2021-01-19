@@ -101,6 +101,10 @@ jobs:
     check-for-release:
       needs: [unit-tests, integration-tests, docker-tests]
       runs-on: ubuntu-latest
+      # Only check for releases on unstable
+      if: github.ref == 'refs/heads/unstable'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       steps:
         - uses: actions/setup-java@v1
           with:
