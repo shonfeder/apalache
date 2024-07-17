@@ -2,9 +2,14 @@ package at.forsyte.apalache.tla.lir.transformations.standard
 
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience._
-import at.forsyte.apalache.tla.lir.oper.TlcOper
 import at.forsyte.apalache.tla.lir.values.{TlaIntSet, TlaNatSet}
+import at.forsyte.apalache.tla.lir.UntypedPredefs._
+import at.forsyte.apalache.tla.lir.oper.ApalacheInternalOper
+import at.forsyte.apalache.tla.lir.transformations.PredResultFail
+import org.junit.runner.RunWith
+import org.scalatestplus.junit.JUnitRunner
 
+@RunWith(classOf[JUnitRunner])
 class TestKeraLanguagePred extends LanguagePredTestSuite {
   private val pred = new KeraLanguagePred
 
@@ -25,9 +30,8 @@ class TestKeraLanguagePred extends LanguagePredTestSuite {
     expectOk(pred.isExprOk(cup(enumSet(int(1)), enumSet(int(2)))))
     expectOk(pred.isExprOk(in(int(1), enumSet(int(2)))))
     expectOk(pred.isExprOk(enumSet(int(1))))
-    expectOk(pred.isExprOk(subseteq(enumSet(int(1)), enumSet(int(2)))))
-    expectOk(pred.isExprOk(filter("x", enumSet(int(1)), bool(false))))
-    expectOk(pred.isExprOk(map(int(2), "x", enumSet(int(1)))))
+    expectOk(pred.isExprOk(filter(name("x"), enumSet(int(1)), bool(false))))
+    expectOk(pred.isExprOk(map(int(2), name("x"), enumSet(int(1)))))
 
     expectOk(pred.isExprOk(powSet(enumSet(int(1), int(2)))))
     expectOk(pred.isExprOk(union(enumSet(enumSet(int(1), int(2))))))
@@ -50,25 +54,16 @@ class TestKeraLanguagePred extends LanguagePredTestSuite {
   test("KerA tuples, records, sequences") {
     expectOk(pred.isExprOk(tuple(int(1), bool(true))))
     expectOk(pred.isExprOk(enumFun(str("a"), bool(true))))
-    expectOk(pred.isExprOk(head(tuple(1, 2))))
-    expectOk(pred.isExprOk(tail(tuple(1, 2))))
-    expectOk(pred.isExprOk(subseq(tuple(1, 2), 3, 4)))
-    expectOk(pred.isExprOk(len(tuple(1, 2))))
-    expectOk(pred.isExprOk(append(tuple(1, 2), tuple(2, 3))))
+    expectOk(pred.isExprOk(head(tuple(int(1), int(2)))))
+    expectOk(pred.isExprOk(tail(tuple(int(1), int(2)))))
+    expectOk(pred.isExprOk(subseq(tuple(int(1), int(2)), int(3), int(4))))
+    expectOk(pred.isExprOk(len(tuple(int(1), int(2)))))
+    expectOk(pred.isExprOk(append(tuple(int(1), int(2)), tuple(int(2), int(3)))))
   }
 
   test("KerA miscellania") {
     expectOk(pred.isExprOk(label(int(2), "a")))
     expectOk(pred.isExprOk(label(int(2), "a", "b")))
-    expectOk(pred.isExprOk(withType(name("x"), enumSet(booleanSet()))))
-  }
-
-  test("KerA TLC") {
-    expectOk(pred.isExprOk(OperEx(TlcOper.print, tla.bool(true), tla.str("msg"))))
-    expectOk(pred.isExprOk(OperEx(TlcOper.printT, tla.str("msg"))))
-    expectOk(pred.isExprOk(OperEx(TlcOper.assert, tla.bool(true), tla.str("msg"))))
-    expectOk(pred.isExprOk(OperEx(TlcOper.colonGreater, tla.int(1), tla.int(2))))
-    expectOk(pred.isExprOk(OperEx(TlcOper.atat, NameEx("fun"), NameEx("pair"))))
   }
 
   test("a KerA integer expression") {
@@ -93,9 +88,8 @@ class TestKeraLanguagePred extends LanguagePredTestSuite {
     expectFail(pred.isExprOk(cap(enumSet(int(1)), enumSet(int(2)))))
     expectFail(pred.isExprOk(setminus(enumSet(int(1)), enumSet(int(2)))))
     expectFail(pred.isExprOk(notin(int(1), enumSet(int(2)))))
-    expectFail(pred.isExprOk(supseteq(enumSet(int(1)), enumSet(int(2)))))
-    expectFail(pred.isExprOk(subset(enumSet(int(1)), enumSet(int(2)))))
-    expectFail(pred.isExprOk(supset(enumSet(int(1)), enumSet(int(2)))))
+    // Keramelizer rewrites \subseteq since https://github.com/informalsystems/apalache/pull/1621
+    expectFail(pred.isExprOk(subseteq(enumSet(int(1)), enumSet(int(2)))))
   }
 
   test("not a KerA record expression") {
@@ -122,7 +116,16 @@ class TestKeraLanguagePred extends LanguagePredTestSuite {
     expectFail(pred.isExprOk(caseSplit(bool(false), int(2))))
   }
 
-  /****************************** the tests from TestFlatLanguagePred *********************************************/
+  test("not supported by the model checker") {
+    pred.isExprOk(OperEx(ApalacheInternalOper.notSupportedByModelChecker, str("foo"))) match {
+      case PredResultFail(Seq((_, "Not supported: foo"))) => () // OK
+      case _                                              => fail("expected a failure")
+    }
+  }
+
+  /**
+   * **************************** the tests from TestFlatLanguagePred ********************************************
+   */
 
   test("a call to a user operator") {
     val expr = enumSet(int(1), str("abc"), bool(false))
@@ -132,30 +135,21 @@ class TestKeraLanguagePred extends LanguagePredTestSuite {
 
   test("a non-nullary let-in ") {
     val app = appOp(name("UserOp"), int(3))
-    val letInDef = letIn(app,
-      declOp("UserOp",
-        plus(int(1), name("x")),
-        SimpleFormalParam("x")))
+    val letInDef = letIn(app, declOp("UserOp", plus(int(1), name("x")), OperParam("x")).untypedOperDecl())
     expectFail(pred.isExprOk(letInDef))
   }
 
   test("a nullary let-in ") {
     val app = appOp(name("UserOp"))
-    val letInDef = letIn(app,
-      declOp("UserOp",
-        plus(int(1), int(2))))
+    val letInDef = letIn(app, declOp("UserOp", plus(int(1), int(2))).untypedOperDecl())
     expectOk(pred.isExprOk(letInDef))
   }
 
   test("nested nullary let-in ") {
     val app = plus(appOp(name("A")), appOp(name("B")))
-    val letInDef = letIn(app,
-      declOp("A",
-        plus(int(1), int(2))))
+    val letInDef = letIn(app, declOp("A", plus(int(1), int(2))).untypedOperDecl())
     val outerLetIn =
-      letIn(letInDef,
-        declOp("B",
-          int(3)))
+      letIn(letInDef, declOp("B", int(3)).untypedOperDecl())
     expectOk(pred.isExprOk(outerLetIn))
   }
 

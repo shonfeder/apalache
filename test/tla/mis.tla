@@ -1,13 +1,53 @@
 -------------------------------- MODULE mis --------------------------------
-EXTENDS Integers, TLC
+EXTENDS Integers, TLC, Variants
+
+CONSTANT
+    \* @type: Bool;
+    HAS_BUG
+
+IntroBug ==
+    HAS_BUG = TRUE
+
+AvoidBug ==
+    HAS_BUG = FALSE
 
 N == 3
 N4 == 81
 Nodes == 1..N
 
-a <: b == a \* type annotations
+(*
+  @typeAlias: MESSAGE =
+      Val({ src: Int, val: Int })
+    | Winner(Int)
+    | Loser(Int)
+    ;
+ *)
+mis_typedefs == TRUE
 
-VARIABLES Nb, round, val, awake, rem_nbrs, status, msgs
+\* @type: (Int, Int) => MESSAGE;
+Val(src, val) == Variant("Val", [ src |-> src, val |-> val ])
+
+\* @type: Int => MESSAGE;
+Winner(val) == Variant("Winner", val)
+
+\* @type: Int => MESSAGE;
+Loser(val) == Variant("Loser", val)
+
+VARIABLES
+    \* @type: Set(<<Int, Int>>);
+    Nb,
+    \* @type: Int;
+    round,
+    \* @type: Int -> Int;
+    val,
+    \* @type: Int -> Bool;
+    awake,
+    \* @type: Int -> Set(Int);
+    rem_nbrs,
+    \* @type: Int -> Str;
+    status,
+    \* @type: Int -> Set(MESSAGE);
+    msgs
 
 Pred(n) == IF n > 1 THEN n - 1 ELSE N
 Succ(n) == IF n < N THEN n + 1 ELSE 1
@@ -20,16 +60,17 @@ Init == \*/\ Nb = [ n \in Nodes |-> {Pred(n), Succ(n)} ]
         /\ awake = [n \in Nodes |-> TRUE]
         /\ rem_nbrs = [ u \in Nodes |-> { v \in Nodes : <<u, v>> \in Nb}]
         /\ status = [n \in Nodes |-> "unknown"]
-        /\ msgs = [n \in Nodes |->
-            ({} <: {[type |-> STRING, src |-> Int, val |-> Int ]})]
+        /\ msgs = [n \in Nodes |-> {}]
     
 Senders(u) == {v \in Nodes: awake[v] /\ u \in rem_nbrs[v] }
 
-SentValues(u) == { [type |-> "val", src |-> w, val |-> val'[w]] : w \in Senders(u) }
+SentValues(u) == { Val(w, val'[w]): w \in Senders(u) }
     
 IsWinner(u) ==
-    \A m \in msgs'[u]:
-        m.type = "val" => val'[u] > m.val \* replace with TRUE to introduce a bug
+    \A m \in VariantFilter("Val", msgs'[u]):
+        IF HAS_BUG
+        THEN TRUE \* introduce a buggy condition
+        ELSE val'[u] > m.val
     
 Round1 ==
     /\ round = 1
@@ -41,12 +82,10 @@ Round1 ==
 
 SentWinners(u) ==
     IF \E w \in Senders(u): awake[w] /\ status[w] = "winner"
-    THEN {[type |-> "winner", src |-> u]
-            <: [type |-> STRING, src |-> Int, val |-> Int]}
-    ELSE ({}
-            <: {[type |-> STRING, src |-> Int, val |-> Int]})
+    THEN { Winner(u) }
+    ELSE {}
 
-IsLoser(u) == \E m \in msgs'[u]: m.type = "winner"
+IsLoser(u) == VariantFilter("Winner", msgs'[u]) /= {}
     
 Round2 ==
     /\ round = 2
@@ -56,12 +95,11 @@ Round2 ==
     /\ UNCHANGED <<rem_nbrs, awake, val>>
 
 SentLosers(u) ==
-    {([type |-> "loser", src |-> s]
-        <: [type |-> STRING, src |-> Int, val |-> Int])
-        : s \in {w \in Senders(u): awake[w] /\ status[w] = "loser"}}
+    { Loser(s):
+        s \in {w \in Senders(u): awake[w] /\ status[w] = "loser"} }
 
 ReceivedLosers(u) ==
-    {mm.src : mm \in {m \in msgs'[u]: m.type = "loser"}}
+    VariantFilter("Loser", msgs'[u])
     
 Round3 ==
     /\ round = 3 
@@ -72,7 +110,7 @@ Round3 ==
     /\ UNCHANGED <<status, val>>
 
 Next ==
-    round' = 1 + (round % 3) /\ (Round1 \/ Round2 \/ Round3) /\ UNCHANGED <<Nb>>
+    round' = 1 + (round % 3) /\ (Round1 \/ Round2 \/ Round3) /\ UNCHANGED Nb
     
 IsIndependent ==
     \A edge \in Nb:

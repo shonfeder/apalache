@@ -3,22 +3,24 @@ package at.forsyte.apalache.tla.bmcmt.rules
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.lir.oper.TlaOper
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
+import scalaz.unused
 
 /**
-  * This rule rewrites an operator application (for constant operators).
-  *
-  * @author Igor Konnov
-  */
-class UserOperRule(rewriter: SymbStateRewriter) extends RewritingRule {
+ * This rule rewrites an operator application (for constant operators).
+ *
+ * @author
+ *   Igor Konnov
+ */
+class UserOperRule(@unused rewriter: SymbStateRewriter) extends RewritingRule {
   override def isApplicable(symbState: SymbState): Boolean = {
     symbState.ex match {
-      case OperEx( TlaOper.apply, NameEx(_), _* ) => true
-      case _ => false
+      case OperEx(TlaOper.apply, NameEx(_), _*) => true
+      case _                                    => false
     }
   }
 
   override def apply(state: SymbState): SymbState = state.ex match {
-    case OperEx( TlaOper.apply, NameEx(operName), args @ _*) =>
+    case OperEx(TlaOper.apply, NameEx(operName), args @ _*) =>
       if (args.nonEmpty) {
         throw new RewriterException("Non-constant operators are not supported yet: " + state.ex, state.ex)
       }

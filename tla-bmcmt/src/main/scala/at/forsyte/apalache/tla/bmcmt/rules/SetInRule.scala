@@ -1,25 +1,27 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.implicitConversions._
+import at.forsyte.apalache.tla.bmcmt.rules.aux.AuxOps._
 import at.forsyte.apalache.tla.bmcmt.types._
-import at.forsyte.apalache.tla.lir.convenience._
-import at.forsyte.apalache.tla.lir.oper.TlaSetOper
-import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx}
-
+import at.forsyte.apalache.tla.lir.oper.{ApalacheInternalOper, TlaSetOper}
+import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.typecomp.TBuilderInstruction
+import at.forsyte.apalache.tla.types.tla
 
 /**
-  * Rewrites set membership tests: x \in S, x \in SUBSET S, and x \in [S -> T].
-  *
-  * @author Igor Konnov
-  */
+ * Rewrites set membership tests: x \in S, x \in SUBSET S, and x \in [S -> T].
+ *
+ * @author
+ *   Igor Konnov
+ */
 class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
+
   override def isApplicable(state: SymbState): Boolean = {
     state.ex match {
-      case OperEx(TlaSetOper.in, NameEx(name), _) =>
+      case OperEx(op, NameEx(name), _) if op == TlaSetOper.in || op == ApalacheInternalOper.selectInSet =>
         ArenaCell.isValidName(name) || state.binding.contains(name)
 
-      case OperEx(TlaSetOper.in, _, _) =>
+      case OperEx(op, _, _) if op == TlaSetOper.in || op == ApalacheInternalOper.selectInSet =>
         true
 
       case _ =>
@@ -32,7 +34,8 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
   override def apply(state: SymbState): SymbState = {
     state.ex match {
       // a common pattern x \in {y} that is equivalent to x = y, e.g., the assignment solver creates it
-      case OperEx(TlaSetOper.in, NameEx(name), OperEx(TlaSetOper.enumSet, rhs)) =>
+      case OperEx(op, NameEx(name), OperEx(TlaSetOper.enumSet, rhs))
+          if op == TlaSetOper.in || op == ApalacheInternalOper.selectInSet =>
         val nextState = rewriter.rewriteUntilDone(state.setRex(rhs))
         val rhsCell = nextState.arena.findCellByNameEx(nextState.ex)
         val lhsCell = state.binding(name)
@@ -40,26 +43,28 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
         // bugfix: safeEq may produce ValEx(TlaBool(false)) or ValEx(TlaBool(true)).
         rewriter.rewriteUntilDone(afterEqState.setRex(rewriter.lazyEq.safeEq(lhsCell, rhsCell)))
 
-      case OperEx(TlaSetOper.in, elem, set) =>
+      case OperEx(op, elem, set) if op == TlaSetOper.in || op == ApalacheInternalOper.selectInSet =>
         val elemState = rewriter.rewriteUntilDone(state.setRex(elem))
         val elemCell = elemState.asCell
         val setState = rewriter.rewriteUntilDone(elemState.setRex(set))
         val setCell = setState.asCell
         setCell.cellType match {
-          case FinSetT(elemType) =>
-            basicIn(setState, setCell, elemCell, elemType)
+          case CellTFrom(SetT1(_)) =>
+            basicIn(setState, setCell, elemCell)
 
-          case InfSetT(IntT()) if setCell == setState.arena.cellNatSet() || setCell == setState.arena.cellIntSet() =>
-            intOrNatSetIn(setState, setCell, elemCell, IntT())
+          case InfSetT(CellTFrom(IntT1))
+              if setCell == setState.arena.cellNatSet() || setCell == setState.arena.cellIntSet() =>
+            intOrNatSetIn(setState, setCell, elemCell, CellTFrom(IntT1))
 
-          case PowSetT(FinSetT(_)) =>
+          case PowSetT(SetT1(_)) =>
             powSetIn(setState, setCell, elemCell)
 
           case FinFunSetT(_, _) =>
             funSetIn(setState, setCell, elemCell)
 
-          case _ => throw new RewriterException("SetInRule is not implemented for type %s (found in %s)"
-            .format(setCell.cellType, state.ex), state.ex)
+          case _ =>
+            throw new RewriterException("SetInRule is not implemented for type %s (found in %s)"
+                  .format(setCell.cellType, state.ex), state.ex)
         }
 
       case _ =>
@@ -67,10 +72,13 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     }
   }
 
-  private def powSetIn(state: SymbState, powsetCell: ArenaCell, elemCell: ArenaCell): SymbState = {
+  protected def powSetIn(state: SymbState, powsetCell: ArenaCell, elemCell: ArenaCell): SymbState = {
     def checkType: PartialFunction[(CellT, CellT), Unit] = {
-      case (PowSetT(FinSetT(expectedType)), FinSetT(actualType)) =>
-        assert(expectedType == actualType)
+      case (PowSetT(SetT1(expectedType)), CellTFrom(SetT1(actualType))) =>
+        if (expectedType != actualType) {
+          val msg = s"Unexpected types in SetInRule.powSetIn: expectedType = $expectedType, actualType = $actualType"
+          throw new IllegalStateException(msg)
+        }
     }
     // double check that the type finder did its job
     checkType(powsetCell.cellType, elemCell.cellType)
@@ -79,7 +87,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
   }
 
   // TODO: pick a function from funsetCell and check for function equality
-  private def funSetIn(state: SymbState, funsetCell: ArenaCell, funCell: ArenaCell): SymbState = {
+  protected def funSetIn(state: SymbState, funsetCell: ArenaCell, funCell: ArenaCell): SymbState = {
     // checking whether f \in [S -> T]
     def flagTypeError(): Nothing = {
       val msg = s"Not implemented (open an issue): f \\in S for f: %s and S: %s."
@@ -88,8 +96,8 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     }
 
     funCell.cellType match {
-      case FunT(FinSetT(_), _) => () // OK
-      case _ => flagTypeError()
+      case CellTFrom(FunT1(_, _)) => () // OK
+      case _                      => flagTypeError()
     }
     funsetCell.cellType match {
       case FinFunSetT(PowSetT(_), _) | FinFunSetT(FinFunSetT(_, _), _) =>
@@ -99,73 +107,82 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     val funsetDom = state.arena.getDom(funsetCell)
     val funsetCdm = state.arena.getCdm(funsetCell)
     var nextState = state
-    nextState = nextState.updateArena(_.appendCell(BoolT()))
+    nextState = nextState.updateArena(_.appendCell(BoolT1))
     val pred = nextState.arena.topCell
     val relation = nextState.arena.getCdm(funCell)
 
     // In the new implementation, a function is a relation { <<x, f[x]>> : x \in U }.
-    // Check that \A t \in f: t[1] \in S /\ t[2] \in T.
-    def onPair(pair: ArenaCell): TlaEx = {
+    // Check that \A t \in f: t[1] \in S /\ t[2] \in T, and
+    // `DOMAIN f = S`, since the above only implies `DOMAIN f \subseteq S`
+    def onPair(pair: ArenaCell): TBuilderInstruction = {
       val tupleElems = nextState.arena.getHas(pair)
       val (arg, res) = (tupleElems.head, tupleElems.tail.head)
-      nextState = rewriter.rewriteUntilDone(nextState.setRex(tla.in(arg, funsetDom)))
+      nextState = rewriter.rewriteUntilDone(nextState.setRex(tla.selectInSet(arg.toBuilder, funsetDom.toBuilder)))
       val inDom = nextState.asCell
-      nextState = rewriter.rewriteUntilDone(nextState.setRex(tla.in(res, funsetCdm)))
+      nextState = rewriter.rewriteUntilDone(nextState.setRex(tla.selectInSet(res.toBuilder, funsetCdm.toBuilder)))
       val inCdm = nextState.asCell
       // BUGFIX: check only those pairs that actually belong to the relation
-      tla.or(tla.notin(pair, relation), tla.and(inDom, inCdm))
+      tla
+        .or(tla.not(tla.selectInSet(pair.toBuilder, relation.toBuilder)), tla.and(inDom.toBuilder, inCdm.toBuilder))
     }
-
     val relElems = nextState.arena.getHas(relation)
-    rewriter.solverContext.assertGroundExpr(tla.equiv(pred, tla.and(relElems map onPair: _*)))
+    rewriter.solverContext.assertGroundExpr(tla.equiv(pred.toBuilder, tla.and(relElems.map(onPair): _*)))
 
-    rewriter.rewriteUntilDone(nextState.setRex(pred))
+    // S = DOMAIN f
+    val domainEx =
+      tla
+        .eql(
+            funsetDom.toBuilder,
+            tla.dom(funCell.toBuilder),
+        )
+
+    rewriter.rewriteUntilDone(
+        nextState.setRex(
+            tla.and(pred.toBuilder, domainEx)
+        )
+    )
   }
 
-  private def intOrNatSetIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: types.CellT): SymbState = {
+  protected def intOrNatSetIn(
+      state: SymbState,
+      setCell: ArenaCell,
+      elemCell: ArenaCell,
+      elemType: types.CellT): SymbState = {
     if (setCell == state.arena.cellIntSet()) {
       // Do nothing, it is just true. The type checker should have taken care of that.
-      state.setRex(state.arena.cellTrue())
+      state.setRex(state.arena.cellTrue().toBuilder)
     } else {
       // i \in Nat <=> i >= 0
       assert(setCell == state.arena.cellNatSet())
-      assert(elemType == IntT())
-      var nextState = state.updateArena(_.appendCell(BoolT()))
+      assert(elemType == CellTFrom(IntT1))
+      val nextState = state.updateArena(_.appendCell(BoolT1))
       val pred = nextState.arena.topCell
-      rewriter.solverContext.assertGroundExpr(tla.equiv(pred, tla.ge(elemCell, tla.int(0))))
-      nextState.setRex(pred)
+      rewriter.solverContext.assertGroundExpr(tla.equiv(pred.toBuilder, tla.ge(elemCell.toBuilder, tla.int(0))))
+      nextState.setRex(pred.toBuilder)
     }
   }
 
-  private def basicIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: types.CellT) = {
+  protected def basicIn(
+      state: SymbState,
+      setCell: ArenaCell,
+      elemCell: ArenaCell): SymbState = {
     val potentialElems = state.arena.getHas(setCell)
-    assert(elemCell.cellType == elemType) // otherwise, type finder is incorrect
+    // The types of the element and the set may slightly differ, but they must be unifiable.
+    // For instance, [a |-> 1] \in { [a |-> 2], [a |-> 3, b -> "foo"] }
     if (potentialElems.isEmpty) {
-      // SE-SET-IN1: the set cell points to no other cell => return false
-      state.setRex(state.arena.cellFalse())
+      // the set cell points to no other cell => return false
+      state.setRex(state.arena.cellFalse().toBuilder)
     } else {
-      var nextState = state.updateArena(_.appendCell(BoolT()))
-      val pred = nextState.arena.topCell.toNameEx
+      val nextState = state.updateArena(_.appendCell(BoolT1))
+      val pred = nextState.arena.topCell.toBuilder
 
-      // BUGFIX 06.05.2020: in rare combinations of \A and \in,
-      // the rule below is not sound
-      //if (state.arena.isLinkedViaHas(setCell, elemCell)) {
-        // SE-SET-IN2: the element cell is already in the arena, just check dynamic membership
-      //  rewriter.solverContext.assertGroundExpr(tla.eql(pred, tla.in(elemCell, state.ex)))
-      //  nextState.setTheory(CellTheory()).setRex(pred)
-      //} else {
-        // SE-SET-IN3: general case, generate equality constraints, if needed, and use them
-        // cache equality constraints first
-        val eqState = rewriter.lazyEq.cacheEqConstraints(nextState, potentialElems.map((_, elemCell)))
+      // cache equality constraints first
+      val eqState = rewriter.lazyEq.cacheEqConstraints(nextState, potentialElems.map((_, elemCell)))
 
-        def inAndEq(elem: ArenaCell) = {
-          tla.and(tla.in(elem, setCell), rewriter.lazyEq.safeEq(elem, elemCell)) // use lazy equality
-        }
-
-        val elemsInAndEq = potentialElems.map(inAndEq)
-        rewriter.solverContext.assertGroundExpr(tla.eql(pred, tla.or(elemsInAndEq: _*)))
-        eqState.setRex(pred)
-      //}
+      // inAndEq checks if elemCell is in setCell
+      val elemsInAndEq = potentialElems.map(inAndEq(rewriter, _, elemCell, setCell, lazyEq = true))
+      rewriter.solverContext.assertGroundExpr(tla.eql(pred, tla.or(elemsInAndEq: _*)))
+      eqState.setRex(pred)
     }
   }
 }

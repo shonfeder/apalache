@@ -1,46 +1,51 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.types.FinSetT
+import at.forsyte.apalache.tla.bmcmt.types.{CellT, CellTFrom}
 import at.forsyte.apalache.tla.lir.oper.TlaSetOper
-import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
+import at.forsyte.apalache.tla.lir.{OperEx, SetT1, TlaEx, TypingException}
+import at.forsyte.apalache.tla.types.tla
 
 /**
-  * Rewrites the set constructor {e_1, ..., e_k}.
-  *
-  * @author Igor Konnov
-  */
+ * Rewrites the set constructor {e_1, ..., e_k}.
+ *
+ * @author
+ *   Igor Konnov
+ */
 class SetCtorRule(rewriter: SymbStateRewriter) extends RewritingRule {
+
   override def isApplicable(symbState: SymbState): Boolean = {
     symbState.ex match {
       case OperEx(TlaSetOper.enumSet, _*) => true
-      case _ => false
+      case _                              => false
     }
   }
 
   override def apply(state: SymbState): SymbState = {
     state.ex match {
-      case OperEx(TlaSetOper.enumSet, elems@_*) =>
-        // switch to cell theory
-        val (newState: SymbState, newEs: Seq[TlaEx]) =
+      case ex @ OperEx(TlaSetOper.enumSet, elems @ _*) =>
+        // Rewrite the elements and remove the duplicate cells.
+        // This does not guarantee us that all duplicates are removed,
+        // as some cells may happen to be equal only in some models.
+        val (newState, newEs: Seq[TlaEx]) =
           rewriter.rewriteSeqUntilDone(state, elems)
-        val cells = newEs.map(newState.arena.findCellByNameEx)
-        // compute the set type using the type finder
-        val elemType = rewriter.typeFinder.compute(state.ex, cells.map(_.cellType): _*) match {
-          case FinSetT(et) => et
-          case setT @ _ => throw new TypeException("Expected a finite set, found: " + setT, state.ex)
+        var nextState = newState
+        val cells = newEs.map(nextState.arena.findCellByNameEx).toList.distinct
+        val setT = CellT.fromTypeTag(ex.typeTag)
+        val elemType = setT match {
+          case CellTFrom(SetT1(et)) => et
+          case setT @ _             => throw new TypingException("Expected a finite set, found: " + setT, state.ex.ID)
         }
-        val arena = newState.arena.appendCell(FinSetT(elemType))
-        val newCell = arena.topCell
-        val newArena = arena.appendHas(newCell, cells: _*)
+        nextState = nextState.updateArena(_.appendCell(SetT1(elemType)))
+        val newSetCell = nextState.arena.topCell
+        nextState = nextState.updateArena(_.appendHas(newSetCell, cells.map(FixedElemPtr): _*))
 
-        def addIn(c: ArenaCell): Unit = {
-          val inExpr = OperEx(TlaSetOper.in, c.toNameEx, newCell.toNameEx)
+        for (c <- cells) {
+          val inExpr = tla.storeInSet(c.toBuilder, newSetCell.toBuilder)
           rewriter.solverContext.assertGroundExpr(inExpr)
         }
 
-        cells.foreach(addIn)
-        state.setArena(newArena).setRex(newCell.toNameEx)
+        nextState.setRex(newSetCell.toBuilder)
 
       case _ =>
         throw new RewriterException("%s is not applicable".format(getClass.getSimpleName), state.ex)

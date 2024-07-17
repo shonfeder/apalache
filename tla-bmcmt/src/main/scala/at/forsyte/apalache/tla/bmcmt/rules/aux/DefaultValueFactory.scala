@@ -1,105 +1,116 @@
 package at.forsyte.apalache.tla.bmcmt.rules.aux
 
-import at.forsyte.apalache.tla.bmcmt.{ArenaCell, RewriterException, SymbState, SymbStateRewriter}
-import at.forsyte.apalache.tla.bmcmt.types._
-import at.forsyte.apalache.tla.lir.{NullEx, TlaEx}
-import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.bmcmt.arena.PureArenaAdapter
+import at.forsyte.apalache.tla.bmcmt.{ArenaCell, FixedElemPtr, RewriterException, SymbStateRewriter}
+import at.forsyte.apalache.tla.lir._
 
 import scala.collection.immutable.SortedSet
 
 /**
-  * Given a type, this class produces a default value for that type. This is needed by ChooseRule and FunAppRule.
-  *
-  * @author Igor Konnov
-  */
+ * Given a type, this class produces a default value for that type. This is needed by ChooseRule and FunAppRule.
+ *
+ * @author
+ *   Igor Konnov
+ */
 class DefaultValueFactory(rewriter: SymbStateRewriter) {
-  def makeUpValue(state: SymbState, set: ArenaCell): SymbState = {
-    makeUpValue(state, findElemType(set))
-  }
+  private val protoSeqOps = new ProtoSeqOps(rewriter)
 
   /**
-    * Produce a default value that, for instance, can be used as a value when picking from an empty set.
-    * @param state a symbolic state
-    * @param cellType a cell type FinSetT(...)
-    * @return a new symbolic state that contains the new value as the expression
-    */
-  def makeUpValue(state: SymbState, cellType: CellT): SymbState = {
-    // TODO: introduce a cache for default values, otherwise there will be many identical copies
-    cellType match {
-      case IntT() =>
-        rewriter.rewriteUntilDone(state.setRex(tla.int(0)))
+   * Produce a default value that, for instance, can be used as a value when picking from an empty set.
+   *
+   * @param arena
+   *   an arena to start with
+   * @param valueType
+   *   the type of the value to be created
+   * @return
+   *   a new symbolic state that contains the new value as the expression
+   */
+  def makeUpValue(arena: PureArenaAdapter, valueType: TlaType1): (PureArenaAdapter, ArenaCell) = {
+    valueType match {
+      case IntT1 =>
+        rewriter.intValueCache.getOrCreate(arena, 0)
 
-      case BoolT() =>
-        rewriter.rewriteUntilDone(state.setRex(tla.bool(false)))
+      case BoolT1 =>
+        (arena, arena.cellFalse())
 
-      case ConstT() =>
-        rewriter.rewriteUntilDone(state.setRex(tla.str("None")))
+      case StrT1 =>
+        rewriter.modelValueCache.getOrCreate(arena, (StrT1.toString(), "None"))
 
-      case tupT @ TupleT(argTypes) =>
-        var arena = state.arena.appendCell(tupT)
-        val tuple = arena.topCell
-        var newState = state.setArena(arena)
-        for (argt <- argTypes) {
-          newState = makeUpValue(newState, argt)
-          val fieldCell = newState.asCell
-          arena = newState.arena.appendHasNoSmt(tuple, fieldCell)
-          newState = newState.setArena(arena)
+      case ConstT1(utype) =>
+        rewriter.modelValueCache.getOrCreate(arena, (utype, "None"))
+
+      case tupT @ TupT1(argTypes @ _*) =>
+        var newArena = arena.appendCell(tupT)
+        val tuple = newArena.topCell
+        newArena = argTypes.foldLeft(newArena) { (arena, argT) =>
+          val (nextArena, valueCell) = makeUpValue(arena, argT)
+          nextArena.appendHasNoSmt(tuple, FixedElemPtr(valueCell))
         }
-        newState.setRex(tuple.toNameEx)
+        (newArena, tuple)
 
-      case recT @ RecordT(_) =>
-        var newState = state.updateArena(_.appendCell(recT))
-        val recCell = newState.arena.topCell
-        for (v <- recT.fields.values) {
-          newState = makeUpValue(newState, v)
-          val fieldCell = newState.asCell
-          newState = newState.updateArena(_.appendHasNoSmt(recCell, fieldCell))
+      case recT @ RecT1(_) =>
+        var newArena = arena.appendCell(recT)
+        val recCell = newArena.topCell
+        newArena = recT.fieldTypes.values.foldLeft(newArena) { (arena, v) =>
+          val (nextArena, valueCell) = makeUpValue(arena, v)
+          nextArena.appendHasNoSmt(recCell, FixedElemPtr(valueCell))
         }
         // create the domain and attach it to the record
-        val pairOfSets = (recT.fields.keySet, SortedSet[String]())
-        val (newArena, domain) =
-          rewriter.recordDomainCache.getOrCreate(newState.arena, pairOfSets)
-        newState = newState.setArena(newArena.setDom(recCell, domain))
-        newState.setRex(recCell.toNameEx)
+        val pairOfSets = (recT.fieldTypes.keySet, SortedSet[String]())
+        val (nextArena, domain) =
+          rewriter.recordDomainCache.getOrCreate(newArena, pairOfSets)
+        newArena = nextArena.setDom(recCell, domain)
+        (newArena, recCell)
 
-      case tp @ FinSetT(_) => // {}
-        var arena = state.arena.appendCell(tp)
-        val set = arena.topCell
-        state.setArena(arena).setRex(set.toNameEx).setArena(arena)
-
-      case tp @ FunT(domT, cdmT) => // [x \in {} |-> {}]
-        val relState = makeUpValue(state, FinSetT(TupleT(Seq(tp.argType, tp.resultType))))
-        var arena = relState.arena.appendCell(tp)
-        val funCell = arena.topCell
-        arena = arena.setCdm(funCell, relState.asCell)
-        relState.setArena(arena).setRex(funCell.toNameEx)
-
-      case tp @ SeqT(resT) => // << >>
-        val relState = makeUpValue(state, resT)
-        var arena = relState.arena.appendCell(tp)
-        val seq = arena.topCell
-        arena = arena.appendCell(IntT()) // start
-        val start = arena.topCell
-        arena = arena.appendCell(IntT()) // end
-        val end = arena.topCell
-        arena = arena.appendHasNoSmt(seq, start, end)
-        for (cell <- Seq(start, end)) {
-          rewriter.solverContext.assertGroundExpr(tla.eql(cell.toNameEx, tla.int(0)))
+      case recordT @ RecRowT1(RowT1(fieldTypes, _)) =>
+        var newArena = arena.appendCell(recordT)
+        val recCell = newArena.topCell
+        newArena = fieldTypes.values.foldLeft(newArena) { (arena, v) =>
+          val (nextArena, valueCell) = makeUpValue(arena, v)
+          nextArena.appendHasNoSmt(recCell, FixedElemPtr(valueCell))
         }
-        relState.setArena(arena).setRex(seq.toNameEx)
+        (newArena, recCell)
+
+      case tp @ SetT1(_) => // {}
+        val newArena = arena.appendCell(tp)
+        (newArena, newArena.topCell)
+
+      case tp @ FunT1(argT, resT) => // [x \in {} |-> {}]
+        val (arena1, domCell) = makeUpValue(arena, SetT1(argT))
+        val (arena2, relCell) = makeUpValue(arena1, SetT1(TupT1(argT, resT)))
+        val arena3 = arena2.appendCell(tp)
+        val funCell = arena3.topCell
+        val arena4 = arena3.setDom(funCell, domCell).setCdm(funCell, relCell)
+        (arena4, funCell)
+
+      case tp @ SeqT1(_) => // << >>
+        // make an empty proto sequence
+        val (arena2, protoSeq) = protoSeqOps.makeEmptyProtoSeq(arena)
+        val (arena3, zero) = rewriter.intValueCache.create(arena2, 0)
+        protoSeqOps.mkSeqCell(arena3, tp, protoSeq, zero)
+
+      case variantT @ VariantT1(RowT1(options, None)) if options.nonEmpty =>
+        // it would be better to call RecordAndVariantOps.makeVariant, but that would produce a circular dependency
+        val tagName = options.head._1
+        val (arena2, tagAsCell) = rewriter.modelValueCache.getOrCreate(arena, (StrT1.toString, tagName))
+        var nextArena = arena2
+        // introduce default values for all variant options
+        val variantValues = options.map { case (t, tp) =>
+          val (newArena, defaultValue) = makeUpValue(nextArena, tp)
+          nextArena = newArena
+          (t, defaultValue)
+        }
+        // introduce a cell for the variant and wire the values to it
+        nextArena = nextArena.appendCell(variantT)
+        val variantCell = nextArena.topCell
+        for (fieldCell <- (variantValues + (RecordAndVariantOps.variantTagField -> tagAsCell)).valuesIterator) {
+          nextArena = nextArena.appendHasNoSmt(variantCell, FixedElemPtr(fieldCell))
+        }
+
+        (nextArena, variantCell)
 
       case tp @ _ =>
-        throw new RewriterException(s"I do not know how to generate a default value for the type $tp", state.ex)
-    }
-  }
-
-  private def findElemType(setCell: ArenaCell): CellT = {
-    setCell.cellType match {
-      case FinSetT(et) =>
-        et
-
-      case tp @ _ =>
-        throw new RewriterException(s"Expected a set, found: $tp", NullEx)
+        throw new RewriterException(s"Unexpected type $tp when generating a default value", NullEx)
     }
   }
 }

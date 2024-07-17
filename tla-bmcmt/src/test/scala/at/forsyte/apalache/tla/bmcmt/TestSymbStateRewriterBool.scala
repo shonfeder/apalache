@@ -1,46 +1,37 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import at.forsyte.apalache.infra.passes.options.SMTEncoding
 import at.forsyte.apalache.tla.bmcmt.SymbStateRewriter.NoRule
-import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
-import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.bmcmt.types.{AnnotationParser, BoolT, FinSetT, IntT}
+import at.forsyte.apalache.tla.bmcmt.types.CellTFrom
+import at.forsyte.apalache.tla.lir.TypedPredefs._
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla
-import at.forsyte.apalache.tla.lir.oper.{BmcOper, TlaBoolOper, TlaOper}
-import at.forsyte.apalache.tla.lir.values.{TlaBoolSet, TlaNatSet}
-import at.forsyte.apalache.tla.lir.values.TlaBool
-import org.junit.runner.RunWith
-import org.scalatest.BeforeAndAfterEach
-import org.scalatest.junit.JUnitRunner
 
-import scala.collection.immutable.HashMap
-
-@RunWith(classOf[JUnitRunner])
-class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with BeforeAndAfterEach {
+trait TestSymbStateRewriterBool extends RewriterBase with TestingPredefs {
   // these are handy variables that will be overwritten by before
-  private var x: ArenaCell = new ArenaCell(100000, IntT())
-  private var y: ArenaCell = new ArenaCell(100001, IntT())
-  private var set: ArenaCell = new ArenaCell(100001, FinSetT(IntT()))
+  private var x: ArenaCell = new ArenaCell(100000, CellTFrom(IntT1))
+  private var y: ArenaCell = new ArenaCell(100001, CellTFrom(IntT1))
+  private var set: ArenaCell = new ArenaCell(100001, CellTFrom(SetT1(IntT1)))
   private var xyBinding = Binding()
+  private val boolTypes = Map("b" -> BoolT1, "i" -> IntT1, "I" -> SetT1(IntT1))
 
-  override def beforeEach() {
-    super.beforeEach()
-
-    arena = arena.appendCell(BoolT()) // we have to give bindings to the type finder
+  def prepareArena(): Unit = {
+    arena = arena.appendCell(BoolT1) // we have to give bindings to the type finder
     x = arena.topCell
-    arena = arena.appendCell(BoolT()) // we have to give bindings to the type finder
+    arena = arena.appendCell(BoolT1) // we have to give bindings to the type finder
     y = arena.topCell
-    arena = arena.appendCell(FinSetT(IntT()))
+    arena = arena.appendCell(SetT1(IntT1))
     set = arena.topCell
     xyBinding = Binding("x" -> x, "y" -> y, "S" -> set)
   }
 
-  test("FALSE ~~> $C$0") {
-    val ex = ValEx(TlaBool(false))
+  test("FALSE ~~> $C$0") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla.bool(false).typed()
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
-        val expected = NameEx("$C$0")
+        val expected = NameEx("$C$0")(Untyped)
         assert(expected == nextState.ex)
         assert(state.arena == nextState.arena)
 
@@ -49,12 +40,13 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("TRUE ~~> $C$1") {
-    val ex = ValEx(TlaBool(true))
+  test("TRUE ~~> $C$1") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla.bool(true).typed()
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
-        val expected = NameEx("$C$1")
+        val expected = NameEx("$C$1")(Untyped)
         assert(expected == nextState.ex)
         assert(state.arena == nextState.arena)
 
@@ -63,11 +55,13 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("SE-SET-BOOLEAN: BOOLEAN ~~> c_BOOLEAN") {
-    val state = new SymbState(ValEx(TlaBoolSet), arena, Binding())
-    create().rewriteOnce(state) match {
+  test("BOOLEAN ~~> c_BOOLEAN") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val boolset = tla.booleanSet().typed(SetT1(BoolT1))
+    val state = new SymbState(boolset, arena, Binding())
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
-        val expected = NameEx("$C$2")
+        val expected = NameEx("$C$2")(Untyped)
         assert(expected == nextState.ex)
         assert(state.arena == nextState.arena)
 
@@ -76,57 +70,70 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("SE-BOOL-IMPL: x => y ~~> ~x \\/ y") {
+  test("x => y ~~> ~x \\/ y") { rewriterType: SMTEncoding =>
     // outside of KerA+, should be handled by Keramelizer and Normalizer
-    val ex = tla.impl("x", "y")
+    prepareArena()
+    val ex = tla
+      .impl(tla.name("x") ? "b", tla.name("y") ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, xyBinding)
-    assert(NoRule() == create().rewriteOnce(state))
+    assert(NoRule() == create(rewriterType).rewriteOnce(state))
   }
 
-  test("SE-BOOL-EQUIV: x <=> y") {
+  test("x <=> y") { rewriterType: SMTEncoding =>
     // outside of KerA+, should be handled by Keramelizer and Normalizer
-    arena = arena.appendCell(BoolT())
+    arena = arena.appendCell(BoolT1)
     val left = arena.topCell
-    arena = arena.appendCell(BoolT())
+    arena = arena.appendCell(BoolT1)
     val right = arena.topCell
-    val ex = tla.equiv(left.toNameEx, right.toNameEx)
+    val ex = tla
+      .equiv(left.toNameEx ? "b", right.toNameEx ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, xyBinding)
-    assert(NoRule() == create().rewriteOnce(state))
+    assert(NoRule() == create(rewriterType).rewriteOnce(state))
   }
 
-  test("""IF-THEN-ELSE with \E: IF \E i \in {}: x' \in {i} THEN x' ELSE 0""") {
+  test("""IF-THEN-ELSE with \E: IF \E i \in {}: x' \in {i} THEN x' ELSE 0""") { rewriterType: SMTEncoding =>
     // this tricky test comes from Bakery, where an assignment is made in one branch of a conjunction
+    prepareArena()
     val exists =
-      OperEx(BmcOper.skolem,
-        tla.exists(tla.name("i"),
-          tla.withType(tla.enumSet(), AnnotationParser.toTla(FinSetT(IntT()))),
-          tla.in(tla.prime(tla.name("x")), tla.enumSet(tla.name("i")))))
-    val ite = tla.ite(exists, tla.prime(tla.name("x")), tla.int(0))
+      tla
+        .apalacheSkolem(tla.exists(tla.name("i") ? "i", tla.enumSet() ? "I",
+            tla.in(tla.prime(tla.name("x") ? "i") ? "i", tla.enumSet(tla.name("i") ? "i") ? "I") ? "b") ? "b")
+        .typed(boolTypes, "b")
+    val ite = tla
+      .ite(exists, tla.prime(tla.name("x") ? "i") ? "i", tla.int(0))
+      .typed(boolTypes, "b")
 
     val state = new SymbState(ite, arena, Binding())
-    val rewriter = new SymbStateRewriterImpl(solverContext, new TrivialTypeFinder())
-    var nextState = rewriter.rewriteUntilDone(state)
+    val rewriter = createWithoutCache(rewriterType)
+    val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(tla.int(0), nextState.ex)))
+    val eq = tla.eql(tla.int(0), nextState.ex).typed(BoolT1)
+    assertTlaExAndRestore(rewriter, nextState.setRex(eq))
   }
 
-  test("""SE-BOOL-NEG9: ~c_i ~~> b_new""") {
-    arena = arena.appendCell(BoolT())
+  test("""~c_i ~~> b_new""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    arena = arena.appendCell(BoolT1)
     val cell = arena.topCell
 
-    val ex = OperEx(TlaBoolOper.not, cell.toNameEx)
+    val ex = tla.not(cell.toNameEx ? "b").typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         nextState.ex match {
-          case NameEx(name) =>
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, cell.toNameEx, arena.cellFalse().toNameEx))
+          case NameEx(_) =>
+            val eq = tla
+              .eql(cell.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq)
             solverContext.assertGroundExpr(nextState.ex)
             rewriter.push()
             assert(solverContext.sat())
             rewriter.pop()
-            solverContext.assertGroundExpr(OperEx(TlaBoolOper.not, nextState.ex))
+            solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
             assert(!solverContext.sat())
 
           case _ =>
@@ -138,45 +145,67 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-BOOL-NEG9: ~x ~~> TRUE""") {
-    val ex = OperEx(TlaBoolOper.not, NameEx("x"))
+  test("""~x ~~> TRUE""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .not(tla.name("x") ? "b")
+      .typed(boolTypes, "b")
     val binding = Binding("x" -> arena.cellFalse())
     val state = new SymbState(ex, arena, binding)
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.bool(true))))
+    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.bool(true)).typed(BoolT1)))
   }
 
-  test("""FALSE = TRUE ~~> FALSE""") {
-    val ex = tla.eql(arena.cellFalse().toNameEx, arena.cellTrue().toNameEx)
+  test("""FALSE = TRUE ~~> FALSE""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .eql(arena.cellFalse().toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, arena.cellFalse().toNameEx)))
+    val eq = tla
+      .eql(nextState.ex, arena.cellFalse().toNameEx ? "b")
+      .typed(boolTypes, "b")
+    assertTlaExAndRestore(rewriter, nextState.setRex(eq))
   }
 
-  test("""x = TRUE ~~> FALSE when x = FALSE""") {
-    val ex = tla.eql(tla.name("x"), tla.bool(true))
+  test("""x = TRUE ~~> FALSE when x = FALSE""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .eql(tla.name("x") ? "b", tla.bool(true) ? "b")
+      .typed(boolTypes, "b")
     val binding = Binding("x" -> arena.cellFalse())
     val state = new SymbState(ex, arena, binding)
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.bool(false))))
+    val eq = tla.eql(nextState.ex, tla.bool(false)).typed(BoolT1)
+    assertTlaExAndRestore(rewriter, nextState.setRex(eq))
   }
 
-  test("""~(x = TRUE) ~~> TRUE when x = FALSE""") {
-    val ex = tla.not(tla.eql(tla.name("x"), tla.bool(true)))
+  test("""~(x = TRUE) ~~> TRUE when x = FALSE""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .not(tla.eql(tla.name("x") ? "b", tla.bool(true)) ? "b")
+      .typed(boolTypes, "b")
     val binding = Binding("x" -> arena.cellFalse())
     val state = new SymbState(ex, arena, binding)
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.bool(true))))
+    val eq = tla
+      .eql(nextState.ex, tla.bool(true))
+      .typed(boolTypes, "b")
+    assertTlaExAndRestore(rewriter, nextState.setRex(eq))
   }
 
-  test("""SE-AND1: FALSE /\ TRUE ~~> $B$0""") {
-    val ex = OperEx(TlaBoolOper.and, ValEx(TlaBool(false)), ValEx(TlaBool(true)))
+  test("""FALSE /\ TRUE ~~> $B$0""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .and(tla.bool(false), tla.bool(true))
+      .typed(BoolT1)
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(state.arena.cellFalse().toNameEx == nextState.ex)
         assert(state.arena == nextState.arena)
@@ -186,28 +215,40 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-AND4: c_1 /\ c_2 ~~> b_new""") {
-    arena = arena.appendCell(BoolT())
+  test("""c_1 /\ c_2 ~~> b_new""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    arena = arena.appendCell(BoolT1)
     val c1 = arena.topCell
-    arena = arena.appendCell(BoolT())
+    arena = arena.appendCell(BoolT1)
     val c2 = arena.topCell
 
-    val ex = OperEx(TlaBoolOper.and, c1.toNameEx, c2.toNameEx)
+    val ex = tla
+      .and(c1.toNameEx ? "b", c2.toNameEx ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         nextState.ex match {
-          case NameEx(name) =>
+          case NameEx(_) =>
             assert(solverContext.sat())
             solverContext.assertGroundExpr(nextState.ex)
             rewriter.push()
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, c1.toNameEx, arena.cellFalse().toNameEx))
+            val eq1 = tla
+              .eql(c1.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq1)
             assert(!solverContext.sat())
             rewriter.pop()
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, c1.toNameEx, arena.cellTrue().toNameEx))
+            val eq2 = tla
+              .eql(c1.toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq2)
             assert(solverContext.sat())
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, c2.toNameEx, arena.cellTrue().toNameEx))
+            val eq3 = tla
+              .eql(c2.toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq3)
             assert(solverContext.sat())
 
           case _ =>
@@ -219,10 +260,11 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-OR4: empty \/ ~~> $B$0""") {
-    val ex = OperEx(TlaBoolOper.or)
+  test("""empty \/ ~~> $B$0""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla.or().typed(BoolT1)
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(arena.cellFalse().toNameEx == nextState.ex)
         assert(state.arena == nextState.arena)
@@ -232,10 +274,11 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-AND4: empty /\ ~~> $B$1""") {
-    val ex = OperEx(TlaBoolOper.and)
+  test("""empty /\ ~~> $B$1""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla.and().typed(BoolT1)
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(arena.cellTrue().toNameEx == nextState.ex)
         assert(state.arena == nextState.arena)
@@ -245,10 +288,11 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-OR1: FALSE \/ TRUE ~~> $B$1""") {
-    val ex = OperEx(TlaBoolOper.or, ValEx(TlaBool(false)), ValEx(TlaBool(true)))
+  test("""FALSE \/ TRUE ~~> $B$1""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla.or(tla.bool(false), tla.bool(true)).typed(BoolT1)
     val state = new SymbState(ex, arena, Binding())
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         assert(arena.cellTrue().toNameEx == nextState.ex)
         assert(state.arena == nextState.arena)
@@ -258,24 +302,33 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-OR5: c_1 \/ c_2 ~~> b_new""") {
-    arena = arena.appendCell(BoolT())
+  test("""c_1 \/ c_2 ~~> b_new""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    arena = arena.appendCell(BoolT1)
     val left = arena.topCell
-    arena = arena.appendCell(BoolT())
+    arena = arena.appendCell(BoolT1)
     val right = arena.topCell
 
-    val ex = OperEx(TlaBoolOper.or, left.toNameEx, right.toNameEx)
+    val ex = tla
+      .or(left.toNameEx ? "b", right.toNameEx ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     rewriter.rewriteOnce(state) match {
       case SymbStateRewriter.Continue(nextState) =>
         nextState.ex match {
-          case NameEx(name) =>
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, left.toNameEx, arena.cellFalse().toNameEx))
+          case NameEx(_) =>
+            val eq1 = tla
+              .eql(left.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq1)
             solverContext.assertGroundExpr(nextState.ex)
             rewriter.push()
             assert(solverContext.sat())
-            solverContext.assertGroundExpr(OperEx(TlaOper.eq, right.toNameEx, arena.cellFalse().toNameEx))
+            val eq2 = tla
+              .eql(right.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+              .typed(boolTypes, "b")
+            solverContext.assertGroundExpr(eq2)
             assert(!solverContext.sat())
 
           case _ =>
@@ -287,39 +340,60 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-BOOL-NE1: ~($B$1 = $B$2) ~~> $B$3""") {
-    arena = arena.appendCell(BoolT())
+  test("""~($B$1 = $B$2) ~~> $B$3""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    arena = arena.appendCell(BoolT1)
     val left = arena.topCell
-    arena = arena.appendCell(BoolT())
+    arena = arena.appendCell(BoolT1)
     val right = arena.topCell
 
-    val ex = tla.not(tla.eql(left.toNameEx, right.toNameEx))
+    val ex = tla
+      .not(tla.eql(left.toNameEx ? "b", right.toNameEx ? "b") ? "b")
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
-      case predEx@NameEx(name) =>
+      case predEx @ NameEx(_) =>
         solverContext.assertGroundExpr(predEx)
         rewriter.push()
         // both false
         assert(solverContext.sat())
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, left.toNameEx, arena.cellFalse().toNameEx))
+        val eq1 = tla
+          .eql(left.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq1)
         assert(solverContext.sat())
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, right.toNameEx, arena.cellFalse().toNameEx))
+        val eq2 = tla
+          .eql(right.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq2)
         assert(!solverContext.sat())
         rewriter.pop()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, right.toNameEx, arena.cellTrue().toNameEx))
+        val eq3 = tla
+          .eql(right.toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq3)
         assert(solverContext.sat())
         rewriter.pop()
         // both true
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, left.toNameEx, arena.cellTrue().toNameEx))
+        val eq4 = tla
+          .eql(left.toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq4)
         assert(solverContext.sat())
         rewriter.push()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, right.toNameEx, arena.cellTrue().toNameEx))
+        val eq5 = tla
+          .eql(right.toNameEx ? "b", arena.cellTrue().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq5)
         assert(!solverContext.sat())
         rewriter.pop()
-        solverContext.assertGroundExpr(OperEx(TlaOper.eq, right.toNameEx, arena.cellFalse().toNameEx))
+        val eq6 = tla
+          .eql(right.toNameEx ? "b", arena.cellFalse().toNameEx ? "b")
+          .typed(boolTypes, "b")
+        solverContext.assertGroundExpr(eq6)
         assert(solverContext.sat())
 
       case _ =>
@@ -327,40 +401,52 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     }
   }
 
-  test("""SE-EX2: \E x \in {}: TRUE ~~> FALSE""") {
-    val ex = tla.exists(tla.name("x"), tla.enumSet(), tla.bool(true))
+  test("""\E x \in {}: TRUE ~~> FALSE""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val ex = tla
+      .exists(tla.name("x") ? "i", tla.enumSet() ? "I", tla.bool(true))
+      .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val nextState = create().rewriteUntilDone(state)
+    val nextState = create(rewriterType).rewriteUntilDone(state)
     assert(arena.cellFalse().toNameEx == nextState.ex)
   }
 
-  test("""SE-EX3: \E x \in {1, 2, 3}: x = 2 ~~> $B$k""") {
-    val ex = tla.exists(tla.name("x"),
-      tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
-      tla.eql(tla.int(2), tla.name("x")))
+  test("""\E x \in {1, 2, 3}: x = 2 ~~> $B$k""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val set123 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3)).typed(SetT1(IntT1))
+    val ex =
+      tla
+        .exists(tla.name("x") ? "i", set123, tla.eql(tla.int(2), tla.name("x") ? "i") ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     rewriter.push()
     solverContext.assertGroundExpr(nextState.ex)
     assert(solverContext.sat())
     rewriter.pop()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
-    assertUnsatOrExplain(rewriter, nextState)
+    solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
+    assertUnsatOrExplain()
   }
 
   /** Jure, 9.12.19: Why should this throw? */
-  test("""SE-EX: \E x \in {1, 2}: y' = x ~~> 2 assignments, regression""") {
+  test("""\E x \in {1, 2}: y' := x ~~> 2 assignments, regression""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val set12 = tla
+      .enumSet(tla.int(1), tla.int(2))
+      .typed(SetT1(IntT1))
     // an assignment inside an existential quantifier is tricky, as we can multiple values to variables
-    val ex = tla.exists(
-      tla.name("x"),
-      tla.enumSet(tla.int(1), tla.int(2)),
-      tla.assignPrime(tla.name("y"), tla.name("x"))
-    )
+    val ex = tla
+      .exists(
+          tla.name("x") ? "i",
+          set12,
+          tla.assign(tla.prime(tla.name("y") ? "i") ? "i", tla.name("x") ? "i") ? "b",
+      )
+      .typed(boolTypes, "b")
     ////
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     assertThrows[NotImplementedError] {
       // TODO: implement multiple assignments in expanded quantifiers
       val nextState = rewriter.rewriteUntilDone(state)
@@ -370,97 +456,116 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
       assert(solverContext.sat())
       rewriter.pop()
       rewriter.push()
-      solverContext.assertGroundExpr(tla.not(nextState.ex))
-      assertUnsatOrExplain(rewriter, nextState)
+      solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
+      assertUnsatOrExplain()
       rewriter.pop()
       rewriter.push()
       solverContext.assertGroundExpr(nextState.ex)
-      solverContext.assertGroundExpr(tla.eql(tla.int(1), nextState.binding("y'").toNameEx))
+      val eq1 = tla
+        .eql(tla.int(1), nextState.binding("y'").toNameEx ? "i")
+        .typed(boolTypes, "b")
+      solverContext.assertGroundExpr(eq1)
       assert(solverContext.sat())
       rewriter.pop()
       rewriter.push()
       solverContext.assertGroundExpr(nextState.ex)
-      solverContext.assertGroundExpr(tla.eql(tla.int(2), nextState.binding("y'").toNameEx))
+      val eq2 = tla
+        .eql(tla.int(2), nextState.binding("y'").toNameEx ? "i")
+        .typed(boolTypes, "b")
+      solverContext.assertGroundExpr(eq2)
       assert(solverContext.sat())
       rewriter.pop()
     }
   }
 
-  test("""SE-EX3: \E x \in {1, 2, 3}: x > 4 ~~> $B$k""") {
-    val ex = tla.exists(tla.name("x"),
-      tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
-      tla.gt(tla.name("x"), tla.int(4)))
+  test("""\E x \in {1, 2, 3}: x > 4 ~~> $B$k""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val set123 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3)).typed(SetT1(IntT1))
+    val ex =
+      tla
+        .exists(tla.name("x") ? "i", set123, tla.gt(tla.name("x") ? "i", tla.int(4)) ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     rewriter.push()
     solverContext.assertGroundExpr(nextState.ex)
-    assertUnsatOrExplain(rewriter, nextState)
+    assertUnsatOrExplain()
     rewriter.pop()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
+    solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
     assert(solverContext.sat())
   }
 
-  test("""SE-EX: \E x \in {1} \ {1}: x > 4, regression""") {
+  test("""\E x \in {t \in {1}: FALSE}: x > 4, regression""") { rewriterType: SMTEncoding =>
+    prepareArena()
     def dynEmpty(left: TlaEx): TlaEx = {
-      tla.filter(tla.name("t"), left, tla.bool(false))
+      tla
+        .filter(tla.name("t") ? "i", left ? "I", tla.bool(false))
+        .typed(boolTypes, "I")
     }
 
+    val emptySet = dynEmpty(tla.enumSet(tla.int(1)).typed(SetT1(IntT1)))
+    val pred = tla.gt(tla.name("x") ? "i", tla.int(4)).typed(boolTypes, "b")
     val ex =
-      OperEx(BmcOper.skolem,
-        tla.exists(tla.name("x"),
-          dynEmpty(tla.enumSet(tla.int(1))),
-          tla.gt(tla.name("x"), tla.int(4))))
+      tla
+        .apalacheSkolem(tla.exists(tla.name("x") ? "i", emptySet, pred) ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
 
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat()) // regression test, the buggy implementation failed here
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.not(nextState.ex))) // E x \in {} is false
+    // E x \in {} is false
+    assertTlaExAndRestore(rewriter, nextState.setRex(tla.not(nextState.ex).typed(BoolT1)))
   }
 
-  test("""SE-EX skolem: \E i \in Nat: i = 10 /\ x' \in {i}""") {
+  test("""skolem: \E i \in Nat: i = 10 /\ x' \in {i}""") { rewriterType: SMTEncoding =>
+    prepareArena()
     // this works for skolem constants only
     val ex =
-      OperEx(BmcOper.skolem,
-        tla.exists(tla.name("i"),
-          ValEx(TlaNatSet),
-          tla.and(
-            tla.eql(tla.name("i"), tla.int(10)),
-            tla.assignPrime(tla.name("x"), tla.name("i"))
-          )
-        ))
+      tla
+        .apalacheSkolem(tla.exists(tla.name("i") ? "i", tla.natSet() ? "I",
+            tla.and(
+                tla.eql(tla.name("i") ? "i", tla.int(10)) ? "b",
+                tla.assign(tla.prime(tla.name("x") ? "i") ? "i", tla.name("i") ? "i") ? "b",
+            ) ? "b") ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
 
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     solverContext.assertGroundExpr(nextState.ex)
     val xp = nextState.binding("x'")
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(xp.toNameEx, tla.int(10))))
+    val eql = tla
+      .eql(xp.toNameEx ? "i", tla.int(10))
+      .typed(boolTypes, "b")
+    assertTlaExAndRestore(rewriter, nextState.setRex(eql))
   }
 
-  test("""SE-EX skolemization over range: \E i \in a..b: i % 3 = 1 /\ x' \in {i}""") {
+  test("""skolemization over range: \E i \in a..b: i % 3 = 1 /\ x' \in {i}""") { rewriterType: SMTEncoding =>
     // this works for skolem constants only
+    prepareArena()
     val ex =
-      OperEx(BmcOper.skolem,
-        tla.exists(
-          tla.name("i"),
-          tla.dotdot(tla.name("a"), tla.name("b")),
-          tla.and(
-            tla.eql(tla.mod(tla.name("i"), tla.int(3)), tla.int(1)),
-            tla.assignPrime(tla.name("x"), tla.name("i"))
-          )
-        )) ///
+      tla
+        .apalacheSkolem(tla.exists(
+            tla.name("i") ? "i",
+            tla.dotdot(tla.name("a") ? "i", tla.name("b") ? "i") ? "I",
+            tla.and(
+                tla.eql(tla.mod(tla.name("i") ? "i", tla.int(3)) ? "i", tla.int(1)) ? "b",
+                tla.assign(tla.prime(tla.name("x") ? "i") ? "i", tla.name("i") ? "i") ? "b",
+            ) ? "b",
+        ) ? "b")
+        .typed(boolTypes, "b")
 
-    val rewriter = create()
+    val rewriter = create(rewriterType)
 
     // rewrite 5 and 9 first, to produce a and b
-    var state = new SymbState(tla.int(5), arena, Binding())
+    var state = new SymbState(tla.int(5).typed(), arena, Binding())
     state = rewriter.rewriteUntilDone(state)
     val aCell = state.asCell
-    state = rewriter.rewriteUntilDone(state.setRex(tla.int(9)))
+    state = rewriter.rewriteUntilDone(state.setRex(tla.int(9).typed()))
     val bCell = state.asCell
     val binding: Binding = Binding("a" -> aCell, "b" -> bCell)
 
@@ -468,38 +573,47 @@ class TestSymbStateRewriterBool extends RewriterBase with TestingPredefs with Be
     assert(solverContext.sat())
     solverContext.assertGroundExpr(nextState.ex)
     val xp = nextState.binding("x'")
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(xp.toNameEx, tla.int(7))))
+    val eq = tla
+      .eql(xp.toNameEx ? "i", tla.int(7))
+      .typed(boolTypes, "b")
+    assertTlaExAndRestore(rewriter, nextState.setRex(eq))
   }
 
-  test("""SE-ALL3: \A x \in {1, 2, 3}: x < 10 ~~> $B$k""") {
-    val ex = tla.forall(tla.name("x"),
-      tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
-      tla.lt(tla.name("x"), tla.int(10)))
+  test("""\A x \in {1, 2, 3}: x < 10 ~~> $B$k""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val set123 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3)).typed(SetT1(IntT1))
+    val ex =
+      tla
+        .forall(tla.name("x") ? "i", set123, tla.lt(tla.name("x") ? "i", tla.int(10)) ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     rewriter.push()
     solverContext.assertGroundExpr(nextState.ex)
     assert(solverContext.sat())
     rewriter.pop()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
-    assertUnsatOrExplain(rewriter, nextState)
+    solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
+    assertUnsatOrExplain()
   }
 
-  test("""SE-ALL3: \A x \in {1, 2, 3}: x > 2 ~~> $B$k""") {
-    val ex = tla.forall(tla.name("x"),
-      tla.enumSet(tla.int(1), tla.int(2), tla.int(3)),
-      tla.gt(tla.name("x"), tla.int(2)))
+  test("""\A x \in {1, 2, 3}: x > 2 ~~> $B$k""") { rewriterType: SMTEncoding =>
+    prepareArena()
+    val set123 = tla.enumSet(tla.int(1), tla.int(2), tla.int(3)).typed(SetT1(IntT1))
+    val ex =
+      tla
+        .forall(tla.name("x") ? "i", set123, tla.gt(tla.name("x") ? "i", tla.int(2)) ? "b")
+        .typed(boolTypes, "b")
     val state = new SymbState(ex, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     assert(solverContext.sat())
     rewriter.push()
     solverContext.assertGroundExpr(nextState.ex)
-    assertUnsatOrExplain(rewriter, nextState)
+    assertUnsatOrExplain()
     rewriter.pop()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
+    solverContext.assertGroundExpr(tla.not(nextState.ex).typed(BoolT1))
     assert(solverContext.sat())
   }
 }

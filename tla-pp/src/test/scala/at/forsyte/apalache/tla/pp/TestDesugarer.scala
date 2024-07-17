@@ -1,220 +1,845 @@
 package at.forsyte.apalache.tla.pp
 
+import at.forsyte.apalache.tla.lir.TypedPredefs._
 import at.forsyte.apalache.tla.lir.convenience._
-import at.forsyte.apalache.tla.lir.transformations.impl.TrackerWithListeners
+import at.forsyte.apalache.tla.lir.convenience.tla._
+import at.forsyte.apalache.tla.lir.transformations.impl.IdleTracker
+import at.forsyte.apalache.tla.lir.{
+  BoolT1, FunT1, IntT1, OperParam, OperT1, RecRowT1, RecT1, RowT1, SeqT1, SetT1, StrT1, TlaEx, TlaType1, TupT1,
+}
 import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatestplus.junit.JUnitRunner
+import org.scalatest.BeforeAndAfterEach
+import org.scalatest.funsuite.AnyFunSuite
+
+import scala.collection.immutable.SortedMap
 
 @RunWith(classOf[JUnitRunner])
-class TestDesugarer extends FunSuite with BeforeAndAfterEach {
-  private var desugarer = new Desugarer(TrackerWithListeners())
+class TestDesugarer extends AnyFunSuite with BeforeAndAfterEach {
+  private var gen: UniqueNameGenerator = _
+  private var desugarer: Desugarer = _
+  private val intT = IntT1
+  private val strT = StrT1
+  private val intAndStrT = TupT1(intT, strT)
+  private val s1 = TupT1(strT)
+  private val i1 = TupT1(intT)
+  private val exceptTypes = Map(
+      "f1" -> FunT1(IntT1, IntT1),
+      "f2" -> FunT1(IntT1, FunT1(IntT1, IntT1)),
+      "f3" -> FunT1(IntT1, FunT1(IntT1, FunT1(IntT1, IntT1))),
+      "r" -> RecT1(SortedMap("foo" -> StrT1, "bar" -> IntT1)),
+      "or" -> OperT1(Seq(), RecT1(SortedMap("foo" -> StrT1, "bar" -> IntT1))),
+      "fr" -> FunT1(IntT1, RecT1(SortedMap("foo" -> StrT1, "bar" -> IntT1))),
+      "ofr" -> OperT1(Seq(), FunT1(IntT1, RecT1(SortedMap("foo" -> StrT1, "bar" -> IntT1)))),
+      "ii" -> TupT1(IntT1, IntT1),
+      "si" -> TupT1(StrT1, IntT1),
+      "is" -> intAndStrT,
+      "f_si" -> FunT1(IntT1, TupT1(StrT1, IntT1)),
+      "o_si" -> OperT1(Seq(), TupT1(IntT1, StrT1)),
+      "o_f_si" -> OperT1(Seq(), FunT1(IntT1, TupT1(StrT1, IntT1))),
+      "i_to_Qs" -> FunT1(IntT1, SeqT1(StrT1)),
+      "o_i_to_Qs" -> OperT1(Seq(), FunT1(IntT1, SeqT1(StrT1))),
+      "Qs" -> SeqT1(StrT1),
+      "o_Qs" -> OperT1(Seq(), SeqT1(StrT1)),
+      "O1" -> OperT1(Seq(), FunT1(IntT1, IntT1)),
+      "O2" -> OperT1(Seq(), FunT1(IntT1, FunT1(IntT1, IntT1))),
+      "O3" -> OperT1(Seq(), FunT1(IntT1, FunT1(IntT1, FunT1(IntT1, IntT1)))),
+      "i" -> intT,
+      "i1" -> TupT1(IntT1),
+      "i2" -> TupT1(IntT1, IntT1),
+      "i3" -> TupT1(IntT1, IntT1, IntT1),
+      "s" -> strT,
+      "s1" -> s1,
+  )
+  private val unchangedTypes = Map(
+      "i" -> IntT1,
+      "b" -> BoolT1,
+      "et" -> TupT1(),
+      "b1" -> TupT1(BoolT1),
+      "i_b1_2" -> TupT1(IntT1, TupT1(BoolT1)),
+      "ib_2" -> TupT1(IntT1, BoolT1),
+      "ibi_3" -> TupT1(IntT1, BoolT1),
+      "i_ib_2_2" -> TupT1(IntT1, TupT1(IntT1, BoolT1)),
+      "f1" -> FunT1(IntT1, IntT1),
+  )
+  private val tupleTypes = Map(
+      "b" -> BoolT1,
+      "i" -> IntT1,
+      "I" -> SetT1(IntT1),
+      "i_to_I" -> FunT1(IntT1, SetT1(IntT1)),
+      "ii_to_i" -> FunT1(TupT1(IntT1, IntT1), IntT1),
+      "ii_2" -> TupT1(IntT1, IntT1),
+      "i_ii_2_2" -> TupT1(IntT1, TupT1(IntT1, IntT1)),
+      "I_II_2_2" -> SetT1(TupT1(IntT1, TupT1(IntT1, IntT1))),
+      "II_2" -> SetT1(TupT1(IntT1, IntT1)),
+      "i_ii_2_2_to_ii_2" -> FunT1(TupT1(IntT1, TupT1(IntT1, IntT1)), TupT1(IntT1, IntT1)),
+  )
+
+  private val varNames = Set(
+      "x",
+      "y",
+      "z",
+  )
 
   override def beforeEach(): Unit = {
-    desugarer = new Desugarer(TrackerWithListeners())
+    gen = new UniqueNameGenerator()
+    desugarer = new Desugarer(gen, varNames, new IdleTracker())
   }
 
-  test("chain 2 excepts") {
+  // call the operator that returns a function of type stored in exceptTypes(funAlias) and access it with indices
+  private def callAndAccess(operName: String, funAlias: String, indices: String*): TlaEx = {
+    def eatFun(tt: TlaType1, key: String): (TlaType1, TlaType1) = {
+      tt match {
+        case FunT1(arg, res) =>
+          (arg, res)
+
+        case RecT1(fieldTypes) =>
+          if (fieldTypes.contains(key)) {
+            (StrT1, fieldTypes(key))
+          } else {
+            throw new IllegalArgumentException(s"No key $key in $tt")
+          }
+
+        case TupT1(elems @ _*) =>
+          val intKey = key.toInt
+          if (intKey > 0 && intKey <= elems.length) {
+            (IntT1, elems(intKey))
+          } else {
+            throw new IllegalArgumentException(s"No index $key in $tt")
+          }
+
+        case type_ =>
+          throw new IllegalArgumentException(s"Unexpected type $type_")
+      }
+    }
+
+    val tt = exceptTypes(funAlias)
+    val operT = OperT1(Seq(), tt)
+    indices.foldLeft(tla.appOp(tla.name(operName).typed(operT)).typed(tt)) { case (a, n) =>
+      val (argT, resT) = eatFun(a.typeTag.asTlaType1(), n)
+      tla.appFun(a, tla.name(n).typed(argT)).typed(resT)
+    }
+  }
+
+  test("EXCEPT one-dimensional, one index") {
+    // input: [f EXCEPT ![<<i>>] = e]
+    val input =
+      tla
+        .except(tla.name("f") ? "f1", tla.tuple(tla.name("i") ? "i") ? "i1", tla.name("e") ? "i")
+        .typed(exceptTypes, "f1")
+    // output: the same as input
+    val output = desugarer.transform(input)
+    assert(output.eqTyped(input))
+  }
+
+  test("EXCEPT two-dimensional, one index") {
     // input: [f EXCEPT ![i][j] = e]
-    val highCalories =
-      tla.except(tla.name("f"), tla.tuple(tla.name("i"), tla.name("j")), tla.name("e"))
-    val sugarFree = desugarer.transform(highCalories)
-    // output [ f EXCEPT ![i] = [f[i] EXCEPT ![j] = e] ]
-    val expected =
-      tla.except(
-        tla.name("f"),
-        tla.tuple(tla.name("i")),
-        tla.except(
-          tla.appFun(tla.name("f"), tla.name("i")),
-          tla.tuple(tla.name("j")),
-          tla.name("e")))
+    val input =
+      tla
+        .except(tla.name("f") ? "f2", tla.tuple(tla.name("i") ? "i", tla.name("j") ? "i") ? "i2", tla.name("e") ? "i")
+        .typed(exceptTypes, "f2")
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<j>>] = e]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     IN t_3()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "f2", "i"), tla.tuple(tla.name("j") ? "i") ? "i1",
+                  tla.name("e") ? "i") ? "f1")
+          .typedOperDecl(exceptTypes, "O1"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "f1"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_2", "f1")) ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+    )
 
-    assert(expected == sugarFree)
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_3", "f2"), defs: _*)
+        .typed(exceptTypes, "f2")
+
+    assert(expected.eqTyped(output))
   }
 
-  test("chain 3 excepts") {
+  test("EXCEPT two-dimensional, function + record") {
+    // input: [f EXCEPT ![i].foo = e]
+    val input =
+      tla
+        .except(tla.name("f") ? "fr", tla.tuple(tla.name("i") ? "i", tla.name("foo") ? "s") ? "is", tla.name("e") ? "s")
+        .typed(exceptTypes, "fr")
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<"foo">>] = e]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     IN t_3()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "fr")
+          .typedOperDecl(exceptTypes, "ofr"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "f2", "i"), tla.tuple(tla.name("foo") ? "s") ? "s1",
+                  tla.name("e") ? "s") ? "r")
+          .typedOperDecl(exceptTypes, "or"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "r"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_2", "f1")) ? "fr")
+          .typedOperDecl(exceptTypes, "ofr"),
+    )
+
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_3", "fr"), defs: _*)
+        .typed(exceptTypes, "fr")
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("EXCEPT two-dimensional, function + row record") {
+    val r = RecRowT1(RowT1("foo" -> StrT1, "bar" -> IntT1))
+    val or = OperT1(Seq(), r)
+    val fr = FunT1(IntT1, r)
+    val ofr = OperT1(Seq(), fr)
+    val foo = name("foo").as(strT)
+    val i = name("i").as(intT)
+    val f = name("f").as(fr)
+    val e = name("e").as(strT)
+    // input: [f EXCEPT ![i].foo = e]
+    val input = except(f, tuple(i, foo).as(intAndStrT), e).as(fr)
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<"foo">>] = e]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     IN t_3()
+    val defs = Seq(
+        declOp("t_1", f).as(ofr),
+        declOp("t_2", except(callAndAccess("t_1", "f2", "i"), tuple(foo).as(s1), e).as(r)).as(or),
+        declOp("t_3",
+            except(callAndAccess("t_1", "r"), tuple(i).as(i1), callAndAccess("t_2", "f1"))
+              .as(fr))
+          .as(ofr),
+    )
+
+    val expected: TlaEx = letIn(callAndAccess("t_3", "fr"), defs: _*).as(fr)
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("EXCEPT two-dimensional, function + tuple") {
+    // input: [f EXCEPT ![i][1] = e]
+    val input =
+      tla
+        .except(tla.name("f") ? "f_si", tla.tuple(tla.name("i") ? "i", tla.int(1)) ? "ii", tla.name("e") ? "s")
+        .typed(exceptTypes, "f_si")
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<1>>] = e]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     IN t_3()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "f_si")
+          .typedOperDecl(exceptTypes, "o_f_si"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "f_si", "i"), tla.tuple(tla.int(1)) ? "i1", tla.name("e") ? "s") ? "si")
+          .typedOperDecl(exceptTypes, "o_si"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "si"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_2", "si")) ? "f_si")
+          .typedOperDecl(exceptTypes, "o_f_si"),
+    )
+
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_3", "f_si"), defs: _*)
+        .typed(exceptTypes, "f_si")
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("EXCEPT two-dimensional, function + sequence") {
+    // input: [f EXCEPT ![i][j] = e]
+    val input =
+      tla
+        .except(tla.name("f") ? "i_to_Qs", tla.tuple(tla.name("i") ? "i", tla.name("j") ? "i") ? "ii",
+            tla.name("e") ? "s")
+        .typed(exceptTypes, "i_to_Qs")
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<j>>] = e]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     IN t_3()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "i_to_Qs")
+          .typedOperDecl(exceptTypes, "o_i_to_Qs"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "i_to_Qs", "i"), tla.tuple(tla.name("j") ? "s") ? "i1",
+                  tla.name("e") ? "s") ? "Qs")
+          .typedOperDecl(exceptTypes, "o_Qs"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "Qs"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_2", "si")) ? "i_to_Qs")
+          .typedOperDecl(exceptTypes, "o_i_to_Qs"),
+    )
+
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_3", "f_si"), defs: _*)
+        .typed(exceptTypes, "i_to_Qs")
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("EXCEPT three-dimensional, one index") {
     // input: [f EXCEPT ![i][j][k] = e]
-    val highCalories =
-      tla.except(
-        tla.name("f"),
-        tla.tuple(tla.name("i"), tla.name("j"), tla.name("k")),
-        tla.name("e"))
-    val sugarFree = desugarer.transform(highCalories)
-    // output: [ f EXCEPT ![i] = [f[i] EXCEPT ![j] = [f[i][j] EXCEPT ![k] = e] ] ]
-    val expected = tla.except(
-      tla.name("f"),
-      tla.tuple(tla.name("i")),
-      tla.except(
-        tla.appFun(tla.name("f"), tla.name("i")),
-        tla.tuple(tla.name("j")),
-        tla.except(
-          tla.appFun(
-            tla.appFun(tla.name("f"),
-              tla.name("i")),
-            tla.name("j")),
-          tla.tuple(tla.name("k")),
-          tla.name("e"))))
+    val input =
+      tla
+        .except(tla.name("f") ? "f3", tla.tuple(tla.name("i") ? "i", tla.name("j") ? "i", tla.name("k") ? "i") ? "i3",
+            tla.name("e") ? "i")
+        .typed(exceptTypes, "f3")
+    val output = desugarer.transform(input)
+    // output: series of LET-IN definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i][j] EXCEPT ![<<k>>] = e]
+    //     t_3 == [t_1()[i] EXCEPT ![<<j>>] = t_2()]
+    //     t_4 == [t_1() EXCEPT ![<<i>>] = t_3()]
+    //     IN t_4()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "f3")
+          .typedOperDecl(exceptTypes, "O3"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "f3", "i", "j"), tla.tuple(tla.name("k") ? "i") ? "i1",
+                  tla.name("e") ? "i") ? "f1")
+          .typedOperDecl(exceptTypes, "O1"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "f3", "i"), tla.tuple(tla.name("j") ? "i") ? "i1",
+                  callAndAccess("t_2", "f1")) ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+        tla
+          .declOp("t_4",
+              tla.except(callAndAccess("t_1", "f1"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_3", "f3")) ? "f3")
+          .typedOperDecl(exceptTypes, "O3"),
+    )
 
-    assert(expected == sugarFree)
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_4", "f3"), defs: _*)
+        .typed(exceptTypes, "f3")
+
+    assert(expected.eqTyped(output))
   }
 
-  test("""rewrite UNCHANGED <<x, y>> >> to x' = x /\ y' = y""") {
+  test("EXCEPT with two updates") {
+    // input: [f EXCEPT ![i][j] = e1, ![k][l] = e2]
+    val input =
+      tla
+        .except(
+            tla.name("f") ? "f2",
+            tla.tuple(tla.name("i") ? "i", tla.name("j") ? "i") ? "i2",
+            tla.name("e1") ? "i",
+            tla.tuple(tla.name("k") ? "i", tla.name("l") ? "i") ? "i2",
+            tla.name("e2") ? "i",
+        )
+        .typed(exceptTypes, "f2")
+    val output = desugarer.transform(input)
+    // output: a series of definitions
+    // LET t_1 == f
+    //     t_2 == [t_1()[i] EXCEPT ![<<j>>] = e1]
+    //     t_3 == [t_1() EXCEPT ![<<i>>] = t_2()]
+    //     t_4 == [t_3()[k] EXCEPT ![<<l>>] = e2]
+    //     t_5 == [t_3() EXCEPT ![<<k>>] = t_4()]
+    //     IN t_5()
+    val defs = Seq(
+        tla
+          .declOp("t_1", tla.name("f") ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+        tla
+          .declOp("t_2",
+              tla.except(callAndAccess("t_1", "f2", "i"), tla.tuple(tla.name("j") ? "i") ? "i1",
+                  tla.name("e1") ? "i") ? "f1")
+          .typedOperDecl(exceptTypes, "O1"),
+        tla
+          .declOp("t_3",
+              tla.except(callAndAccess("t_1", "f2"), tla.tuple(tla.name("i") ? "i") ? "i1",
+                  callAndAccess("t_2", "f1")) ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+        tla
+          .declOp("t_4",
+              tla.except(callAndAccess("t_3", "f2", "k"), tla.tuple(tla.name("l") ? "i") ? "i1",
+                  tla.name("e2") ? "i") ? "f1")
+          .typedOperDecl(exceptTypes, "O1"),
+        tla
+          .declOp("t_5",
+              tla.except(callAndAccess("t_3", "f2"), tla.tuple(tla.name("k") ? "i") ? "i1",
+                  callAndAccess("t_4", "f1")) ? "f2")
+          .typedOperDecl(exceptTypes, "O2"),
+    )
+
+    val expected: TlaEx =
+      tla
+        .letIn(callAndAccess("t_5", "f2"), defs: _*)
+        .typed(exceptTypes, "f2")
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite UNCHANGED x to x' := x""") {
+    // input: x
+    def xAsI = tla.name("x").as(IntT1)
+    val input = tla.unchanged(xAsI).as(BoolT1)
+    val output = desugarer.transform(input)
+    // output: x' = x
+    val expected = tla.assign(tla.prime(xAsI).as(IntT1), xAsI).as(BoolT1)
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite UNCHANGED N to N' = N""") {
+    // input: N
+    def nAsI = tla.name("N").as(IntT1)
+    val input = tla.unchanged(nAsI).as(BoolT1)
+    val output = desugarer.transform(input)
+    // output: x' = x
+    val expected = tla.eql(tla.prime(nAsI).as(IntT1), nAsI).as(BoolT1)
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite UNCHANGED <<x, <<y>> >> to x' := x /\ y' := y""") {
     // input: <<x, <<y>> >>
-    val unchanged = tla.unchangedTup(tla.name("x"), tla.tuple(tla.name("y")))
-    val sugarFree = desugarer.transform(unchanged)
+    def varAsT(name: String, t: TlaType1) = tla.name(name).as(t)
+    def n_x = varAsT("x", IntT1)
+    def n_y = varAsT("y", BoolT1)
+    val input =
+      tla.unchanged(tla.tuple(n_x, tla.tuple(n_y).as(TupT1(BoolT1))).as(TupT1(IntT1, TupT1(BoolT1)))).as(BoolT1)
+    val output = desugarer.transform(input)
     // output: x' = x /\ y' = y
+    val expected: TlaEx =
+      tla
+        .and(
+            tla.assign(tla.prime(n_x).as(IntT1), n_x).as(BoolT1),
+            tla.assign(tla.prime(n_y).as(BoolT1), n_y).as(BoolT1),
+        )
+        .as(BoolT1)
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite <<x, y>> = <<a, b>> to x = a /\ y = b""") {
+    // This pattern looks like a parallel assignment. It stems from preprocessing of UNCHANGED and prime.
+    // input: <<x, y>> = <<a, b>>
+    val input =
+      tla
+        .eql(tla.tuple(tla.name("x") ? "i", tla.name("y") ? "b") ? "ib_2",
+            tla.tuple(tla.name("a") ? "i", tla.name("b") ? "b") ? "ib_2")
+        .typed(unchangedTypes, "b")
+
+    val output = desugarer.transform(input)
+    // output: x = a /\ y = b
+    val expected: TlaEx =
+      tla
+        .and(
+            tla.eql(tla.name("x") ? "i", tla.name("a") ? "b") ? "b",
+            tla.eql(tla.name("y") ? "i", tla.name("b") ? "b") ? "b",
+        )
+        .typed(unchangedTypes, "b")
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite <<x, y>> /= <<a, b>> to x /= a \/ y /= b""") {
+    val left = tla.tuple(tla.name("x") ? "i", tla.name("y") ? "b") ? "ib_2"
+    val right = tla.tuple(tla.name("a") ? "i", tla.name("b") ? "b") ? "ib_2"
+    // input: <<x, y>> /= <<a, b>>
+    val parallel = tla.neql(left, right).typed(unchangedTypes, "b")
+
+    val output = desugarer.transform(parallel)
+    // output: x /= a \/ y /= b
     val expected =
-      tla.and(
-        tla.eql(tla.prime(tla.name("x")), tla.name("x")),
-        tla.eql(tla.prime(tla.name("y")), tla.name("y"))
-      ) ///
-    assert(expected == sugarFree)
+      tla
+        .or(
+            tla.neql(tla.name("x") ? "i", tla.name("a") ? "b") ? "b",
+            tla.neql(tla.name("y") ? "i", tla.name("b") ? "b") ? "b",
+        )
+        .typed(unchangedTypes, "b")
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite <<x, y>> = <<a, b, c>> to FALSE""") {
+    val left = tla.tuple(tla.name("x") ? "i", tla.name("y") ? "b") ? "ib_2"
+    val right = tla.tuple(tla.name("a") ? "i", tla.name("b") ? "b", tla.name("c") ? "i") ? "ibi_3"
+    // input: <<x, y>> = <<a, b, c>>
+    val input = tla.eql(left, right).typed(unchangedTypes, "b")
+
+    val output = desugarer.transform(input)
+    // output: FALSE
+    val expected: TlaEx = tla.bool(false).typed()
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite <<x, y>> /= <<a, b, c>> to TRUE""") {
+    val left = tla.tuple(tla.name("x") ? "i", tla.name("y") ? "b") ? "ib_2"
+    val right = tla.tuple(tla.name("a") ? "i", tla.name("b") ? "b", tla.name("c") ? "i") ? "ibi_3"
+    // input: <<x, y>> /= <<a, b, c>>
+    val parallel = tla.neql(left, right).typed(unchangedTypes, "b")
+
+    val output = desugarer.transform(parallel)
+    // output: TRUE
+    val expected: TlaEx = tla.bool(true).typed()
+    assert(expected.eqTyped(output))
   }
 
   test("unfold UNCHANGED <<x, <<y, z>> >> to UNCHANGED <<x, y, z>>") {
     // This is an idiom that was probably introduced by Diego Ongaro in Raft.
     // There is no added value in this construct, so it is just sugar.
-    // So, we do the transformation right here.
-    val unchanged = tla.unchangedTup(tla.name("x"), tla.tuple(tla.name("y"), tla.name("z")))
+    // We do the transformation right here.
+    val unchanged =
+      tla
+        .unchanged(tla.tuple(tla.name("x") ? "i",
+            tla.tuple(tla.name("y") ? "i", tla.name("z") ? "b") ? "ib_2") ? "i_ib_2_2")
+        .typed(unchangedTypes, "b")
     val sugarFree = desugarer.transform(unchanged)
-    val expected =
-      tla.and(
-        tla.eql(tla.prime(tla.name("x")), tla.name("x")),
-        tla.eql(tla.prime(tla.name("y")), tla.name("y")),
-        tla.eql(tla.prime(tla.name("z")), tla.name("z"))
-      ) ///
-    assert(expected == sugarFree)
+    def asgnPrime(name: String) = {
+      def nEx = tla.name(name).as(IntT1)
+      tla.assign(tla.prime(nEx).as(IntT1), nEx).as(BoolT1)
+    }
+    val expected: TlaEx =
+      tla
+        .and(
+            asgnPrime("x"),
+            asgnPrime("y"),
+            asgnPrime("z"),
+        )
+        .typed(unchangedTypes, "b")
+    assert(expected.eqTyped(sugarFree))
+  }
+
+  test("""rewrite UNCHANGED <<>> to TRUE""") {
+    // this is a regression for issue #375
+    // input: << >>
+    val input = tla.unchanged(tla.tuple() ? "et").typed(unchangedTypes, "b")
+    val output = desugarer.transform(input)
+    // output: TRUE
+    val expected: TlaEx = tla.bool(true).typed()
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite UNCHANGED << <<>>, <<>> >> to TRUE""") {
+    // this is a regression for issue #375
+    // input: << <<>>, <<>> >>
+    val input = tla
+      .unchanged(tla.tuple(tla.tuple() ? "et", tla.tuple() ? "et") ? "et_2")
+      .typed(unchangedTypes + ("et_2" -> TupT1(TupT1(), TupT1())), "b")
+    val output = desugarer.transform(input)
+    // output: TRUE
+    val expected: TlaEx = tla.bool(true).typed()
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite UNCHANGED f[i] to (f[i])' = f[i]""") {
+    // this is a regression for issue #471
+    // input: UNCHANGED f[i]
+    val app = tla
+      .appFun(tla.name("f") ? "f1", tla.name("i") ? "i")
+      .typed(unchangedTypes, "i")
+    val input = tla
+      .unchanged(app)
+      .typed(BoolT1)
+    val output = desugarer.transform(input)
+    // output: (f[i])' = f[i]
+    val expected: TlaEx =
+      tla
+        .eql(tla.prime(app) ? "b", app)
+        .typed(unchangedTypes, "b")
+    assert(expected.eqTyped(output))
   }
 
   test("simplify tuples in filters") {
     // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
     // input: { <<x, <<y, z>> >> \in XYZ: x = 3 /\ y = 4 }
-    val filter =
-    tla.filter(
-      tla.tuple(tla.name("x"), tla.tuple(tla.name("y"), tla.name("z"))),
-      tla.name("XYZ"),
-      tla.and(tla.eql(tla.name("x"), tla.int(3)),
-        tla.eql(tla.name("y"), tla.int(4))))
-    val sugarFree = desugarer.transform(filter)
+    val input =
+      tla
+        .filter(tla.tuple(tla.name("x") ? "i",
+                tla.tuple(tla.name("y") ? "i", tla.name("z") ? "i") ? "ii_2") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2",
+            tla.and(tla.eql(tla.name("x") ? "i", tla.int(3)) ? "b",
+                tla.eql(tla.name("y") ? "i", tla.int(4)) ? "b") ? "b")
+        .typed(tupleTypes, "I_II_2_2")
+    val sugarFree = desugarer.transform(input)
     // output: { x_y_z \in XYZ: x_y_z[1] = 3 /\ x_y_z[2][1] = 4 }
-    val expected =
-      tla.filter(
-        tla.name("x_y_z"),
-        tla.name("XYZ"),
-        tla.and(
-          tla.eql(tla.appFun(tla.name("x_y_z"), tla.int(1)), tla.int(3)),
-          tla.eql(tla.appFun(tla.appFun(tla.name("x_y_z"), tla.int(2)),
-            tla.int(1)),
-            tla.int(4))
-        )) ////
-    assert(expected == sugarFree)
+    val output =
+      tla
+        .filter(tla.name("x_y_z") ? "i_ii_2_2", tla.name("XYZ") ? "I_II_2_2",
+            tla.and(
+                tla.eql(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(1)) ? "i", tla.int(3) ? "i") ? "b",
+                tla.eql(tla.appFun(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(2)) ? "i", tla.int(1)) ? "i",
+                    tla.int(4)) ? "b",
+            ) ? "b")
+        .typed(tupleTypes, "I_II_2_2")
+    assert(output.eqTyped(sugarFree))
   }
 
   test("simplify tuples in maps") {
     // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
     // input: { <<x, <<y, z>> >> \in XYZ |-> x + y }
     val map =
-    tla.map(
-      tla.plus(tla.name("x"), tla.name("y")),
-      tla.tuple(tla.name("x"), tla.tuple(tla.name("y"), tla.name("z"))),
-      tla.name("XYZ"))
-    val sugarFree = desugarer.transform(map)
+      tla
+        .map(tla.plus(tla.name("x") ? "i", tla.name("y") ? "i") ? "i",
+            tla.tuple(tla.name("x") ? "i", tla.tuple(tla.name("y") ? "i", tla.name("z") ? "i") ? "ii_2") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2")
+        .typed(tupleTypes, "II_2")
+    val output = desugarer.transform(map)
     // output: { x_y_z \in XYZ: x_y_z[1] + x_y_z[2][1] }
     val expected =
-      tla.map(
-        tla.plus(tla.appFun(tla.name("x_y_z"), tla.int(1)),
-          tla.appFun(tla.appFun(tla.name("x_y_z"),
-            tla.int(2)),
-            tla.int(1))),
-        tla.name("x_y_z"),
-        tla.name("XYZ")
-      ) ////
-    assert(expected == sugarFree)
+      tla
+        .map(
+            tla.plus(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(1)) ? "i",
+                tla.appFun(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(2)) ? "ii_2", tla.int(1)) ? "i") ? "i",
+            tla.name("x_y_z") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2",
+        )
+        .typed(tupleTypes, "II_2")
+    assert(expected.eqTyped(output))
+  }
+
+  test("simplify tuples in existentials") {
+    // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
+    // input: \E <<x, <<y, z>> >> \in XYZ: x = 3 /\ y = 4 }
+    val input =
+      tla
+        .exists(tla.tuple(tla.name("x") ? "i",
+                tla.tuple(tla.name("y") ? "i", tla.name("z") ? "i") ? "ii_2") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2",
+            tla.and(tla.eql(tla.name("x") ? "i", tla.int(3)) ? "b",
+                tla.eql(tla.name("y") ? "i", tla.int(4)) ? "b") ? "b")
+        .typed(tupleTypes, "b")
+    val sugarFree = desugarer.transform(input)
+    // output: \E x_y_z \in XYZ: x_y_z[1] = 3 /\ x_y_z[2][1] = 4 }
+    val output =
+      tla
+        .exists(tla.name("x_y_z") ? "i_ii_2_2", tla.name("XYZ") ? "I_II_2_2",
+            tla.and(
+                tla.eql(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(1)) ? "i", tla.int(3)) ? "b",
+                tla.eql(tla.appFun(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(2)) ? "i", tla.int(1)) ? "i",
+                    tla.int(4)) ? "b",
+            ) ? "b")
+        .typed(tupleTypes, "b")
+    assert(output.eqTyped(sugarFree))
+  }
+
+  test("simplify tuples in universals") {
+    // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
+    // input: \A <<x, <<y, z>> >> \in XYZ: x = 3 /\ y = 4 }
+    val input =
+      tla
+        .forall(tla.tuple(tla.name("x") ? "i",
+                tla.tuple(tla.name("y") ? "i", tla.name("z") ? "i") ? "ii_2") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2",
+            tla.and(tla.eql(tla.name("x") ? "i", tla.int(3)) ? "b",
+                tla.eql(tla.name("y") ? "i", tla.int(4)) ? "b") ? "b")
+        .typed(tupleTypes, "b")
+    val sugarFree = desugarer.transform(input)
+    // output: \A x_y_z \in XYZ: x_y_z[1] = 3 /\ x_y_z[2][1] = 4 }
+    val output =
+      tla
+        .forall(tla.name("x_y_z") ? "i_ii_2_2", tla.name("XYZ") ? "I_II_2_2",
+            tla.and(
+                tla.eql(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(1)) ? "i", tla.int(3)) ? "b",
+                tla.eql(tla.appFun(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(2)) ? "i", tla.int(1)) ? "i",
+                    tla.int(4)) ? "b",
+            ) ? "b")
+        .typed(tupleTypes, "b")
+    assert(output.eqTyped(sugarFree))
   }
 
   test("simplify tuples in functions") {
     // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
     // input: [<<x, <<y, z>> >> \in XYZ |-> x + y]
-    val map =
-    tla.funDef(
-      tla.plus(tla.name("x"), tla.name("y")),
-      tla.tuple(tla.name("x"), tla.tuple(tla.name("y"), tla.name("z"))),
-      tla.name("XYZ"))
-    val sugarFree = desugarer.transform(map)
-    // output: [ x_y_z \in XYZ |-> x_y_z[1] + x_y_z[2][1] ]
+    val input =
+      tla
+        .funDef(tla.plus(tla.name("x") ? "i", tla.name("y") ? "i") ? "i",
+            tla.tuple(tla.name("x") ? "i", tla.tuple(tla.name("y") ? "i", tla.name("z") ? "i") ? "ii_2") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2")
+        .typed(tupleTypes, "i_ii_2_2_to_ii_2")
+    val output = desugarer.transform(input)
+    // output: { x_y_z \in XYZ: x_y_z[1] + x_y_z[2][1] }
     val expected =
-      tla.funDef(
-        tla.plus(tla.appFun(tla.name("x_y_z"), tla.int(1)),
-          tla.appFun(tla.appFun(tla.name("x_y_z"),
-            tla.int(2)),
-            tla.int(1))),
-        tla.name("x_y_z"),
-        tla.name("XYZ")
-      ) ////
-    assert(expected == sugarFree)
+      tla
+        .funDef(
+            tla.plus(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(1)) ? "i",
+                tla.appFun(tla.appFun(tla.name("x_y_z") ? "i_ii_2_2", tla.int(2)) ? "ii_2", tla.int(1)) ? "i") ? "i",
+            tla.name("x_y_z") ? "i_ii_2_2",
+            tla.name("XYZ") ? "I_II_2_2",
+        )
+        .typed(tupleTypes, "i_ii_2_2_to_ii_2")
+
+    assert(expected.eqTyped(output))
   }
 
   test("keep one argument functions") {
     // make sure that a function of a single argument does not get modified, e.g., no tuples added
     // input: [x \in X |-> {x}]
-    val fundef =
-    tla.funDef(
-      tla.enumSet(tla.name("x")),
-      tla.name("x"),
-      tla.name("X"))
-    val sugarFree = desugarer.transform(fundef)
-    assert(fundef == sugarFree)
+    val input =
+      tla
+        .funDef(tla.enumSet(tla.name("x") ? "i") ? "I", tla.name("x") ? "i", tla.name("X") ? "I")
+        .typed(tupleTypes, "i_to_I")
+    val output = desugarer.transform(input)
+    assert(input.eqTyped(output))
   }
 
   test("simplify multi-argument functions") {
     // The user may write multi-argument functions, which we collapse into tuples
     // input: [ x \in X, y \in Y |-> x + y ]
     val map =
-    tla.funDef(
-      tla.plus(tla.name("x"), tla.name("y")),
-      tla.name("x"), tla.name("X"),
-      tla.name("y"), tla.name("Y"))
+      tla
+        .funDef(
+            tla.plus(tla.name("x") ? "i", tla.name("y") ? "i") ? "i",
+            tla.name("x") ? "i",
+            tla.name("X") ? "I",
+            tla.name("y") ? "i",
+            tla.name("Y") ? "I",
+        )
+        .typed(tupleTypes, "ii_to_i")
     val sugarFree = desugarer.transform(map)
     // output: [ x_y \in X \X Y |-> x_y[1] + x_y[2] ]
-    val expected =
-      tla.funDef(
-        tla.plus(tla.appFun(tla.name("x_y"), tla.int(1)),
-          tla.appFun(tla.name("x_y"), tla.int(2))),
-        tla.name("x_y"),
-        tla.times(tla.name("X"), tla.name("Y"))
-      ) ////
-    assert(expected == sugarFree)
+    val expected: TlaEx =
+      tla
+        .funDef(
+            tla.plus(tla.appFun(tla.name("x_y") ? "ii_2", tla.int(1)) ? "i",
+                tla.appFun(tla.name("x_y") ? "ii_2", tla.int(2)) ? "i") ? "i",
+            tla.name("x_y") ? "ii_2",
+            tla.times(tla.name("X") ? "I", tla.name("Y") ? "I") ? "II_2",
+        )
+        .typed(tupleTypes, "ii_to_i")
+    assert(expected.eqTyped(sugarFree))
   }
 
   test("simplify tuples in recursive functions") {
     // TLA+ allows the user to write tuples in expanded form. We introduce tuples instead.
     // input: f[x \in S, y \in T] == x + y
-    val map =
-    tla.recFunDef(
-      tla.plus(tla.name("x"), tla.name("y")),
-      tla.name("x"), tla.name("S"),
-      tla.name("y"), tla.name("T"))
-    val sugarFree = desugarer.transform(map)
+    val input =
+      tla
+        .recFunDef(
+            tla.plus(tla.name("x") ? "i", tla.name("y") ? "i") ? "i",
+            tla.name("x") ? "i",
+            tla.name("S") ? "I",
+            tla.name("y") ? "i",
+            tla.name("T") ? "I",
+        )
+        .typed(tupleTypes, "ii_to_i")
+    val output = desugarer.transform(input)
     // output: f[x_y \in S \X T] == x_y[1] + x_y[2]
-    val expected =
-      tla.recFunDef(
-        tla.plus(tla.appFun(tla.name("x_y"), tla.int(1)),
-          tla.appFun(tla.name("x_y"), tla.int(2))),
-        tla.name("x_y"),
-        tla.times(tla.name("S"), tla.name("T"))
-      ) ////
-    assert(expected == sugarFree)
+    val expected: TlaEx =
+      tla
+        .recFunDef(
+            tla.plus(tla.appFun(tla.name("x_y") ? "ii_2", tla.int(1)) ? "i",
+                tla.appFun(tla.name("x_y") ? "ii_2", tla.int(2)) ? "i") ? "i",
+            tla.name("x_y") ? "ii_2",
+            tla.times(tla.name("S") ? "I", tla.name("T") ? "I") ? "II_2",
+        )
+        .typed(tupleTypes, "ii_to_i")
+    assert(expected.eqTyped(output))
   }
 
   test("keep one argument recursive functions") {
     // make sure that a function of a single argument does not get modified, e.g., no tuples added
     // input: [x \in X |-> {x}]
-    val recFun =
-      tla.recFunDef(
-        tla.enumSet(tla.name("x")),
-        tla.name("x"),
-        tla.name("X"))
-    val sugarFree = desugarer.transform(recFun)
-    assert(recFun == sugarFree)
+    val input: TlaEx =
+      tla
+        .recFunDef(tla.enumSet(tla.name("x") ? "i") ? "I", tla.name("x") ? "i", tla.name("X") ? "I")
+        .typed(tupleTypes, "i_to_I")
+    val output = desugarer.transform(input)
+    assert(input.eqTyped(output))
+  }
+
+  test("accept calls to user-defined operators") {
+    val types = Map("i" -> IntT1, "F" -> OperT1(Seq(), IntT1))
+    // Foo(1)
+    val input =
+      tla
+        .appOp(tla.name("Foo") ? "F", tla.int(1) ? "i")
+        .typed(types, "i")
+    val output = desugarer(input)
+    // do nothing and do not complain
+    assert(output.eqTyped(input))
+  }
+
+  test("accept n-ary let-in definitions") {
+    val types = Map("i" -> IntT1, "F" -> OperT1(Seq(), IntT1))
+    // Foo(1)
+    val fooDef = tla
+      .declOp("Foo", tla.name("x") ? "i", OperParam("x"))
+      .typedOperDecl(types, "F")
+    val input = tla
+      .letIn(tla.appOp(tla.name("Foo") ? "F", tla.int(1) ? "i") ? "i", fooDef)
+      .typed(types, "i")
+    val output = desugarer(input)
+    // do nothing and do not complain
+    assert(output == input)
+  }
+
+  test("rewrite A ~> B to [](A => <>B)") {
+    val input: TlaEx =
+      tla.leadsTo(tla.name("A").typed(BoolT1), tla.name("B").typed(BoolT1)).typed(BoolT1)
+
+    val output = desugarer.transform(input)
+
+    val expected =
+      tla
+        .box(tla
+              .impl(tla.name("A").typed(BoolT1), tla.diamond(tla.name("B").typed(BoolT1)).typed(BoolT1))
+              .typed(BoolT1))
+        .typed(BoolT1)
+
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite [A]_vars to A \/ UNCHANGED << vars >>""") {
+    val input: TlaEx =
+      tla.stutt(tla.name("A").typed(BoolT1), tla.name("B").typed(IntT1)).typed(BoolT1)
+
+    val output = desugarer.transform(input)
+
+    val expected =
+      desugarer.transform(
+          tla.or(tla.name("A").typed(BoolT1), tla.unchanged(tla.name("B").typed(IntT1)).typed(BoolT1)).typed(BoolT1))
+    assert(expected.eqTyped(output))
+  }
+
+  test("""rewrite <A>_vars to A /\ ~UNCHANGED << vars >>""") {
+    val input: TlaEx =
+      tla.nostutt(tla.name("A").typed(BoolT1), tla.name("B").typed(IntT1)).typed(BoolT1)
+
+    val output = desugarer.transform(input)
+
+    val expected =
+      desugarer.transform(tla
+            .and(
+                tla.name("A").typed(BoolT1),
+                tla
+                  .not(
+                      tla.unchanged(tla.name("B").typed(IntT1)).typed(BoolT1)
+                  )
+                  .typed(BoolT1),
+            )
+            .typed(BoolT1))
+    assert(expected.eqTyped(output))
   }
 }

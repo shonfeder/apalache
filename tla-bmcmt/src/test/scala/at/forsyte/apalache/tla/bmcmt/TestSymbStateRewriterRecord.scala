@@ -1,40 +1,45 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.implicitConversions._
+import at.forsyte.apalache.infra.passes.options.SMTEncoding
 import at.forsyte.apalache.tla.bmcmt.types._
-import at.forsyte.apalache.tla.lir.NameEx
-import at.forsyte.apalache.tla.lir.convenience.tla
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.types.tla._
 
 import scala.collection.immutable.{SortedMap, SortedSet, TreeMap}
 
-@RunWith(classOf[JUnitRunner])
-class TestSymbStateRewriterRecord extends RewriterBase {
-  test("""RecordDomainCache: ~(dom {"a", "b"} = dom {"a", "b", "c"}) ~~> $C$k""") {
-    val rewriter = create()
+trait TestSymbStateRewriterRecord extends RewriterBase {
+  private val ribs = RecT1("a" -> IntT1, "b" -> BoolT1, "c" -> StrT1)
+  private val rii = RecT1("a" -> IntT1, "c" -> IntT1)
+
+  test("""RecordDomainCache: ~(dom {"a", "b"} = dom {"a", "b", "c"})""") { rewriterType: SMTEncoding =>
+    val rewriter = create(rewriterType)
     val (newArena1, set1) = rewriter.recordDomainCache.create(arena, (SortedSet("a", "b"), SortedSet[String]()))
     val (newArena2, set2) =
       rewriter.recordDomainCache.create(newArena1, (SortedSet("a", "b", "c"), SortedSet[String]()))
-    val neq = tla.not(tla.eql(set1, set2))
+    // the domains should not be equal
+    val neq = not(eql(set1.toBuilder, set2.toBuilder))
     val state = new SymbState(neq, newArena2, Binding())
     assertTlaExAndRestore(rewriter, state)
   }
 
-  test("""SE-REC-CTOR[1-2]: ["a" |-> 1, "b" |-> FALSE, "c" |-> "d"] ~~> $C$k""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
+  test("""["a" |-> 1, "b" |-> FALSE, "c" |-> "d"]""") { rewriterType: SMTEncoding =>
+    val record = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+        "c" -> str("d"),
+    )
 
     val state = new SymbState(record, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
     nextState.ex match {
-      case membershipEx @ NameEx(name) =>
+      case _ @NameEx(name) =>
         assert(solverContext.sat())
         val cell = nextState.arena.findCellByName(name)
         cell.cellType match {
-          case r @ RecordT(_) =>
-            assert(r.fields == SortedMap("a" -> IntT(), "b" -> BoolT(), "c" -> ConstT()))
+          case CellTFrom(r @ RecT1(_)) =>
+            val map = SortedMap("a" -> IntT1, "b" -> BoolT1, "c" -> StrT1)
+            assert(r.fieldTypes == map)
             val keys = SortedSet("a", "b", "c")
             val (_, expectedDomain) =
               rewriter.recordDomainCache.getOrCreate(nextState.arena, (keys, SortedSet[String]()))
@@ -45,10 +50,10 @@ class TestSymbStateRewriterRecord extends RewriterBase {
             // also make sure that the domain equality works
             val (newArena, expectedDom) =
               rewriter.recordDomainCache.getOrCreate(nextState.arena, (SortedSet("a", "b", "c"), SortedSet[String]()))
-            val eq = tla.eql(expectedDom.toNameEx, tla.dom(cell.toNameEx))
+            val eq = eql(expectedDom.toBuilder, dom(cell.toBuilder))
             assertTlaExAndRestore(rewriter, nextState.setArena(newArena).setRex(eq))
 
-            // we check the actual contents in the later tests that access elements
+          // we check the actual contents in the later tests that access elements
 
           case _ =>
             fail("Unexpected type")
@@ -59,58 +64,56 @@ class TestSymbStateRewriterRecord extends RewriterBase {
     }
   }
 
-  test("""SE-REC-ACC[1-2]: ["a" |-> 1, "b" |-> FALSE, "c" |-> "d"]["c"] ~~> $C$k equals \"d\"""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
+  test("""["a" |-> 1, "b" |-> FALSE, "c" |-> "d"]["c"] equals "d" """) { rewriterType: SMTEncoding =>
+    val record = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+        "c" -> str("d"),
+    )
+    val recordAcc = app(record, str("b"))
+    val eqD = eql(recordAcc, bool(false))
 
-    val recordAcc = tla.appFun(record, tla.str("b"))
+    val state = new SymbState(eqD, arena, Binding())
+    val rewriter = create(rewriterType)
+    assertTlaExAndRestore(rewriter, state.setRex(eqD))
+  }
+
+  test("""accessing a non-existing field: ["a" |-> 1, "b" |-> FALSE]["c"]""") { rewriterType: SMTEncoding =>
+    val record = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+    ).map { _.withTag(Typed(ribs)) }
+    // We assume that record has the type RecT1("a" -> IntT1, "b" -> BoolT1, "c" -> StrT1).
+    // This can happen due to type unification. The record access should still work,
+    // though the access is expected to produce an arbitrary value (of proper type).
+    val recordAcc = app(record, str("c"))
+
     val state = new SymbState(recordAcc, arena, Binding())
-    val rewriter = create()
-    val nextState = rewriter.rewriteUntilDone(state)
+    val rewriter = create(rewriterType)
+    rewriter.rewriteUntilDone(state)
+    assert(solverContext.sat())
+  }
+
+  test("""{["a" |-> 1, "b" |-> FALSE], ["a" |-> 2, "b" |-> TRUE]}""") { rewriterType: SMTEncoding =>
+    val record1 = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+    )
+    val record2 = rec(
+        "a" -> int(2),
+        "b" -> bool(true),
+    )
+    val set = enumSet(record1, record2)
+    val state = new SymbState(set, arena, Binding())
+    val nextState = create(rewriterType).rewriteUntilDone(state)
+
     nextState.ex match {
-      case membershipEx @ NameEx(name) =>
+      case NameEx(name) =>
         assert(solverContext.sat())
         val cell = nextState.arena.findCellByName(name)
         cell.cellType match {
-          case BoolT() =>
-            assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(cell.toNameEx, tla.bool(false))))
-
-            // we check the actual contents in the later tests that access elements
-
-          case _ =>
-            fail("Expected Boolean type")
-        }
-
-      case _ =>
-        fail("Unexpected rewriting result")
-    }
-  }
-
-  test("""type inference error ["a" |-> 1, "b" |-> FALSE]["c"]""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1), tla.str("b"), tla.bool(false))
-
-    val recordAcc = tla.appFun(record, tla.str("c"))
-    val state = new SymbState(recordAcc, arena, Binding())
-    val rewriter = create()
-    assertThrows[TypeInferenceException] {
-      rewriter.rewriteUntilDone(state)
-    }
-  }
-
-  test("""SE-REC-CTOR[1-2] in a set: {["a" |-> 1, "b" |-> FALSE], ["a" |-> 2, "b" |-> TRUE]} ~~> $C$k""") {
-    val record1 = tla.enumFun(tla.str("a"), tla.int(1), tla.str("b"), tla.bool(false))
-    val record2 = tla.enumFun(tla.str("a"), tla.int(2), tla.str("b"), tla.bool(true))
-
-    val state = new SymbState(tla.enumSet(record1, record2), arena, Binding())
-    val nextState = create().rewriteUntilDone(state)
-    nextState.ex match {
-      case membershipEx @ NameEx(name) =>
-        assert(solverContext.sat())
-        val cell = nextState.arena.findCellByName(name)
-        cell.cellType match {
-          case FinSetT(rt @ RecordT(_)) =>
-            assert(rt.fields == TreeMap("a" -> IntT(), "b" -> BoolT()))
-
+          case CellTFrom(SetT1(rt @ RecT1(_))) =>
+            assert(rt.fieldTypes == TreeMap("a" -> IntT1, "b" -> BoolT1))
           // we check the actual contents in the later tests that access elements
 
           case _ =>
@@ -122,25 +125,30 @@ class TestSymbStateRewriterRecord extends RewriterBase {
     }
   }
 
-  test("""SE-REC-CTOR[1-2] in a set: {["a" |-> 1, "b" |-> FALSE], ["a" |-> 2, "b" |-> TRUE, "c" |-> 3]} ~~> $C$k""") {
-    val record1 = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false))
-    val record2 = tla.enumFun(tla.str("a"), tla.int(2),
-      tla.str("b"), tla.bool(true), tla.str("c"), tla.int(3))
-    // Records in a set can have different sets of keys. This requires a type annotation.
-    val annotation = AnnotationParser.toTla(RecordT(SortedMap("a" -> IntT(), "b" -> BoolT(), "c" -> IntT())))
-
-    val state = new SymbState(tla.enumSet(tla.withType(record1, annotation), record2), arena, Binding())
-    val rewriter = create()
+  test("""{["a" |-> 1, "b" |-> FALSE], ["a" |-> 2, "b" |-> TRUE, "c" |-> "foo"]}""") { rewriterType: SMTEncoding =>
+    // Although record1 has two fields we provide the type `ribs`. This is how the type checker does type unification.
+    val record1 = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+    ).map { _.withTag(Typed(ribs)) }
+    val record2 = rec(
+        "a" -> int(2),
+        "b" -> bool(true),
+        "c" -> str("foo"),
+    )
+    val recSet = enumSet(record1, record2)
+    val state = new SymbState(recSet, arena, Binding())
+    val rewriter = create(rewriterType)
     val nextState = rewriter.rewriteUntilDone(state)
+
     nextState.ex match {
-      case membershipEx @ NameEx(name) =>
+      case NameEx(name) =>
         assert(solverContext.sat())
         val cell = nextState.arena.findCellByName(name)
         cell.cellType match {
-          case FinSetT(rt @ RecordT(_)) =>
-            assert(rt.fields == TreeMap("a" -> IntT(), "b" -> BoolT(), "c" -> IntT()))
-
+          case CellTFrom(SetT1(rt @ RecT1(_))) =>
+            val map = TreeMap("a" -> IntT1, "b" -> BoolT1, "c" -> StrT1)
+            assert(rt.fieldTypes == map)
 
           case _ =>
             fail("Unexpected type: " + cell.cellType)
@@ -151,158 +159,98 @@ class TestSymbStateRewriterRecord extends RewriterBase {
     }
   }
 
-  test("""SE-REC-CTOR[1-2] type error: {["a" |-> FALSE, "b" |-> 1], ["a" |-> 2, "b" |-> TRUE]} ~~> $C$k""") {
-    val record1 = tla.enumFun(tla.str("a"), tla.bool(false), tla.str("b"), tla.int(1))
-    val record2 = tla.enumFun(tla.str("a"), tla.int(2), tla.str("b"), tla.bool(true))
+  test("""filter-map a record (idiom): {r.c : r \in {r2 \in {["a" |-> 1], ["a" |-> 2, "c" |-> 3]}: r2.c = 3}}""") {
+    rewriterType: SMTEncoding =>
+      // It is a common idiom in TLA+ to first filter records by the type field
+      // and then -- when knowing the type of the filtered records -- map them somewhere.
+      // Although, it is not easy to do in a symbolic encoding, we support this idiom.
+      // We require though that all the records have type-compatible fields.
+      val record1 = rec("a" -> int(1)).map { _.withTag(Typed(rii)) }
+      val record2 = rec("a" -> int(2), "c" -> int(3))
+      // Records in a set can have different sets of keys. This requires a type annotation.
+      val setEx = enumSet(record1, record2)
+      val predEx = eql(app(name("r2", rii), str("c")), int(3))
+      val filteredEx = filter(name("r2", rii), setEx, predEx)
+      val mapEx = map(
+          app(name("r", rii), str("c")),
+          name("r", rii) -> filteredEx,
+      )
 
-    val state = new SymbState(tla.enumSet(record1, record2), arena, Binding())
-    // this is a badly-typed expression
-    assertThrows[TypeInferenceException] {
-      create().rewriteUntilDone(state)
-    }
+      val eq = eql(mapEx, enumSet(int(3)))
+
+      val state = new SymbState(mapEx, arena, Binding())
+      val rewriter = create(rewriterType)
+      assertTlaExAndRestore(rewriter, state.setRex(eq))
   }
 
-  test("""filter-map a record (idiom): {r.c : r \in {r2 \in {["a" |-> 1], ["a" |-> 2, "c" |-> 3]}: r2.c = 3}} ~~> $C$k""") {
-    // It is a common idiom in TLA+ to first filter records by the type field
-    // and then -- when knowing the type of the filtered records -- map them somewhere.
-    // Although, it is not easy to do in a symbolic encoding, we support this idiom.
-    // We require though that all the records should have type-compatible fields.
-    val record1 = tla.enumFun(tla.str("a"), tla.int(1))
-    val record2 = tla.enumFun(tla.str("a"), tla.int(2), tla.str("c"), tla.int(3))
-    // Records in a set can have different sets of keys. This requires a type annotation.
-    val annotation = AnnotationParser.toTla(RecordT(SortedMap("a" -> IntT(), "c" -> IntT())))
-    val setEx = tla.enumSet(tla.withType(record1, annotation), record2)
-    val predEx = tla.eql(tla.appFun(tla.name("r2"), tla.str("c")), tla.int(3))
-    val filteredEx = tla.filter(tla.name("r2"), setEx, predEx)
-    val mapEx = tla.map(tla.appFun(tla.name("r"), tla.str("c")), tla.name("r"), filteredEx)
-
-    val state = new SymbState(mapEx, arena, Binding())
-    val rewriter = create()
-    rewriter.push()
-    val nextState = rewriter.rewriteUntilDone(state)
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(nextState.ex, tla.enumSet(tla.int(3)))))
-    rewriter.pop()
-    rewriter.push()
-    val filteredState = rewriter.rewriteUntilDone(state.setRex(filteredEx))
-    val cell = nextState.arena.findCellByNameEx(filteredState.ex)
-    assert(cell.cellType == FinSetT(RecordT(SortedMap("a" -> IntT(), "c" -> IntT()))))
-  }
-
-  test("""SE-REC-EQ: [a |-> 1, b |-> FALSE, c |-> "d"] = [c |-> "d", b |-> FALSE, a |-> 1] ~~> TRUE""") {
-    val record1 = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
-    val record2 = tla.enumFun(tla.str("c"), tla.str("d"),
-      tla.str("b"), tla.bool(false), tla.str("a"), tla.int(1))
-    val eq = tla.eql(record1, record2)
+  test("""[a |-> 1, b |-> FALSE, c |-> "d"] = [c |-> "d", b |-> FALSE, a |-> 1]""") { rewriterType: SMTEncoding =>
+    // order of the fields does not matter
+    val record1 = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+        "c" -> str("d"),
+    )
+    val record2 = rec(
+        "c" -> str("d"),
+        "b" -> bool(false),
+        "a" -> int(1),
+    )
+    val eq = eql(record1, record2)
     val state = new SymbState(eq, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     assertTlaExAndRestore(rewriter, state)
   }
 
-  test("""SE-REC-EQ: ~([a |-> 1, b |-> FALSE, c |-> "d"] = [a |-> 1]) ~~> TRUE""") {
-    // Introduce two different records using a type annotation. The records should not be equal!
-    val annotation = AnnotationParser.toTla(RecordT(SortedMap("a" -> IntT(), "b" -> BoolT(), "c" -> ConstT())))
-
-    val record1 = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
-    val record2 = tla.enumFun(tla.str("a"), tla.int(1))
-    val eq = tla.not(tla.eql(record1, tla.withType(record2, annotation)))
+  test("""~([a |-> 1, b |-> FALSE, c |-> "d"] = [a |-> 1]) equals TRUE""") { rewriterType: SMTEncoding =>
+    val record1 = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+        "c" -> str("d"),
+    )
+    val record2 = rec("a" -> int(1)).map { _.withTag(Typed(ribs)) }
+    val eq = not(eql(record1, record2))
     val state = new SymbState(eq, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     assertTlaExAndRestore(rewriter, state)
   }
 
-  // Keramelizer does this expansion
-  ignore(
-    """SE-REC-SET: {[n |-> 1, b |-> FALSE], [n |-> 2, b |-> FALSE], [n |-> 1, b |-> TRUE], [n |-> 2, b |-> TRUE] = {[n : {1, 2}, b : {FALSE, TRUE}}""".stripMargin) {
-    val set12 = tla.enumSet(1 to 2 map tla.int :_*)
-    val setBool = tla.enumSet(tla.bool(false), tla.bool(true))
-    val prod = tla.recSet(tla.str("n"), set12, tla.str("b"), setBool)
-    def rec(i: Int, b: Boolean) =
-      tla.enumFun(tla.str("n"), tla.int(i), tla.str("b"), tla.bool(b))
-    val eq = tla.eql(prod, tla.enumSet(rec(1, false), rec(1, true), rec(2, false), rec(2, true)))
-
+  test("""DOMAIN [a |-> 1, b |-> FALSE, c |-> "d"] equals {"a", "b", "c"}""") { rewriterType: SMTEncoding =>
+    // the domain of a record stays the same, even if it is lifted to a more general record type
+    val record = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+        "c" -> str("d"),
+    )
+    val domain = dom(record)
+    val eq = eql(domain, enumSet(str("a"), str("b"), str("c")))
     val state = new SymbState(eq, arena, Binding())
-    val rewriter = create()
-    val nextState = rewriter.rewriteUntilDone(state)
-    rewriter.push()
-    solverContext.assertGroundExpr(nextState.ex)
-    assert(solverContext.sat())
-    rewriter.pop()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
-    assert(!solverContext.sat())
-  }
-
-  // Keramelizer does this expansion
-  ignore(
-    """SE-REC-SET: {[n : {1, 2}} <: {[n |-> Int, b |-> BOOLEAN ]}""".stripMargin) {
-    val set12 = tla.enumSet(1 to 2 map tla.int :_*)
-    val setBool = tla.enumSet(tla.bool(false), tla.bool(true))
-    val prod = tla.recSet(tla.str("n"), set12)
-    val expectedRecordT = FinSetT(RecordT(SortedMap("n" -> IntT(), "b" -> BoolT())))
-    val annotated = tla.withType(prod, AnnotationParser.toTla(expectedRecordT))
-
-    val state = new SymbState(annotated, arena, Binding())
-    val rewriter = create()
-    val nextState = rewriter.rewriteUntilDone(state)
-    val cell = nextState.arena.findCellByNameEx(nextState.ex)
-    assert(expectedRecordT == cell.cellType)
-  }
-
-  // Keramelizer and ExprOptimizer rewrite assignments over records sets into existentials over records
-  ignore("""SE-REC-SET: x' \in {[n |-> Int, b |-> BOOLEAN ]}""".stripMargin) {
-    val set12 = tla.enumSet(1 to 2 map tla.int :_*)
-    val setBool = tla.enumSet(tla.bool(false), tla.bool(true))
-    val prod = tla.recSet(tla.str("n"), set12, tla.str("b"), setBool)
-    val assign = tla.in(tla.prime(tla.name("x")), prod)
-
-    val state = new SymbState(assign, arena, Binding())
-    val rewriter = create()
-    val nextState = rewriter.rewriteUntilDone(state)
-    val inInt =
-      tla.in(tla.appFun(tla.prime(tla.name("x")), tla.str("n")),
-        tla.enumSet(tla.int(1), tla.int(2)))
-    assertTlaExAndRestore(rewriter, nextState.setRex(inInt))
-
-    val inBool =
-      tla.in(tla.appFun(tla.prime(tla.name("x")), tla.str("b")),
-             tla.enumSet(tla.bool(false), tla.bool(true)))
-    assertTlaExAndRestore(rewriter, nextState.setRex(inBool))
-  }
-
-  test("""SE-REC-DOM: DOMAIN [a |-> 1, b |-> FALSE, c |-> "d"] = {"a", "b", "c"}""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
-    val dom = tla.dom(record)
-    val eq = tla.eql(dom, tla.enumSet(tla.str("a"), tla.str("b"), tla.str("c")))
-    val state = new SymbState(eq, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     assertTlaExAndRestore(rewriter, state)
   }
 
-  test("""SE-REC-DOM: DOMAIN ([a |-> 1] <: [a |-> 1, b |-> FALSE, c |-> "d"]) = {"a", "b", "c"}""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1),
-      tla.str("b"), tla.bool(false), tla.str("c"), tla.str("d"))
-    val richerType = AnnotationParser.toTla(RecordT(SortedMap("a" -> IntT(), "b" -> BoolT(), "c" -> ConstT())))
-    val annotated =
-      tla.withType(tla.enumFun(tla.str("a"), tla.int(1)), richerType)
-    val dom = tla.dom(annotated)
-    val eq = tla.eql(dom, tla.enumSet(tla.str("a")))
+  test("""DOMAIN [a |-> 1] = {"a"} under type annotations!""") { rewriterType: SMTEncoding =>
+    val record = rec("a" -> int(1)).map(_.withTag(Typed(ribs)))
+    val domain = dom(record)
+    val eq = eql(domain, enumSet(str("a")))
     val state = new SymbState(eq, arena, Binding())
-    val rewriter = create()
+    val rewriter = create(rewriterType)
     assertTlaExAndRestore(rewriter, state)
   }
 
+  test("""[ ["a" |-> 1, "b" |-> FALSE] EXCEPT !["a"] = 3 ]""") { rewriterType: SMTEncoding =>
+    val record = rec(
+        "a" -> int(1),
+        "b" -> bool(false),
+    )
+    val updatedRec = except(record, str("a"), int(3))
+    val expectedRec = rec(
+        "a" -> int(3),
+        "b" -> bool(false),
+    )
+    val eq = eql(expectedRec, updatedRec)
 
-  test("""SE-REC-EXCEPT:[ ["a" |-> 1, "b" |-> FALSE] EXCEPT !["a"] = 3 ]""") {
-    val record = tla.enumFun(tla.str("a"), tla.int(1), tla.str("b"), tla.bool(false))
-    val recExcept = tla.except(record, tla.tuple(tla.str("a")), tla.int(3))
-
-    val state = new SymbState(recExcept, arena, Binding())
-    val rewriter = create()
-    val nextState = rewriter.rewriteUntilDone(state)
-    val expectedRec = tla.enumFun(tla.str("a"), tla.int(3), tla.str("b"), tla.bool(false))
-    assertTlaExAndRestore(rewriter, nextState.setRex(tla.eql(expectedRec, nextState.ex)))
+    val state = new SymbState(eq, arena, Binding())
+    val rewriter = create(rewriterType)
+    assertTlaExAndRestore(rewriter, state)
   }
-
 }

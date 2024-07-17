@@ -1,15 +1,17 @@
 package at.forsyte.apalache.tla.lir.transformations
 
-import at.forsyte.apalache.tla.lir.{TlaEx, TlaModule, LanguagePredError}
+import at.forsyte.apalache.tla.lir.{LanguagePredError, TlaEx, TlaModule}
 
 /**
-  * Given a language predicate, the watchdog checks, whether an expression or a module satisfies the predicate.
-  * If not, the watchdog throws UnexpectedLanguageError.
-  *
-  * @param pred a language predicate
-  *
-  * @author Igor Konnov
-  */
+ * Given a language predicate, the watchdog checks, whether an expression or a module satisfies the predicate. If not,
+ * the watchdog throws UnexpectedLanguageError.
+ *
+ * @param pred
+ *   a language predicate
+ *
+ * @author
+ *   Igor Konnov
+ */
 class LanguageWatchdog(pred: LanguagePred) {
   private val predName: String = pred.getClass.getSimpleName
 
@@ -29,7 +31,7 @@ class LanguageWatchdog(pred: LanguagePred) {
         () // do nothing
 
       case PredResultFail(failedIds) =>
-        throw new LanguagePredError(s"Some expressions do not fit in the fragment $predName", failedIds)
+        throw new LanguagePredError(s"Some declarations do not fit in the fragment $predName", failedIds)
     }
   }
 }

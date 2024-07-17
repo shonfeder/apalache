@@ -3,21 +3,19 @@ package at.forsyte.apalache.tla.bmcmt
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
 
 /**
-  * A single rewriting rule that implements operational semantics.
-  */
+ * A single rewriting rule that implements operational semantics.
+ */
 trait RewritingRule {
   def isApplicable(symbState: SymbState): Boolean
 
   def apply(symbState: SymbState): SymbState
 
-  def logOnEntry(solverContext: SolverContext, state: SymbState): SymbState = {
+  def logOnEntry(solverContext: SolverContext, state: SymbState): Unit = {
     solverContext.log("; %s(%s) {".format(getClass.getSimpleName, state.ex))
-    state
   }
 
-  def logOnReturn(solverContext: SolverContext, state: SymbState): SymbState = {
+  def logOnReturn(solverContext: SolverContext, state: SymbState): Unit = {
     solverContext.log("; } %s returns %s [%d arena cells])"
-      .format(getClass.getSimpleName, state.ex, state.arena.cellCount))
-    state
+          .format(getClass.getSimpleName, state.ex, state.arena.cellCount))
   }
 }

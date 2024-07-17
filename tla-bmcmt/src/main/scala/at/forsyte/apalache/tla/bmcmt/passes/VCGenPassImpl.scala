@@ -1,70 +1,52 @@
 package at.forsyte.apalache.tla.bmcmt.passes
 
-import java.io.File
-import java.nio.file.Path
-
-import at.forsyte.apalache.infra.passes.{Pass, PassOptions, TlaModuleMixin}
-import at.forsyte.apalache.tla.bmcmt.{CheckerException, VCGenerator}
-import at.forsyte.apalache.tla.lir.NullEx
-import at.forsyte.apalache.tla.lir.io.PrettyWriter
+import at.forsyte.apalache.infra.passes.DerivedPredicates
+import at.forsyte.apalache.infra.passes.Pass.PassResult
+import at.forsyte.apalache.infra.passes.options.OptionGroup
+import at.forsyte.apalache.tla.bmcmt.VCGenerator
+import at.forsyte.apalache.tla.lir.{ModuleProperty, TlaModule}
+import at.forsyte.apalache.io.lir.TlaWriterFactory
 import at.forsyte.apalache.tla.lir.transformations.TransformationTracker
 import com.google.inject.Inject
-import com.google.inject.name.Named
 import com.typesafe.scalalogging.LazyLogging
 
 /**
-  * The pass that generates verification conditions.
-  *
-  * @author Igor Konnov
-  */
-class VCGenPassImpl @Inject()(options: PassOptions,
-                              tracker: TransformationTracker,
-                              @Named("AfterVCGen") nextPass: Pass with TlaModuleMixin)
-  extends VCGenPass with LazyLogging {
+ * The pass that generates verification conditions.
+ *
+ * @author
+ *   Igor Konnov
+ */
+class VCGenPassImpl @Inject() (
+    options: OptionGroup.HasChecker,
+    derivedPredicates: DerivedPredicates,
+    tracker: TransformationTracker,
+    writerFactory: TlaWriterFactory)
+    extends VCGenPass with LazyLogging {
 
-  /**
-    * The pass name.
-    *
-    * @return the name associated with the pass
-    */
   override def name: String = "VCGen"
 
-  /**
-    * Run the pass.
-    *
-    * @return true, if the pass was successful
-    */
-  override def execute(): Boolean = {
-    if (tlaModule.isEmpty) {
-      throw new CheckerException(s"The input of $name pass is not initialized", NullEx)
-    }
-
+  override def execute(tlaModule: TlaModule): PassResult = {
     val newModule =
-      options.get[List[String]]("checker", "inv") match {
-        case Some(invariants) =>
-          invariants.foldLeft(tlaModule.get){ (mod, invName) =>
+      derivedPredicates.invariants match {
+        case List() =>
+          val deadlockMsg = if (options.checker.noDeadlocks) "" else " Only deadlocks will be checked"
+          logger.info(s"  > No invariant given.${deadlockMsg}")
+          tlaModule
+        case invariants =>
+          invariants.foldLeft(tlaModule) { (mod, invName) =>
             logger.info(s"  > Producing verification conditions from the invariant $invName")
-            new VCGenerator(tracker).gen(mod, invName)
+            val optView = derivedPredicates.view
+            optView.foreach { viewName => logger.info(s"  > Using state view ${viewName}") }
+            new VCGenerator(tracker).gen(mod, invName, optView)
           }
-        case None =>
-          logger.info("  > No invariant given. Only deadlocks will be checked")
-          tlaModule.get
       }
 
-    val outdir = options.getOrError("io", "outdir").asInstanceOf[Path]
-    PrettyWriter.write(newModule, new File(outdir.toFile, "out-vcgen.tla"))
+    writeOut(writerFactory, newModule)
 
-    nextPass.setModule(newModule)
-    true
+    Right(newModule)
   }
 
-  /**
-    * Get the next pass in the chain. What is the next pass is up
-    * to the module configuration and the pass outcome.
-    *
-    * @return the next pass, if exists, or None otherwise
-    */
-  override def next(): Option[Pass] = {
-    Some(nextPass)
-  }
+  override def dependencies = Set(ModuleProperty.Inlined)
+
+  override def transformations = Set(ModuleProperty.VCGenerated)
 }

@@ -1,56 +1,79 @@
 package at.forsyte.apalache.tla.bmcmt.config
 
 import at.forsyte.apalache.infra.{ErrorMessage, ExceptionAdapter, FailureMessage, NormalErrorMessage}
-import at.forsyte.apalache.tla.assignments.{AssignmentException, CoverData}
+import at.forsyte.apalache.io.ConfigurationError
+import at.forsyte.apalache.io.itf.ItfError
+import at.forsyte.apalache.io.json.JsonDeserializationError
+import at.forsyte.apalache.io.quint.QuintUnsupportedError
+import at.forsyte.apalache.tla.assignments.AssignmentException
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.types.TypeInferenceError
-import at.forsyte.apalache.tla.imp.SanyException
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
-import at.forsyte.apalache.tla.lir.{LanguagePredError, MalformedTlaError, OperEx, UID}
-import at.forsyte.apalache.tla.pp.{ConfigurationError, IrrecoverablePreprocessingError, NotInKeraError, TlaInputError}
+import at.forsyte.apalache.tla.lir.{
+  LanguagePredError, MalformedSepecificationError, MalformedTlaError, OutdatedAnnotationsError, TypingException, UID,
+}
+import at.forsyte.apalache.tla.pp.{IrrecoverablePreprocessingError, NotInKeraError, OverridingError, TlaInputError}
+import at.forsyte.apalache.tla.typecheck.TypingInputException
+import com.google.inject.{Inject, Singleton}
 import com.typesafe.scalalogging.LazyLogging
-import javax.inject.{Inject, Singleton}
 
 /**
-  * The adapter for all exceptions that can be produced when running the model checker.
-  *
-  * @author Igor Konnv
-  */
+ * The adapter for all exceptions that can be produced when running the model checker.
+ *
+ * @author
+ *   Igor Konnv
+ */
 @Singleton
-class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
-                                        changeListener: ChangeListener) extends ExceptionAdapter with LazyLogging {
+class CheckerExceptionAdapter @Inject() (sourceStore: SourceStore, changeListener: ChangeListener)
+    extends ExceptionAdapter with LazyLogging {
   private lazy val ISSUES_LINK: String = "[https://github.com/informalsystems/apalache/issues]"
 
-  override def toMessage: PartialFunction[Exception, ErrorMessage] = {
+  override def toMessage: PartialFunction[Throwable, ErrorMessage] = super.toMessage.orElse {
     // normal errors
-    case err: SanyException =>
-      NormalErrorMessage("Error by TLA+ parser: " + err.getMessage)
-
     case err: ConfigurationError =>
       NormalErrorMessage("Configuration error (see the manual): " + err.getMessage)
 
+    case err: OverridingError =>
+      NormalErrorMessage("Configuration error (see the manual): " + err.getMessage)
+
     case err: TlaInputError =>
-      NormalErrorMessage("Input error (see the manual): " + err.getMessage)
+      val loc = err.sourceId.map(id => findLoc(id) + ": ").getOrElse("")
+      NormalErrorMessage(s"${loc}Input error (see the manual): ${err.getMessage}")
 
     case err: AssignmentException =>
       logger.info("To understand the error, read the manual:")
-      logger.info("  [https://github.com/informalsystems/apalache/blob/unstable/docs/manual.md#assignments]")
+      logger.info("  [https://apalache.informal.systems/docs/apalache/principles/assignments.html]")
       NormalErrorMessage("Assignment error: " + err.getMessage)
 
-    case err: TypeInferenceException =>
-      val msg = "%s\n%s".format(err.getMessage, err.errors.map(ofTypeInferenceError).mkString("\n"))
+    case err: OutdatedAnnotationsError =>
+      val msg = "%s: rewriter error: %s".format(findLoc(err.causeExpr.ID), err.getMessage)
       NormalErrorMessage(msg)
 
     case err: LanguagePredError =>
       // a language predicate failed
-      err.failedIds.foreach {
-        idAndMsg => logger.error("%s: unexpected expression: %s".format(findLoc(idAndMsg._1), idAndMsg._2))
+      err.failedIds.foreach { idAndMsg =>
+        logger.error("%s: unexpected expression: %s".format(findLoc(idAndMsg._1), idAndMsg._2))
       }
       NormalErrorMessage("Unexpected expressions in the specification (see the error messages)")
 
     case err: NotInKeraError =>
       NormalErrorMessage("%s: Input error (see the manual): %s".format(findLoc(err.causeExpr.ID), err.getMessage))
+
+    case err: TypingInputException =>
+      // this is a normal message, as we know that the typing error is due to the user
+      NormalErrorMessage("%s: type input error: %s".format(findLoc(err.causeExprId), err.getMessage))
+
+    case err: TypingException =>
+      // this is a failure message, as we know that something type-related in apalache is broken
+      FailureMessage("%s: internal error in type checking: %s".format(findLoc(err.causeExprId), err.getMessage))
+
+    case err: JsonDeserializationError =>
+      // this is a normal message, as we know that the json error is due to the user
+      NormalErrorMessage(s"Error in JSON deserialization. Perhaps the file is malformed?: ${err.getMessage}.")
+
+    case err: ItfError =>
+      // this is a normal message, as we know that the json error is due to the user
+      NormalErrorMessage(s"Error in ITF deserialization. Perhaps the file is malformed?: ${err.getMessage}.")
 
     // tool failures
     case err: IrrecoverablePreprocessingError =>
@@ -70,9 +93,6 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
       val msg = "%s: error when rewriting to SMT: %s".format(findLoc(err.causeExpr.ID), err.getMessage)
       FailureMessage(msg)
 
-    case err: TypeException =>
-      FailureMessage("%s: type error: %s".format(findLoc(err.causeExpr.ID), err.getMessage))
-
     case err: InvalidTlaExException =>
       val msg = "%s: unexpected TLA+ expression: %s".format(findLoc(err.causeExpr.ID), err.getMessage)
       FailureMessage(msg)
@@ -89,8 +109,11 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
       val msg = "%s: unexpected TLA+ expression: %s".format(findLoc(err.causeExpr.ID), err.getMessage)
       FailureMessage(msg)
 
-    case err: CoverData.CoverException =>
-      val msg = "Unable to find assignments for all state variables: \n%s\n [see docs/manual.md 7.1]".format(err.getMessage)
+    case err: QuintUnsupportedError =>
+      FailureMessage(err.getMessage)
+
+    case err: MalformedSepecificationError =>
+      val msg = "The specification is malformed: %s".format(err.getMessage)
       NormalErrorMessage(msg)
   }
 
@@ -99,16 +122,7 @@ class CheckerExceptionAdapter @Inject()(sourceStore: SourceStore,
 
     sourceLocator.sourceOf(id) match {
       case Some(loc) => loc.toString
-      case None => "<unknown>"
+      case None      => "<unknown>"
     }
-  }
-
-  def ofTypeInferenceError(e: TypeInferenceError): String = {
-    val locInfo = findLoc(e.origin.ID)
-    val exStr = e.origin match {
-      case OperEx(op, _*) => op.name
-      case ex@_ => ex.toString()
-    }
-    "%s, %s, type error: %s".format(locInfo, exStr, e.explanation)
   }
 }

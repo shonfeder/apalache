@@ -1,20 +1,21 @@
 package at.forsyte.apalache.tla.bmcmt.rules.aux
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.lir.convenience.tla
-import at.forsyte.apalache.tla.bmcmt.implicitConversions._
-import at.forsyte.apalache.tla.bmcmt.types.FinSetT
+import at.forsyte.apalache.tla.lir.SetT1
+import at.forsyte.apalache.tla.types.tla
 
 /**
-  * This class constructs the power set of S, that is, SUBSET S. Sometimes, this is just unavoidable, e.g.,
-  * consider { Q \in SUBSET S: 2 * Cardinality(Q) =  }. Obviously, this produces an enormous explosion of constraints.
-  *
-  * @author Igor Konnov
-  */
+ * This class constructs the power set of S, that is, SUBSET S. Sometimes, this is just unavoidable, e.g., consider { Q
+ * \in SUBSET S: 2 * Cardinality(Q) = }. Obviously, this produces an enormous explosion of constraints.
+ *
+ * @author
+ *   Igor Konnov
+ */
 class PowSetCtor(rewriter: SymbStateRewriter) {
+
   // Confringo is the explosion curse from Harry Potter. To let you know that your SMT solver will probably explode.
   def confringo(state: SymbState, set: ArenaCell): SymbState = {
-    val elems = state.arena.getHas(set) // S has n elements
+    val elems = state.arena.getHasPtr(set) // S has n elements
     var arena = state.arena // we change the arena a lot
     // Enumerate the bit vectors of length 1..n and construct a set for each vector.
     // Since we do not know statically, which cells belong to S, this method may construct equal sets,
@@ -23,11 +24,16 @@ class PowSetCtor(rewriter: SymbStateRewriter) {
     def mkSetByNum(bitvec: BigInt): ArenaCell = {
       def isIn(no: Int): Boolean = ((bitvec >> no) & 1) != 0
       val filtered = elems.zipWithIndex.filter(p => isIn(p._2)).map(_._1)
-      arena = arena.appendCell(set.cellType)
+      arena = arena.appendCellOld(set.cellType)
       val subsetCell = arena.topCell
       arena = arena.appendHas(subsetCell, filtered: _*)
       for (e <- filtered) {
-        rewriter.solverContext.assertGroundExpr(tla.equiv(tla.in(e, subsetCell), tla.in(e, set)))
+        val elem = e.elem
+        val inSubset = tla.storeInSet(elem.toBuilder, subsetCell.toBuilder)
+        val notInSubset =
+          tla.storeNotInSet(elem.toBuilder, subsetCell.toBuilder) // This ensures that e is not in subsetCell
+        val inSet = tla.selectInSet(elem.toBuilder, set.toBuilder)
+        rewriter.solverContext.assertGroundExpr(tla.ite(inSet, inSubset, notInSubset))
       }
       subsetCell
     }
@@ -39,25 +45,25 @@ class PowSetCtor(rewriter: SymbStateRewriter) {
     }
     val subsets =
       if (elems.nonEmpty) {
-        BigInt(0).to(powSetSize - 1) map mkSetByNum
+        BigInt(0).to(powSetSize - 1).map(mkSetByNum)
       } else {
         // the set is statically empty: just introduce an empty set
-        arena = arena.appendCell(set.cellType)
+        arena = arena.appendCellOld(set.cellType)
         Seq(arena.topCell)
       }
 
     // create a cell for the powerset, yeah, it is crazy, but hopefully these subsets are small
-    arena = arena.appendCell(FinSetT(set.cellType))
+    arena = arena.appendCell(SetT1(set.cellType.toTlaType1))
     val powsetCell = arena.topCell
-    arena = arena.appendHas(powsetCell, subsets: _*)
+    arena = arena.appendHas(powsetCell, subsets.map(FixedElemPtr): _*)
     for (subset <- subsets) {
-      rewriter.solverContext.assertGroundExpr(tla.in(subset, powsetCell))
+      rewriter.solverContext.assertGroundExpr(tla.storeInSet(subset.toBuilder, powsetCell.toBuilder))
     }
 
     // that's it!
     rewriter.solverContext.log("; } %s returns %s [%d arena cells])"
-      .format(getClass.getSimpleName, state.ex, state.arena.cellCount))
+          .format(getClass.getSimpleName, state.ex, state.arena.cellCount))
 
-    state.setArena(arena).setRex(powsetCell)
+    state.setArena(arena).setRex(powsetCell.toNameEx)
   }
 }

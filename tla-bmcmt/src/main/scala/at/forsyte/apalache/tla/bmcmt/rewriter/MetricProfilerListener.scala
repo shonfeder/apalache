@@ -1,32 +1,35 @@
 package at.forsyte.apalache.tla.bmcmt.rewriter
 
-import java.io.{File, FileWriter, PrintWriter}
-
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContextMetrics
 import at.forsyte.apalache.tla.imp.src.SourceStore
 import at.forsyte.apalache.tla.lir.{TlaEx, UID}
 import at.forsyte.apalache.tla.lir.storage.{ChangeListener, SourceLocator}
 import com.typesafe.scalalogging.LazyLogging
+import at.forsyte.apalache.io.OutputManager
 
 /**
-  * This listener registers the SMT metrics that are created when an expression is being translated in SMT.
-  * These metrics are collected only for those expressions that have source information, which can be
-  * displayed to the user.
-  *
-  * @param sourceStore the storage of source locations
-  * @param changeListener the tracer of expression updates
-  */
-class MetricProfilerListener(sourceStore: SourceStore, changeListener: ChangeListener, outFile: File)
+ * This listener registers the SMT metrics that are created when an expression is being translated in SMT. These metrics
+ * are collected only for those expressions that have source information, which can be displayed to the user.
+ *
+ * @param sourceStore
+ *   the storage of source locations
+ * @param changeListener
+ *   the tracer of expression updates
+ */
+class MetricProfilerListener(sourceStore: SourceStore, changeListener: ChangeListener)
     extends SymbStateRewriterListener with LazyLogging {
+  private val profileFileName: String = "profile.csv"
   private var _metricsPerId: Map[UID, SolverContextMetrics] = Map()
   private val sourceLocator = SourceLocator(sourceStore.makeSourceMap, changeListener)
   private var syncTimestampSecMillis: Long = System.currentTimeMillis()
 
   /**
-    * This method is called by the symbolic state rewriter.
-    * @param translatedEx an expression to report
-    * @param metricsDelta the SMT metrics that were reported during the translation to SMT
-    */
+   * This method is called by the symbolic state rewriter.
+   * @param translatedEx
+   *   an expression to report
+   * @param metricsDelta
+   *   the SMT metrics that were reported during the translation to SMT
+   */
   override def onRewrite(translatedEx: TlaEx, metricsDelta: SolverContextMetrics): Unit = {
     val id = translatedEx.ID
     if (changeListener.isDefinedAt(id) || sourceStore.contains(id)) {
@@ -53,17 +56,17 @@ class MetricProfilerListener(sourceStore: SourceStore, changeListener: ChangeLis
       .filter(_._2.weight >= MetricProfilerListener.MIN_WEIGHT)
       .toList
       .sorted(MetricProfilerListener.EntryOrdering)
-    val writer = new PrintWriter(new FileWriter(outFile, false))
-    try {
+
+    OutputManager.withWriterInRunDir(profileFileName) { writer =>
       writer.println("# weight,nCells,nConsts,nSmtExprs,location")
       for (entry <- sortedEntries) {
         writer.println(stringOfEntry(entry))
       }
-    } finally {
-      writer.close()
     }
 
-    logger.info("%d profile entries to be found in %s".format(sortedEntries.size, outFile))
+    logger
+      .info("%d profile entries to be found in %s".format(sortedEntries.size,
+              OutputManager.runDir.resolve(profileFileName)))
   }
 
   private def stringOfEntry(entry: (UID, SolverContextMetrics)): String = {
@@ -84,14 +87,15 @@ class MetricProfilerListener(sourceStore: SourceStore, changeListener: ChangeLis
 }
 
 object MetricProfilerListener {
+
   /**
-    * The minimal weight that is required to print a profile entry
-    */
+   * The minimal weight that is required to print a profile entry
+   */
   val MIN_WEIGHT = 0
 
   /**
-    * How often (in milliseconds) an update triggers a sync to file.
-    */
+   * How often (in milliseconds) an update triggers a sync to file.
+   */
   val FILE_SYNC_MS = 60000
 
   protected object EntryOrdering extends Ordering[(UID, SolverContextMetrics)] {

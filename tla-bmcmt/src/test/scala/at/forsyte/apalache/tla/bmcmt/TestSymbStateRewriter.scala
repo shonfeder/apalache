@@ -1,21 +1,17 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
+import at.forsyte.apalache.infra.passes.options.SMTEncoding
 import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.lir._
-import at.forsyte.apalache.tla.lir.oper._
-import at.forsyte.apalache.tla.lir.values.TlaInt
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import at.forsyte.apalache.tla.lir.UntypedPredefs._
 
-@RunWith(classOf[JUnitRunner])
-class TestSymbStateRewriter extends RewriterBase {
-  test("SE-SUBST1: x[cell/x] ~~> cell") {
-    arena = arena.appendCell(UnknownT())
+trait TestSymbStateRewriter extends RewriterBase {
+  test("SE-SUBST1: x[cell/x] ~~> cell") { rewriterType: SMTEncoding =>
+    arena = arena.appendCellOld(UnknownT())
     val cell = arena.topCell
     val binding = Binding("x" -> cell)
     val state = new SymbState(NameEx("x"), arena, binding)
-    create().rewriteOnce(state) match {
+    create(rewriterType).rewriteOnce(state) match {
       case SymbStateRewriter.Done(nextState) =>
         val expected = NameEx("$C$%d".format(cell.id))
         assert(expected == nextState.ex)

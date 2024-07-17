@@ -2,7 +2,13 @@
 (* Testing slicing of symbolic transitions *)
 EXTENDS Integers, FiniteSets
 
-VARIABLE state, n, k
+VARIABLE
+    \* @type: Str;
+    state,
+    \* @type: Int;
+    n,
+    \* @type: Int;
+    k
 
 Init ==
     /\ state = "Init"
@@ -23,7 +29,7 @@ B ==
     \E x \in {1, 2, 3}:
         LET C == { 4, 5, 6 } IN
         LET D == { 7, 8 } IN
-        Cardinality(C) >= 2
+        Cardinality(C) >= 3
             /\ (\E y \in SUBSET { 4, 5}:
               /\ x = 2
                   /\ k' = 4

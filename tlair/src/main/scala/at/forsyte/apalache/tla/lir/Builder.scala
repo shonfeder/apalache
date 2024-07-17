@@ -1,552 +1,862 @@
 package at.forsyte.apalache.tla.lir
 
 import at.forsyte.apalache.tla.lir.oper._
-import at.forsyte.apalache.tla.lir.values.TlaBoolSet
 import at.forsyte.apalache.tla.lir.values._
 
 /**
-  * A builder for TLA expressions.
-  *
-  * Contains methods for constructing various types of [[TlaEx]] expressions, guaranteeing
-  * correct arity where the arity of the associated [[oper.TlaOper TlaOper]] is fixed.
-  *
-  * @author jkukovec
-  */
-object Builder {
+ * The base class of expressions that are produced by the builder. These expressions are to be further translated by the
+ * code that knows how to treat types. E.g., see TypedPredefs and UntypedPredefs.
+ */
+sealed trait BuilderEx {
+
+  /**
+   * Wrap the expression block with an alias, which can be used for type assignments.
+   *
+   * @param alias
+   *   alias name
+   * @return
+   *   a new block that wraps this one
+   */
+  def ?(alias: String): BuilderAlias = {
+    BuilderAlias(this, alias)
+  }
+}
+
+/**
+ * An alias of an expression that can be used to tag the expression with a type later.
+ *
+ * @param target
+ *   the target block
+ * @param alias
+ *   a name
+ */
+case class BuilderAlias(target: BuilderEx, alias: String) extends BuilderEx {
+  override def ?(newAlias: String): BuilderAlias = {
+    throw new BuilderError(s"Internal builder error: Trying to overwrite alias $alias with $newAlias")
+  }
+}
+
+/**
+ * A constructed expression that does not need any further processing from the builder.
+ *
+ * @param ex
+ *   a constructed expression
+ */
+case class BuilderTlaExWrapper(ex: TlaEx) extends BuilderEx
+
+/**
+ * A value to be constructed.
+ *
+ * @param tlaValue
+ *   a TLA+ value
+ */
+case class BuilderVal(tlaValue: TlaValue) extends BuilderEx
+
+/**
+ * A name to be constructed.
+ *
+ * @param name
+ *   a string
+ */
+case class BuilderName(name: String) extends BuilderEx
+
+/**
+ * An operator application to be constructed.
+ *
+ * @param oper
+ *   an operator type
+ * @param args
+ *   arguments to the operator
+ */
+case class BuilderOper(oper: TlaOper, args: BuilderEx*) extends BuilderEx
+
+/**
+ * A LET-IN definition.
+ *
+ * @param body
+ *   the expression in the IN ... part.
+ * @param builtDefs
+ *   the definitions in the LET ... part.
+ */
+case class BuilderLet(body: BuilderEx, builtDefs: TlaOperDecl*) extends BuilderEx
+
+/**
+ * The base class for declarations that are produced by the builder. They have to be futher translated by type-aware
+ * code, e.g., in TypedPredefs and UntypedPredefs.
+ */
+sealed trait BuilderDecl {}
+
+/**
+ * A building block of an operator declaration.
+ *
+ * @param name
+ *   operator name
+ * @param formalParams
+ *   formal parameters
+ * @param body
+ *   the definition body
+ */
+case class BuilderOperDecl(name: String, formalParams: List[OperParam], body: BuilderEx) extends BuilderDecl
+
+/**
+ * <p>A builder for TLA expressions. A singleton instance of this class is defined in *.lir.convenience.</p>
+ *
+ * <p>Contains methods for constructing various types of [[TlaEx]] expressions, guaranteeing correct arity where the
+ * arity of the associated [[oper.TlaOper TlaOper]] is fixed.</p>
+ *
+ * @author
+ *   jkukovec, konnov
+ */
+class Builder {
+
+  /**
+   * Construct a builder block from a complete TLA expression. This method is usually not needed, as we are using
+   * implicit conversions. It is here for the case you want to avoid implicits.
+   *
+   * @param ex
+   *   an expression that builder treats as a completely constructed expression
+   * @return
+   *   the expression that is wrapped with BuilderCompiledEx
+   */
+  def fromTlaEx(ex: TlaEx): BuilderTlaExWrapper = {
+    BuilderTlaExWrapper(ex)
+  }
 
   /** Names and values */
-  implicit def name( p_name : String ) : NameEx = NameEx( p_name )
+  def name(nameString: String): BuilderName = {
+    BuilderName(nameString)
+  }
 
-  def bigInt( p_val : BigInt ) : ValEx = ValEx( TlaInt( p_val ) )
+  def bigInt(value: BigInt): BuilderVal = BuilderVal(TlaInt(value))
 
-  def decimal( p_val : BigDecimal ) : ValEx = ValEx( TlaDecimal( p_val ) )
+  def decimal(value: BigDecimal): BuilderVal = BuilderVal(TlaDecimal(value))
 
-  implicit def int( p_val : Int ) : ValEx = ValEx( TlaInt( p_val ) )
+  def int(value: Int): BuilderVal = BuilderVal(TlaInt(value))
 
-  implicit def bool( p_val : Boolean ) : ValEx = ValEx( TlaBool( p_val ) )
+  def int(value: BigInt): BuilderVal = BuilderVal(TlaInt(value))
 
-  def str( p_val : String ) : ValEx = ValEx( TlaStr( p_val ) )
+  def bool(value: Boolean): BuilderVal = BuilderVal(TlaBool(value))
 
-  /**
-    * The set BOOLEAN.
-    *
-    * @return the value expression that corresponds to BOOLEAN.
-    */
-  def booleanSet(): ValEx = ValEx(TlaBoolSet)
+  def str(value: String): BuilderVal = BuilderVal(TlaStr(value))
 
   /**
-    * The set Int of all integers.
-    *
-    * @return the value expression that corresponds to Int.
-    */
-  def intSet(): ValEx = ValEx(TlaIntSet)
+   * The set BOOLEAN.
+   *
+   * @return
+   *   the value expression that corresponds to BOOLEAN.
+   */
+  def booleanSet(): BuilderVal = BuilderVal(TlaBoolSet)
 
   /**
-    * The set Nat of all natural numbers.
-    *
-    * @return the value expression that corresponds to Nat.
-    */
-  def natSet(): ValEx = ValEx(TlaNatSet)
+   * The set STRING of all strings.
+   *
+   * @note
+   *   This is included for testing purposes only. It's almost never necessary, or a good idea, to reference the set of
+   *   all strings in a spec outside of `TypeOk`.
+   *
+   * @return
+   *   the value expression that corresponds to STRING.
+   */
+  def stringSet(): BuilderVal = BuilderVal(TlaStrSet)
+
+  /**
+   * The set Int of all integers.
+   *
+   * @return
+   *   the value expression that corresponds to Int.
+   */
+  def intSet(): BuilderVal = BuilderVal(TlaIntSet)
+
+  /**
+   * The set Nat of all natural numbers.
+   *
+   * @return
+   *   the value expression that corresponds to Nat.
+   */
+  def natSet(): BuilderVal = BuilderVal(TlaNatSet)
 
   /** Declarations */
 
-  def declOp( p_name : String,
-              p_body : TlaEx,
-              p_args : FormalParam*
-            ) : TlaOperDecl = TlaOperDecl( p_name, p_args.toList, p_body )
-
-  def appDecl( p_decl : TlaOperDecl,
-               p_args : TlaEx*
-             ) : OperEx = {
-    if ( p_args.length == p_decl.formalParams.length )
-      OperEx( TlaOper.apply, name( p_decl.name ) +: p_args : _* )
-    else
-      throw new IllegalArgumentException
+  def declOp(name: String, body: BuilderEx, params: OperParam*): BuilderOperDecl = {
+    BuilderOperDecl(name, params.toList, body)
   }
 
-  /** TlaOper */
-  def eql( p_lhs : TlaEx,
-           p_rhs : TlaEx
-         ) : OperEx = OperEx( TlaOper.eq, p_lhs, p_rhs )
-
-  def neql( p_lhs : TlaEx,
-            p_rhs : TlaEx
-          ) : OperEx = OperEx( TlaOper.ne, p_lhs, p_rhs )
-
-  def appOp( p_Op : TlaEx,
-             p_args : TlaEx*
-           ) : OperEx = OperEx( TlaOper.apply, p_Op +: p_args : _* )
-
-  def choose( p_x : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaOper.chooseUnbounded, p_x, p_p )
-
-  def choose( p_x : TlaEx,
-              p_S : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaOper.chooseBounded, p_x, p_S, p_p )
-
-  /**
-    * Decorate a TLA+ expression with a label (a TLA+2 feature), e.g.,
-    * lab(a, b) :: e decorates e with the label "lab" whose arguments are "a" and "b".
-    * @param ex a TLA+ expression to decorate
-    * @param name label identifier
-    * @param args label arguments (also identifiers)
-    * @return OperEx(TlaOper.label, ex, name as ValEx(TlaStr(_)), args as ValEx(TlaStr(_)))
-    */
-  def label(ex: TlaEx, name: String, args: String*): OperEx = {
-    OperEx(TlaOper.label, ex +: ValEx(TlaStr(name)) +: args.map(s => ValEx(TlaStr(s))) :_*)
-  }
-
-
-  /** TlaBoolOper */
-  def and( p_args : TlaEx* ) : OperEx = OperEx( TlaBoolOper.and, p_args : _* )
-
-  def or( p_args : TlaEx* ) : OperEx = OperEx( TlaBoolOper.or, p_args : _* )
-
-  def not( p_P : TlaEx ) : OperEx = OperEx( TlaBoolOper.not, p_P )
-
-  def impl( p_P : TlaEx,
-            p_Q : TlaEx
-          ) : OperEx = OperEx( TlaBoolOper.implies, p_P, p_Q )
-
-  def equiv( p_P : TlaEx,
-             p_Q : TlaEx
-           ) : OperEx = OperEx( TlaBoolOper.equiv, p_P, p_Q )
-
-  def forall( p_x : TlaEx,
-              p_S : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaBoolOper.forall, p_x, p_S, p_p )
-
-  def forall( p_x : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaBoolOper.forallUnbounded, p_x, p_p )
-
-  def exists( p_x : TlaEx,
-              p_S : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaBoolOper.exists, p_x, p_S, p_p )
-
-  def exists( p_x : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaBoolOper.existsUnbounded, p_x, p_p )
-
-  /** TlaActionOper */
-  def prime( p_name : TlaEx ) : OperEx = OperEx( TlaActionOper.prime, p_name )
-
-  def primeEq( p_name : TlaEx,
-               p_rhs : TlaEx
-             ) : OperEx = eql( prime( p_name ), p_rhs )
-
-  def stutt( p_A : TlaEx,
-             p_e : TlaEx
-           ) : OperEx = OperEx( TlaActionOper.stutter, p_A, p_e )
-
-  def nostutt( p_A : TlaEx,
-               p_e : TlaEx
-             ) : OperEx = OperEx( TlaActionOper.nostutter, p_A, p_e )
-
-  def enabled( p_A : TlaEx ) : OperEx = OperEx( TlaActionOper.enabled, p_A )
-
-  def unchanged( p_v : TlaEx ) : OperEx = OperEx( TlaActionOper.unchanged, p_v )
-
-  /** UNTESTED */
-  def unchangedTup( p_args : TlaEx* ) : OperEx = unchanged( tuple( p_args : _* ) )
-
-  def comp( p_A : TlaEx
-            , p_B : TlaEx
-          ) : OperEx = OperEx( TlaActionOper.composition, p_A, p_B )
-
-  /** TlaControlOper */
-  def caseAny( p_arg1 : TlaEx,
-               p_arg2 : TlaEx,
-               p_args : TlaEx*
-             ) : OperEx =
-    if ( p_args.size % 2 == 0 )
-      caseSplit( p_arg1, p_arg2, p_args : _* )
-    else
-      caseOther( p_arg1, p_arg2, p_args.head, p_args.tail : _* )
-
-  def caseSplit( p_p1 : TlaEx,
-                 p_e1 : TlaEx,
-                 p_args : TlaEx* /* Expected even size */
-               ) : OperEx = OperEx( TlaControlOper.caseNoOther, p_p1 +: p_e1 +: p_args : _* )
-
-  def caseOther(p_other : TlaEx,
-                p_p1 : TlaEx,
-                p_e1 : TlaEx,
-                p_args : TlaEx* /* Expected even size */
-               ) : OperEx =
-    OperEx( TlaControlOper.caseWithOther, p_other +: p_p1 +: p_e1 +: p_args : _* )
-
-  def ite( p_cond : TlaEx,
-           p_then : TlaEx,
-           p_else : TlaEx
-         ) : OperEx = OperEx( TlaControlOper.ifThenElse, p_cond, p_then, p_else )
-
-  // [[LetIn]]
-  def letIn( p_ex : TlaEx,
-             p_defs : TlaOperDecl*
-           ) : LetInEx = LetInEx( p_ex, p_defs : _* )
-
-  /** TlaTempOper */
-  def AA( p_x : TlaEx,
-          p_F : TlaEx
-        ) : OperEx = OperEx( TlaTempOper.AA, p_x, p_F )
-
-  def EE( p_x : TlaEx,
-          p_F : TlaEx
-        ) : OperEx = OperEx( TlaTempOper.EE, p_x, p_F )
-
-  def box( p_F : TlaEx ) : OperEx = OperEx( TlaTempOper.box, p_F )
-
-  def diamond( p_F : TlaEx ) : OperEx = OperEx( TlaTempOper.diamond, p_F )
-
-  def guarantees( p_F : TlaEx,
-                  p_G : TlaEx
-                ) : OperEx = OperEx( TlaTempOper.guarantees, p_F, p_G )
-
-  def leadsTo( p_F : TlaEx,
-               p_G : TlaEx
-             ) : OperEx = OperEx( TlaTempOper.leadsTo, p_F, p_G )
-
-  def SF( p_e : TlaEx,
-          p_A : TlaEx
-        ) : OperEx = OperEx( TlaTempOper.strongFairness, p_e, p_A )
-
-  def WF( p_e : TlaEx,
-          p_A : TlaEx
-        ) : OperEx = OperEx( TlaTempOper.weakFairness, p_e, p_A )
-
-  /** TlaArithOper */
-  def sum( p_args : TlaEx* ) : OperEx = OperEx( TlaArithOper.sum, p_args : _* )
-
-  def plus( p_a : TlaEx,
-            p_b : TlaEx
-          ) : OperEx = OperEx( TlaArithOper.plus, p_a, p_b )
-
-  def minus( p_a : TlaEx,
-             p_b : TlaEx
-           ) : OperEx = OperEx( TlaArithOper.minus, p_a, p_b )
-
-  def uminus( p_a : TlaEx ) : OperEx = OperEx( TlaArithOper.uminus, p_a )
-
-  def prod( p_args : TlaEx* ) : OperEx = OperEx( TlaArithOper.prod, p_args : _* )
-
-  def mult( p_a : TlaEx,
-            p_b : TlaEx
-          ) : OperEx = OperEx( TlaArithOper.mult, p_a, p_b )
-
-  def div( p_a : TlaEx,
-           p_b : TlaEx
-         ) : OperEx = OperEx( TlaArithOper.div, p_a, p_b )
-
-
-  def mod( p_a : TlaEx,
-           p_b : TlaEx
-         ) : OperEx = OperEx( TlaArithOper.mod, p_a, p_b )
-
-
-  def rDiv( p_a : TlaEx,
-            p_b : TlaEx
-          ) : OperEx = OperEx( TlaArithOper.realDiv, p_a, p_b )
-
-  def exp( p_a : TlaEx,
-           p_b : TlaEx
-         ) : OperEx = OperEx( TlaArithOper.exp, p_a, p_b )
-
-  def dotdot( p_a : TlaEx,
-              p_b : TlaEx
-            ) : OperEx = OperEx( TlaArithOper.dotdot, p_a, p_b )
-
-  def lt( p_a : TlaEx,
-          p_b : TlaEx
-        ) : OperEx = OperEx( TlaArithOper.lt, p_a, p_b )
-
-  def gt( p_a : TlaEx,
-          p_b : TlaEx
-        ) : OperEx = OperEx( TlaArithOper.gt, p_a, p_b )
-
-  def le( p_a : TlaEx,
-          p_b : TlaEx
-        ) : OperEx = OperEx( TlaArithOper.le, p_a, p_b )
-
-  def ge( p_a : TlaEx,
-          p_b : TlaEx
-        ) : OperEx = OperEx( TlaArithOper.ge, p_a, p_b )
-
-  /** TlaFiniteSetOper */
-  def card( p_S : TlaEx ) : OperEx = OperEx( TlaFiniteSetOper.cardinality, p_S )
-
-  def isFin( p_S : TlaEx ) : OperEx = OperEx( TlaFiniteSetOper.isFiniteSet, p_S )
-
-  /** TlaFunOper */
-  def appFun( p_f : TlaEx,
-              p_e : TlaEx
-            ) : OperEx = OperEx( TlaFunOper.app, p_f, p_e )
-
-  def dom( p_f : TlaEx ) : OperEx = OperEx( TlaFunOper.domain, p_f )
-
-  def enumFun( p_k1 : TlaEx,
-               p_v1 : TlaEx,
-               p_args : TlaEx* /* Expected even size */
-             ) : OperEx = OperEx( TlaFunOper.enum, p_k1 +: p_v1 +: p_args : _* )
-
-  def except( p_f : TlaEx,
-              p_k1 : TlaEx,
-              p_v1 : TlaEx,
-              p_args : TlaEx* /* Expected even size */
-            ) : OperEx = {
-    OperEx( TlaFunOper.except, p_f +: p_k1 +: p_v1 +: p_args : _* )
-  }
-
-  def funDef( p_e : TlaEx,
-              p_x : TlaEx,
-              p_S : TlaEx,
-              p_args : TlaEx* /* Expected even size */
-            ) : OperEx = OperEx( TlaFunOper.funDef, p_e +: p_x +: p_S +: p_args : _* )
-
-  def recFunDef(body : TlaEx, boundVar : TlaEx, set : TlaEx, otherArgs: TlaEx*): OperEx = {
-    OperEx(TlaFunOper.recFunDef, body +: boundVar +: set +: otherArgs :_*)
-  }
-
-  def recFunRef(): OperEx = {
-    OperEx(TlaFunOper.recFunRef)
-  }
-
-  def tuple( p_args : TlaEx* ) : OperEx = OperEx( TlaFunOper.tuple, p_args : _* )
-
-  /** TlaSeqOper */
-  def append( p_s : TlaEx,
-              p_e : TlaEx
-            ) : OperEx = OperEx( TlaSeqOper.append, p_s, p_e )
-
-  def concat( p_s1 : TlaEx,
-              p_s2 : TlaEx
-            ) : OperEx = OperEx( TlaSeqOper.concat, p_s1, p_s2 )
-
-  def head( p_s : TlaEx ) : OperEx = OperEx( TlaSeqOper.head, p_s )
-
-  def tail( p_s : TlaEx ) : OperEx = OperEx( TlaSeqOper.tail, p_s )
-
-  def len( p_s : TlaEx ) : OperEx = OperEx( TlaSeqOper.len, p_s )
-
-  /**
-    * Get a subsequence of S, that is, SubSeq(S, from, to)
-    * @param seq a sequence, e.g., constructed with tla.tuple
-    * @param from the first index of the subsequene, greater or equal to 1
-    * @param to the last index of the subsequence, not greater than Len(S)
-    * @return the expression that corresponds to SubSeq(S, from, to)
-    */
-  def subseq(seq: TlaEx, from: TlaEx, to: TlaEx): TlaEx =
-    OperEx(TlaSeqOper.subseq, seq, from, to)
-
-  /**
-    * Get the subsequence of S that consists of the elements matching a predicate.
-    * @param seq a sequence
-    * @param test a predicate, it should be an action name
-    * @return the expression that corresponds to SelectSeq(S, test)
-    */
-  def selectseq(seq: TlaEx, test: TlaEx): TlaEx =
-    OperEx(TlaSeqOper.selectseq, seq, test)
-
-  /** TlaSetOper */
-  def enumSet( p_args : TlaEx* ) : OperEx = OperEx( TlaSetOper.enumSet, p_args : _* )
-
-  def emptySet() : OperEx = enumSet()
-
-  def in( p_x : TlaEx,
-          p_S : TlaEx
-        ) : OperEx = OperEx( TlaSetOper.in, p_x, p_S )
-
-  def notin( p_x : TlaEx,
-             p_S : TlaEx
-           ) : OperEx = OperEx( TlaSetOper.notin, p_x, p_S )
-
-  def cap( p_S1 : TlaEx,
-           p_S2 : TlaEx
-         ) : OperEx = OperEx( TlaSetOper.cap, p_S1, p_S2 )
-
-  def cup( p_S1 : TlaEx,
-           p_S2 : TlaEx
-         ) : OperEx = OperEx( TlaSetOper.cup, p_S1, p_S2 )
-
-  def union( p_S : TlaEx ) : OperEx = OperEx( TlaSetOper.union, p_S )
-
-  def filter( p_x : TlaEx,
-              p_S : TlaEx,
-              p_p : TlaEx
-            ) : OperEx = OperEx( TlaSetOper.filter, p_x, p_S, p_p )
-
-  def map( p_e : TlaEx,
-           p_x : TlaEx,
-           p_S : TlaEx,
-           p_args : TlaEx* /* Expected even size */
-         ) : OperEx = OperEx( TlaSetOper.map, p_e +: p_x +: p_S +: p_args : _* )
-
-  def funSet( p_S : TlaEx,
-              p_T : TlaEx
-            ) : OperEx = OperEx( TlaSetOper.funSet, p_S, p_T )
-
-  def recSet( p_args : TlaEx* /* Expected even size */
-            ) : OperEx = OperEx( TlaSetOper.recSet, p_args : _* )
-
-  def seqSet( p_S : TlaEx ) : OperEx = OperEx( TlaSetOper.seqSet, p_S )
-
-  def subset( p_S1 : TlaEx,
-              p_S2 : TlaEx
-            ) : OperEx = OperEx( TlaSetOper.subsetProper, p_S1, p_S2 )
-
-  def subseteq( p_S1 : TlaEx,
-                p_S2 : TlaEx
-              ) : OperEx = OperEx( TlaSetOper.subseteq, p_S1, p_S2 )
-
-  def supset( p_S1 : TlaEx,
-              p_S2 : TlaEx
-            ) : OperEx = OperEx( TlaSetOper.supsetProper, p_S1, p_S2 )
-
-  def supseteq( p_S1 : TlaEx,
-                p_S2 : TlaEx
-              ) : OperEx = OperEx( TlaSetOper.supseteq, p_S1, p_S2 )
-
-  def setminus( p_S1 : TlaEx,
-                p_S2 : TlaEx
-              ) : OperEx = OperEx( TlaSetOper.setminus, p_S1, p_S2 )
-
-  def times( p_args : TlaEx* ) : OperEx = OperEx( TlaSetOper.times, p_args : _* )
-
-  def powSet( p_S : TlaEx ) : OperEx = OperEx( TlaSetOper.powerset, p_S )
-
-  // tlc
-  def tlcAssert( e: TlaEx, msg: String ): OperEx = OperEx(TlcOper.assert, e, ValEx(TlaStr(msg)))
-
-  def primeInSingleton( p_x : TlaEx,
-                        p_y : TlaEx
-                      ) : OperEx = in( prime( p_x ), enumSet( p_y ) )
-
-  // d_1 :> e_1 @@ ... @@ d_k :> e_k
-  def atat(args: TlaEx*): OperEx = {
-    if (args.isEmpty) {
-      OperEx(TlcOper.atat)
+  def appDecl(decl: TlaOperDecl, args: BuilderEx*): BuilderOper = {
+    if (args.length == decl.formalParams.length) {
+      val nameEx = BuilderName(decl.name)
+      BuilderOper(TlaOper.apply, (nameEx +: args): _*)
     } else {
-      val kvs = args.sliding(2, 2).toList
-      val pairs = kvs.map(p => OperEx(TlcOper.colonGreater, p.head, p(1)))
-      OperEx(TlcOper.atat, pairs :_*)
+      throw new IllegalArgumentException("Operator %s of %d parameters is applied to %d arguments"
+            .format(decl.name, decl.formalParams.length, args.length))
     }
   }
 
-  // bmc
-  def withType(expr: TlaEx, typeAnnot: TlaEx): OperEx =
-    OperEx(BmcOper.withType, expr, typeAnnot)
+  /** TlaOper */
+  def eql(lhs: BuilderEx, rhs: BuilderEx): BuilderOper = {
+    BuilderOper(TlaOper.eq, lhs, rhs)
+  }
 
-  def assign( lhs: TlaEx, rhs: TlaEx ) =
-    OperEx( BmcOper.assign, lhs, rhs )
-  def assignPrime( n: NameEx, rhs: TlaEx ): OperEx =
-    OperEx( BmcOper.assign, prime( n ), rhs )
+  def neql(lhs: BuilderEx, rhs: BuilderEx): BuilderOper = {
+    BuilderOper(TlaOper.ne, lhs, rhs)
+  }
 
+  def appOp(operEx: BuilderEx, args: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaOper.apply, operEx +: args: _*)
+  }
 
-  private val m_nameMap : Map[String, TlaOper] =
+  def choose(variable: BuilderEx, predicate: BuilderEx): BuilderEx =
+    BuilderOper(TlaOper.chooseUnbounded, variable, predicate)
+
+  def choose(variable: BuilderEx, set: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaOper.chooseBounded, variable, set, predicate)
+  }
+
+  def guess(set: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.guess, set)
+  }
+
+  /**
+   * Decorate a TLA+ expression with a label (a TLA+2 feature), e.g., lab(a, b) :: e decorates e with the label "lab"
+   * whose arguments are "a" and "b". This method needs a type tag for `name` and `args`. The type of the expression
+   * itself is inherited from ex.
+   *
+   * @param ex
+   *   a TLA+ expression to decorate
+   * @param name
+   *   label identifier
+   * @param args
+   *   label arguments (also identifiers)
+   * @return
+   *   OperEx(TlaOper.label, ex, name as ValEx(TlaStr(_)), args as ValEx(TlaStr(_)))
+   */
+  def label(ex: BuilderEx, name: String, args: String*): BuilderEx = {
+    val nameAsVal = BuilderVal(TlaStr(name))
+    val argsAsVals = args.map(s => BuilderVal(TlaStr(s)))
+    BuilderOper(TlaOper.label, ex +: nameAsVal +: argsAsVals: _*)
+  }
+
+  /** TlaBoolOper */
+  def and(args: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaBoolOper.and, args: _*)
+  }
+
+  def or(args: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaBoolOper.or, args: _*)
+  }
+
+  def not(pred: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.not, pred)
+  }
+
+  def impl(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.implies, lhs, rhs)
+  }
+
+  def equiv(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.equiv, lhs, rhs)
+  }
+
+  def forall(variable: BuilderEx, set: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.forall, variable, set, predicate)
+  }
+
+  def forall(variable: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.forallUnbounded, variable, predicate)
+  }
+
+  def exists(variable: BuilderEx, set: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.exists, variable, set, predicate)
+  }
+
+  def exists(variable: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaBoolOper.existsUnbounded, variable, predicate)
+  }
+
+  /** TlaActionOper */
+  def prime(name: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.prime, name)
+  }
+
+  def primeEq(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    eql(prime(lhs), rhs)
+  }
+
+  def stutt(action: BuilderEx, underscored: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.stutter, action, underscored)
+  }
+
+  def nostutt(action: BuilderEx, underscored: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.nostutter, action, underscored)
+  }
+
+  def enabled(action: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.enabled, action)
+  }
+
+  def unchanged(expr: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.unchanged, expr)
+  }
+
+  /** UNTESTED */
+  def unchangedTup(args: BuilderEx*): BuilderEx = {
+    unchanged(tuple(args: _*))
+  }
+
+  def comp(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaActionOper.composition, lhs, rhs)
+  }
+
+  /** TlaControlOper */
+  def caseAny(guard1: BuilderEx, effect1: BuilderEx, guardsAndEffectsInterleaved: BuilderEx*): BuilderEx = {
+    if (guardsAndEffectsInterleaved.size % 2 == 0) {
+      caseSplit(guard1, effect1, guardsAndEffectsInterleaved: _*)
+    } else {
+      caseOther(guard1, effect1, guardsAndEffectsInterleaved.head, guardsAndEffectsInterleaved.tail: _*)
+    }
+  }
+
+  def caseSplit(guard1: BuilderEx, effect1: BuilderEx, guardsAndEffectsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaControlOper.caseNoOther, guard1 +: effect1 +: guardsAndEffectsInterleaved: _*)
+  }
+
+  def caseOther(
+      effectOnOther: BuilderEx,
+      guard1: BuilderEx,
+      effect1: BuilderEx,
+      guardsAndEffectsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaControlOper.caseWithOther, effectOnOther +: guard1 +: effect1 +: guardsAndEffectsInterleaved: _*)
+  }
+
+  def ite(condition: BuilderEx, thenArm: BuilderEx, elseArm: BuilderEx): BuilderEx = {
+    BuilderOper(TlaControlOper.ifThenElse, condition, thenArm, elseArm)
+  }
+
+  // [[LetIn]]
+  def letIn(body: BuilderEx, defs: TlaOperDecl*): BuilderEx = {
+    BuilderLet(body, defs: _*)
+  }
+
+  /** TlaTempOper */
+  def AA(variable: BuilderEx, formula: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.AA, variable, formula)
+  }
+
+  def EE(variable: BuilderEx, formula: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.EE, variable, formula)
+  }
+
+  def box(formula: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.box, formula)
+  }
+
+  def diamond(formula: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.diamond, formula)
+  }
+
+  def guarantees(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.guarantees, lhs, rhs)
+  }
+
+  def leadsTo(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.leadsTo, lhs, rhs)
+  }
+
+  def SF(underscored: BuilderEx, action: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.strongFairness, underscored, action)
+  }
+
+  def WF(underscored: BuilderEx, action: BuilderEx): BuilderEx = {
+    BuilderOper(TlaTempOper.weakFairness, underscored, action)
+  }
+
+  /** TlaArithOper */
+
+  def plus(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.plus, lhs, rhs)
+  }
+
+  def minus(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.minus, lhs, rhs)
+  }
+
+  def uminus(arg: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.uminus, arg)
+  }
+
+  def mult(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.mult, lhs, rhs)
+  }
+
+  def div(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.div, lhs, rhs)
+  }
+
+  def mod(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.mod, lhs, rhs)
+  }
+
+  def rDiv(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.realDiv, lhs, rhs)
+  }
+
+  def exp(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.exp, lhs, rhs)
+  }
+
+  def dotdot(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.dotdot, lhs, rhs)
+  }
+
+  def lt(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.lt, lhs, rhs)
+  }
+
+  def gt(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.gt, lhs, rhs)
+  }
+
+  def le(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.le, lhs, rhs)
+  }
+
+  def ge(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(TlaArithOper.ge, lhs, rhs)
+  }
+
+  /** TlaFiniteSetOper */
+  def card(set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaFiniteSetOper.cardinality, set)
+  }
+
+  def isFin(set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaFiniteSetOper.isFiniteSet, set)
+  }
+
+  /** TlaFunOper */
+  def appFun(fun: BuilderEx, arg: BuilderEx): BuilderEx = {
+    BuilderOper(TlaFunOper.app, fun, arg)
+  }
+
+  def dom(fun: BuilderEx): BuilderEx = {
+    BuilderOper(TlaFunOper.domain, fun)
+  }
+
+  // TODO: rename to record, because it is used only for the records
+  def enumFun(key1: BuilderEx, value1: BuilderEx, keysAndValuesInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaFunOper.rec, key1 +: value1 +: keysAndValuesInterleaved: _*)
+  }
+
+  def except(
+      fun: BuilderEx,
+      key1: BuilderEx,
+      value1: BuilderEx,
+      keysAndValuesInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaFunOper.except, fun +: key1 +: value1 +: keysAndValuesInterleaved: _*)
+  }
+
+  def funDef(
+      mapExpr: BuilderEx,
+      var1: BuilderEx,
+      set1: BuilderEx,
+      varsAndSetsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaFunOper.funDef, mapExpr +: var1 +: set1 +: varsAndSetsInterleaved: _*)
+  }
+
+  def recFunDef(
+      mapExpr: BuilderEx,
+      var1: BuilderEx,
+      set1: BuilderEx,
+      varsAndSetsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaFunOper.recFunDef, mapExpr +: var1 +: set1 +: varsAndSetsInterleaved: _*)
+  }
+
+  def recFunRef(): BuilderEx = {
+    BuilderOper(TlaFunOper.recFunRef)
+  }
+
+  def tuple(args: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaFunOper.tuple, args: _*)
+  }
+
+  /** TlaSeqOper */
+  def append(seq: BuilderEx, elem: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.append, seq, elem)
+  }
+
+  def concat(leftSeq: BuilderEx, rightSeq: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.concat, leftSeq, rightSeq)
+  }
+
+  def head(seq: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.head, seq)
+  }
+
+  def tail(seq: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.tail, seq)
+  }
+
+  def len(seq: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.len, seq)
+  }
+
+  /**
+   * Get a subsequence of S, that is, SubSeq(S, from, to)
+   *
+   * @param seq
+   *   a sequence, e.g., constructed with tla.tuple
+   * @param fromIndex
+   *   the first index of the subsequene, greater or equal to 1
+   * @param toIndex
+   *   the last index of the subsequence, not greater than Len(S)
+   * @return
+   *   the expression that corresponds to SubSeq(S, from, to)
+   */
+  def subseq(seq: BuilderEx, fromIndex: BuilderEx, toIndex: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSeqOper.subseq, seq, fromIndex, toIndex)
+  }
+
+  /** TlaSetOper */
+  def enumSet(args: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaSetOper.enumSet, args: _*)
+  }
+
+  def emptySet(): BuilderEx = {
+    enumSet()
+  }
+
+  def in(elem: BuilderEx, set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.in, elem, set)
+  }
+
+  def notin(elem: BuilderEx, set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.notin, elem, set)
+  }
+
+  def cap(leftSet: BuilderEx, rightSet: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.cap, leftSet, rightSet)
+  }
+
+  def cup(leftSet: BuilderEx, rightSet: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.cup, leftSet, rightSet)
+  }
+
+  def union(set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.union, set)
+  }
+
+  def filter(variable: BuilderEx, set: BuilderEx, predicate: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.filter, variable, set, predicate)
+  }
+
+  def map(
+      mapExpr: BuilderEx,
+      var1: BuilderEx,
+      set1: BuilderEx,
+      varsAndSetsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaSetOper.map, mapExpr +: var1 +: set1 +: varsAndSetsInterleaved: _*)
+  }
+
+  def funSet(fromSet: BuilderEx, toSet: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.funSet, fromSet, toSet)
+  }
+
+  def recSet(var1: BuilderEx, set1: BuilderEx, varsAndSetsInterleaved: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaSetOper.recSet, var1 +: set1 +: varsAndSetsInterleaved: _*)
+  }
+
+  def seqSet(p_S: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.seqSet, p_S)
+  }
+
+  def subseteq(leftSet: BuilderEx, rightSet: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.subseteq, leftSet, rightSet)
+  }
+
+  def setminus(leftSet: BuilderEx, rightSet: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.setminus, leftSet, rightSet)
+  }
+
+  def times(sets: BuilderEx*): BuilderEx = {
+    BuilderOper(TlaSetOper.times, sets: _*)
+  }
+
+  def powSet(set: BuilderEx): BuilderEx = {
+    BuilderOper(TlaSetOper.powerset, set)
+  }
+
+  def primeInSingleton(nameToPrime: BuilderEx, onlySetElem: BuilderEx): BuilderEx = {
+    in(prime(nameToPrime), enumSet(onlySetElem))
+  }
+
+  def assign(lhs: BuilderEx, rhs: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.assign, lhs, rhs)
+  }
+
+  def assignPrime(leftName: BuilderEx, rightExpr: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.assign, prime(leftName), rightExpr)
+  }
+
+  def apalacheExpand(ex: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.expand, ex)
+  }
+
+  /**
+   * Apply the operator `Apalache.setAsFun`.
+   *
+   * @param pairsSetEx
+   *   the argument, which should be a set of pairs
+   * @return
+   *   `SetAsFun` applied to `pairsSetEx`
+   */
+  def apalacheSetAsFun(pairsSetEx: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.setAsFun, pairsSetEx)
+  }
+
+  /**
+   * Apply the operator [[oper.ApalacheOper.mkSeq]].
+   *
+   * @param lenEx
+   *   non-negative length of the sequence
+   * @param elemCtorEx
+   *   an operator to construct a single element (either a name, or a lambda)
+   * @return
+   *   `MkSeq(lenEx, elemCtorEx)`
+   */
+  def apalacheMkSeq(lenEx: BuilderEx, elemCtorEx: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.mkSeq, lenEx, elemCtorEx)
+  }
+
+  def apalacheSkolem(ex: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.skolem, ex)
+  }
+
+  def apalacheConstCard(ex: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheOper.constCard, ex)
+  }
+
+  def apalacheSelectInSet(elem: BuilderEx, set: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.selectInSet, elem, set)
+  }
+
+  def apalacheSelectInFun(elem: BuilderEx, fun: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.selectInFun, elem, fun)
+  }
+
+  def apalacheStoreInSet(elem: BuilderEx, set: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.storeInSet, elem, set)
+  }
+
+  def apalacheStoreInFun(elem: BuilderEx, fun: BuilderEx, arg: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.storeInSet, elem, fun, arg)
+  }
+
+  def apalacheStoreNotInSet(elem: BuilderEx, set: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.storeNotInSet, elem, set)
+  }
+
+  def apalacheStoreNotInFun(elem: BuilderEx, fun: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.storeNotInFun, elem, fun)
+  }
+
+  def apalacheSmtMap(mapOper: TlaOper, inputSet: BuilderEx, resultSet: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.smtMap(mapOper), inputSet, resultSet)
+  }
+
+  def apalacheUnconstrainArray(arrayElemName: BuilderEx): BuilderEx = {
+    BuilderOper(ApalacheInternalOper.unconstrainArray, arrayElemName)
+  }
+
+  // variants
+
+  /**
+   * Construct a variant
+   *
+   * @param tagName
+   *   the tag to be associated with the value
+   * @param valueEx
+   *   the value associated with the tag
+   * @return
+   *   a new variant
+   */
+  def variant(tagName: String, valueEx: BuilderEx): BuilderEx = {
+    BuilderOper(VariantOper.variant, str(tagName), valueEx)
+  }
+
+  /**
+   * Filter a set of variants by tag name.
+   *
+   * @param tagName
+   *   a tag value to use as a filter
+   * @param setEx
+   *   a set of variants
+   * @return
+   *   a set of the values extracted for the given tag
+   */
+  def variantFilter(tagName: String, setEx: BuilderEx): BuilderEx = {
+    BuilderOper(VariantOper.variantFilter, str(tagName), setEx)
+  }
+
+  /**
+   * Get the tag name associated with a variant.
+   *
+   * @param variantEx
+   *   a variant expression
+   * @return
+   *   the tag name associated with the variant
+   */
+  def variantTag(variantEx: BuilderEx): BuilderEx = {
+    BuilderOper(VariantOper.variantTag, variantEx)
+  }
+
+  /**
+   * Unsafely extract the value associated with a tag. If the tag name is different from the actual tag, return some
+   * value of proper type.
+   *
+   * @param tagName
+   *   a tag value (string)
+   * @param variantEx
+   *   a variant expression
+   * @return
+   *   the value extracted from the variant, when tagged with tagName; otherwise, return some value
+   */
+  def variantGetUnsafe(
+      tagName: String,
+      variantEx: BuilderEx): BuilderEx = {
+    BuilderOper(VariantOper.variantGetUnsafe, str(tagName), variantEx)
+  }
+
+  /**
+   * Return the value associated with the tag, when the tag equals to __tagName. Otherwise, return __elseValue.
+   *
+   * @param tagName
+   *   a tag value (string)
+   * @param variantEx
+   *   a variant expression
+   * @param defaultEx
+   *   default expression
+   * @return
+   *   the value extracted from the variant
+   */
+  def variantGetOrElse(
+      tagName: String,
+      variantEx: BuilderEx,
+      defaultEx: BuilderEx): BuilderEx = {
+    BuilderOper(VariantOper.variantGetOrElse, str(tagName), variantEx, defaultEx)
+  }
+
+  private val m_nameMap: Map[String, TlaOper] =
     scala.collection.immutable.Map(
-      TlaOper.eq.name -> TlaOper.eq,
-      TlaOper.ne.name -> TlaOper.ne,
-      TlaOper.apply.name -> TlaOper.apply,
-      TlaOper.chooseBounded.name -> TlaOper.chooseBounded,
-      TlaOper.chooseUnbounded.name -> TlaOper.chooseUnbounded,
-
-      TlaBoolOper.and.name -> TlaBoolOper.and,
-      TlaBoolOper.or.name -> TlaBoolOper.or,
-      TlaBoolOper.not.name -> TlaBoolOper.not,
-      TlaBoolOper.implies.name -> TlaBoolOper.implies,
-      TlaBoolOper.equiv.name -> TlaBoolOper.equiv,
-      TlaBoolOper.forall.name -> TlaBoolOper.forall,
-      TlaBoolOper.exists.name -> TlaBoolOper.exists,
-      TlaBoolOper.forallUnbounded.name -> TlaBoolOper.forallUnbounded,
-      TlaBoolOper.existsUnbounded.name -> TlaBoolOper.existsUnbounded,
-
-      TlaActionOper.prime.name -> TlaActionOper.prime,
-      TlaActionOper.stutter.name -> TlaActionOper.stutter,
-      TlaActionOper.nostutter.name -> TlaActionOper.nostutter,
-      TlaActionOper.enabled.name -> TlaActionOper.enabled,
-      TlaActionOper.unchanged.name -> TlaActionOper.unchanged,
-      TlaActionOper.composition.name -> TlaActionOper.composition,
-
-      TlaControlOper.caseNoOther.name -> TlaControlOper.caseNoOther,
-      TlaControlOper.caseWithOther.name -> TlaControlOper.caseWithOther,
-      TlaControlOper.ifThenElse.name -> TlaControlOper.ifThenElse,
-
-      TlaTempOper.AA.name -> TlaTempOper.AA,
-      TlaTempOper.box.name -> TlaTempOper.box,
-      TlaTempOper.diamond.name -> TlaTempOper.diamond,
-      TlaTempOper.EE.name -> TlaTempOper.EE,
-      TlaTempOper.guarantees.name -> TlaTempOper.guarantees,
-      TlaTempOper.leadsTo.name -> TlaTempOper.leadsTo,
-      TlaTempOper.strongFairness.name -> TlaTempOper.strongFairness,
-      TlaTempOper.weakFairness.name -> TlaTempOper.weakFairness,
-
-      TlaArithOper.sum.name -> TlaArithOper.sum,
-      TlaArithOper.plus.name -> TlaArithOper.plus,
-      TlaArithOper.uminus.name -> TlaArithOper.uminus,
-      TlaArithOper.minus.name -> TlaArithOper.minus,
-      TlaArithOper.prod.name -> TlaArithOper.prod,
-      TlaArithOper.mult.name -> TlaArithOper.mult,
-      TlaArithOper.div.name -> TlaArithOper.div,
-      TlaArithOper.mod.name -> TlaArithOper.mod,
-      TlaArithOper.realDiv.name -> TlaArithOper.realDiv,
-      TlaArithOper.exp.name -> TlaArithOper.exp,
-      TlaArithOper.dotdot.name -> TlaArithOper.dotdot,
-      TlaArithOper.lt.name -> TlaArithOper.lt,
-      TlaArithOper.gt.name -> TlaArithOper.gt,
-      TlaArithOper.le.name -> TlaArithOper.le,
-      TlaArithOper.ge.name -> TlaArithOper.ge,
-
-      TlaFiniteSetOper.cardinality.name -> TlaFiniteSetOper.cardinality,
-      TlaFiniteSetOper.isFiniteSet.name -> TlaFiniteSetOper.isFiniteSet,
-
-      TlaFunOper.app.name -> TlaFunOper.app,
-      TlaFunOper.domain.name -> TlaFunOper.domain,
-      TlaFunOper.enum.name -> TlaFunOper.enum,
-      TlaFunOper.except.name -> TlaFunOper.except,
-      TlaFunOper.funDef.name -> TlaFunOper.funDef,
-      TlaFunOper.tuple.name -> TlaFunOper.tuple,
-
-      TlaSeqOper.append.name -> TlaSeqOper.append,
-      TlaSeqOper.concat.name -> TlaSeqOper.concat,
-      TlaSeqOper.head.name -> TlaSeqOper.head,
-      TlaSeqOper.tail.name -> TlaSeqOper.tail,
-      TlaSeqOper.len.name -> TlaSeqOper.len,
-
-      TlaSetOper.enumSet.name -> TlaSetOper.enumSet,
-      TlaSetOper.in.name -> TlaSetOper.in,
-      TlaSetOper.notin.name -> TlaSetOper.notin,
-      TlaSetOper.cap.name -> TlaSetOper.cap,
-      TlaSetOper.cup.name -> TlaSetOper.cup,
-      TlaSetOper.filter.name -> TlaSetOper.filter,
-      TlaSetOper.funSet.name -> TlaSetOper.funSet,
-      TlaSetOper.map.name -> TlaSetOper.map,
-      TlaSetOper.powerset.name -> TlaSetOper.powerset,
-      TlaSetOper.recSet.name -> TlaSetOper.recSet,
-      TlaSetOper.seqSet.name -> TlaSetOper.seqSet,
-      TlaSetOper.setminus.name -> TlaSetOper.setminus,
-      TlaSetOper.subseteq.name -> TlaSetOper.subseteq,
-      TlaSetOper.subsetProper.name -> TlaSetOper.subsetProper,
-      TlaSetOper.supseteq.name -> TlaSetOper.supseteq,
-      TlaSetOper.supsetProper.name -> TlaSetOper.supsetProper,
-      TlaSetOper.times.name -> TlaSetOper.times,
-      TlaSetOper.union.name -> TlaSetOper.union
+        TlaOper.eq.name -> TlaOper.eq,
+        TlaOper.ne.name -> TlaOper.ne,
+        TlaOper.apply.name -> TlaOper.apply,
+        TlaOper.chooseBounded.name -> TlaOper.chooseBounded,
+        TlaOper.chooseUnbounded.name -> TlaOper.chooseUnbounded,
+        TlaBoolOper.and.name -> TlaBoolOper.and,
+        TlaBoolOper.or.name -> TlaBoolOper.or,
+        TlaBoolOper.not.name -> TlaBoolOper.not,
+        TlaBoolOper.implies.name -> TlaBoolOper.implies,
+        TlaBoolOper.equiv.name -> TlaBoolOper.equiv,
+        TlaBoolOper.forall.name -> TlaBoolOper.forall,
+        TlaBoolOper.exists.name -> TlaBoolOper.exists,
+        TlaBoolOper.forallUnbounded.name -> TlaBoolOper.forallUnbounded,
+        TlaBoolOper.existsUnbounded.name -> TlaBoolOper.existsUnbounded,
+        TlaActionOper.prime.name -> TlaActionOper.prime,
+        TlaActionOper.stutter.name -> TlaActionOper.stutter,
+        TlaActionOper.nostutter.name -> TlaActionOper.nostutter,
+        TlaActionOper.enabled.name -> TlaActionOper.enabled,
+        TlaActionOper.unchanged.name -> TlaActionOper.unchanged,
+        TlaActionOper.composition.name -> TlaActionOper.composition,
+        TlaControlOper.caseNoOther.name -> TlaControlOper.caseNoOther,
+        TlaControlOper.caseWithOther.name -> TlaControlOper.caseWithOther,
+        TlaControlOper.ifThenElse.name -> TlaControlOper.ifThenElse,
+        TlaTempOper.AA.name -> TlaTempOper.AA,
+        TlaTempOper.box.name -> TlaTempOper.box,
+        TlaTempOper.diamond.name -> TlaTempOper.diamond,
+        TlaTempOper.EE.name -> TlaTempOper.EE,
+        TlaTempOper.guarantees.name -> TlaTempOper.guarantees,
+        TlaTempOper.leadsTo.name -> TlaTempOper.leadsTo,
+        TlaTempOper.strongFairness.name -> TlaTempOper.strongFairness,
+        TlaTempOper.weakFairness.name -> TlaTempOper.weakFairness,
+        TlaArithOper.plus.name -> TlaArithOper.plus,
+        TlaArithOper.uminus.name -> TlaArithOper.uminus,
+        TlaArithOper.minus.name -> TlaArithOper.minus,
+        TlaArithOper.mult.name -> TlaArithOper.mult,
+        TlaArithOper.div.name -> TlaArithOper.div,
+        TlaArithOper.mod.name -> TlaArithOper.mod,
+        TlaArithOper.realDiv.name -> TlaArithOper.realDiv,
+        TlaArithOper.exp.name -> TlaArithOper.exp,
+        TlaArithOper.dotdot.name -> TlaArithOper.dotdot,
+        TlaArithOper.lt.name -> TlaArithOper.lt,
+        TlaArithOper.gt.name -> TlaArithOper.gt,
+        TlaArithOper.le.name -> TlaArithOper.le,
+        TlaArithOper.ge.name -> TlaArithOper.ge,
+        TlaFiniteSetOper.cardinality.name -> TlaFiniteSetOper.cardinality,
+        TlaFiniteSetOper.isFiniteSet.name -> TlaFiniteSetOper.isFiniteSet,
+        TlaFunOper.app.name -> TlaFunOper.app,
+        TlaFunOper.domain.name -> TlaFunOper.domain,
+        TlaFunOper.rec.name -> TlaFunOper.rec,
+        TlaFunOper.except.name -> TlaFunOper.except,
+        TlaFunOper.funDef.name -> TlaFunOper.funDef,
+        TlaFunOper.tuple.name -> TlaFunOper.tuple,
+        TlaSeqOper.append.name -> TlaSeqOper.append,
+        TlaSeqOper.concat.name -> TlaSeqOper.concat,
+        TlaSeqOper.head.name -> TlaSeqOper.head,
+        TlaSeqOper.tail.name -> TlaSeqOper.tail,
+        TlaSeqOper.len.name -> TlaSeqOper.len,
+        TlaSeqOper.subseq.name -> TlaSeqOper.subseq,
+        TlaSetOper.enumSet.name -> TlaSetOper.enumSet,
+        TlaSetOper.in.name -> TlaSetOper.in,
+        TlaSetOper.notin.name -> TlaSetOper.notin,
+        TlaSetOper.cap.name -> TlaSetOper.cap,
+        TlaSetOper.cup.name -> TlaSetOper.cup,
+        TlaSetOper.filter.name -> TlaSetOper.filter,
+        TlaSetOper.funSet.name -> TlaSetOper.funSet,
+        TlaSetOper.map.name -> TlaSetOper.map,
+        TlaSetOper.powerset.name -> TlaSetOper.powerset,
+        TlaSetOper.recSet.name -> TlaSetOper.recSet,
+        TlaSetOper.seqSet.name -> TlaSetOper.seqSet,
+        TlaSetOper.setminus.name -> TlaSetOper.setminus,
+        TlaSetOper.subseteq.name -> TlaSetOper.subseteq,
+        TlaSetOper.times.name -> TlaSetOper.times,
+        TlaSetOper.union.name -> TlaSetOper.union,
+        TlaFunOper.recFunRef.name -> TlaFunOper.recFunRef,
+        TlaFunOper.recFunDef.name -> TlaFunOper.recFunDef,
+        ApalacheOper.assign.name -> ApalacheOper.assign,
+        ApalacheOper.gen.name -> ApalacheOper.gen,
+        ApalacheOper.skolem.name -> ApalacheOper.skolem,
+        ApalacheOper.expand.name -> ApalacheOper.expand,
+        ApalacheOper.constCard.name -> ApalacheOper.constCard,
+        ApalacheInternalOper.distinct.name -> ApalacheInternalOper.distinct,
+        ApalacheOper.mkSeq.name -> ApalacheOper.mkSeq,
+        ApalacheOper.foldSet.name -> ApalacheOper.foldSet,
+        ApalacheOper.foldSeq.name -> ApalacheOper.foldSeq,
+        ApalacheInternalOper.selectInSet.name -> ApalacheInternalOper.selectInSet,
+        ApalacheInternalOper.selectInFun.name -> ApalacheInternalOper.selectInFun,
+        ApalacheInternalOper.storeInSet.name -> ApalacheInternalOper.storeInSet,
+        ApalacheInternalOper.storeNotInSet.name -> ApalacheInternalOper.storeNotInSet,
+        ApalacheInternalOper.storeNotInFun.name -> ApalacheInternalOper.storeNotInFun,
+        ApalacheInternalOper.smtMap(TlaBoolOper.and).name -> ApalacheInternalOper.smtMap(TlaBoolOper.and),
+        ApalacheInternalOper.smtMap(TlaBoolOper.or).name -> ApalacheInternalOper.smtMap(TlaBoolOper.or),
+        ApalacheInternalOper.unconstrainArray.name -> ApalacheInternalOper.unconstrainArray,
+        ApalacheOper.setAsFun.name -> ApalacheOper.setAsFun,
+        ApalacheOper.guess.name -> ApalacheOper.guess,
+        VariantOper.variant.name -> VariantOper.variant,
+        VariantOper.variantTag.name -> VariantOper.variantTag,
+        VariantOper.variantGetUnsafe.name -> VariantOper.variantGetUnsafe,
+        VariantOper.variantGetOrElse.name -> VariantOper.variantGetOrElse,
+        VariantOper.variantFilter.name -> VariantOper.variantFilter,
     )
 
-  def byName( p_operName : String,
-              p_args : TlaEx* /* Expected to match operator arity */
-            ) : TlaEx = OperEx( m_nameMap( p_operName ), p_args : _* )
+  def byName(operatorName: String, args: BuilderEx*): BuilderEx = {
+    BuilderOper(m_nameMap(operatorName), args: _*)
+  }
 
-  def byNameOrNull( p_operName : String,
-                    p_args : TlaEx*
-                  ) : TlaEx =
-    m_nameMap.get( p_operName ).map(
-      op =>
-        if ( op.isCorrectArity( p_args.size ) )
-          OperEx( op, p_args : _* )
-        else NullEx
-    ).getOrElse( NullEx )
+  def byNameOrNull(operatorName: String, args: BuilderEx*): BuilderEx =
+    m_nameMap
+      .get(operatorName)
+      .map(op =>
+        if (op.isCorrectArity(args.size))
+          BuilderOper(op, args: _*)
+        else BuilderTlaExWrapper(NullEx))
+      .getOrElse(BuilderTlaExWrapper(NullEx))
 }

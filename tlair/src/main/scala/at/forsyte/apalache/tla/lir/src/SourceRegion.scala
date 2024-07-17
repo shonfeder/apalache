@@ -1,17 +1,18 @@
 package at.forsyte.apalache.tla.lir.src
 
 /**
-  * This class captures a region in a text file. Instead of the standard representation of a position
-  * as a (line, column), we keep it as line * MAX_WIDTH + column, where MAX_WIDTH is the length of the longest possible
-  * line. Whenever a longer column value is given, it is truncated.
-  *
-  * @param start the starting position
-  * @param end the ending position, inclusive
-  * @author Igor Konnov
-  */
+ * This class captures a region in a text file.
+ *
+ * @param start
+ *   the starting position
+ * @param end
+ *   the ending position, inclusive
+ * @author
+ *   Igor Konnov, Thomas Pani
+ */
 class SourceRegion(val start: SourcePosition, val end: SourcePosition) {
   def isInside(larger: SourceRegion): Boolean = {
-    start.offset >= larger.start.offset && end.offset <= larger.end.offset
+    start >= larger.start && end <= larger.end
   }
 
   def contains(smaller: SourceRegion): Boolean = {
@@ -19,23 +20,20 @@ class SourceRegion(val start: SourcePosition, val end: SourcePosition) {
   }
 
   def isIntersecting(another: SourceRegion): Boolean = {
-    val maxStart = Math.max(start.offset, another.start.offset)
-    val minEnd = Math.min(end.offset, another.end.offset)
+    val maxStart = Seq(start, another.start).max
+    val minEnd = Seq(end, another.end).min
     maxStart <= minEnd
   }
 
-  override def toString: String = {
-    start + "-" + end
-  }
-
+  override def toString: String = s"${start}-${end}"
 
   def canEqual(other: Any): Boolean = other.isInstanceOf[SourceRegion]
 
   override def equals(other: Any): Boolean = other match {
     case that: SourceRegion =>
-      (that canEqual this) &&
-        start == that.start &&
-        end == that.end
+      that.canEqual(this) &&
+      start.equals(that.start) &&
+      end.equals(that.end)
     case _ => false
   }
 
@@ -50,7 +48,11 @@ object SourceRegion {
     new SourceRegion(start, end)
   }
 
-  def apply(lineStart: Int, columnStart: Int, lineEnd: Int, columnEnd: Int): SourceRegion = {
+  def apply(
+      lineStart: Int,
+      columnStart: Int,
+      lineEnd: Int,
+      columnEnd: Int): SourceRegion = {
     new SourceRegion(SourcePosition(lineStart, columnStart), SourcePosition(lineEnd, columnEnd))
   }
 }

@@ -1,35 +1,48 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import java.io.{PrintWriter, StringWriter}
+import at.forsyte.apalache.infra.passes.options.SMTEncoding
+import at.forsyte.apalache.tla.bmcmt.arena.PureArenaAdapter
+import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
+import at.forsyte.apalache.tla.types.tla
+import at.forsyte.apalache.tla.lir.transformations.impl.IdleTracker
+import at.forsyte.apalache.tla.lir.transformations.standard.IncrementalRenaming
+import at.forsyte.apalache.tla.typecomp.TBuilderInstruction
+import org.scalatest.funsuite.FixtureAnyFunSuite
 
-import at.forsyte.apalache.tla.bmcmt.smt.{PreproSolverContext, SolverConfig, SolverContext, Z3SolverContext}
-import at.forsyte.apalache.tla.bmcmt.types.eager.TrivialTypeFinder
-import at.forsyte.apalache.tla.lir.convenience.tla
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import java.io.StringWriter
 
-class RewriterBase extends FunSuite with BeforeAndAfterEach {
+trait RewriterBase extends FixtureAnyFunSuite {
+  protected type FixtureParam = SMTEncoding
+
   protected var solverContext: SolverContext = _
-  protected var arena: Arena = _
+  protected var arena: PureArenaAdapter = _
 
-  override def beforeEach() {
-    solverContext = new PreproSolverContext(new Z3SolverContext(SolverConfig.default.copy(debug = true)))
-    arena = Arena.create(solverContext)
+  protected val renaming = new IncrementalRenaming(new IdleTracker)
+
+  protected def assertBuildEqual(a: TBuilderInstruction, b: TBuilderInstruction): Unit =
+    assert(a.build == b.build)
+
+  protected def create(rewriterType: SMTEncoding): SymbStateRewriter = {
+    rewriterType match {
+      case SMTEncoding.OOPSLA19  => new SymbStateRewriterAuto(solverContext, renaming)
+      case SMTEncoding.Arrays    => new SymbStateRewriterAutoWithArrays(solverContext, renaming)
+      case SMTEncoding.FunArrays => new SymbStateRewriterAutoWithFunArrays(solverContext, renaming)
+      case oddRewriterType       => throw new IllegalArgumentException(s"Unexpected rewriter of type $oddRewriterType")
+    }
   }
 
-  override def afterEach() {
-    solverContext.dispose()
+  protected def createWithoutCache(rewriterType: SMTEncoding): SymbStateRewriter = {
+    rewriterType match {
+      case SMTEncoding.OOPSLA19  => new SymbStateRewriterImpl(solverContext, renaming)
+      case SMTEncoding.Arrays    => new SymbStateRewriterImplWithArrays(solverContext, renaming)
+      case SMTEncoding.FunArrays => new SymbStateRewriterImplWithFunArrays(solverContext, renaming)
+      case oddRewriterType =>
+        throw new IllegalArgumentException(s"Unexpected cacheless rewriter of type $oddRewriterType")
+    }
   }
 
-  protected def create(): SymbStateRewriterAuto = {
-    new SymbStateRewriterAuto(solverContext)
-  }
-
-  protected def createWithoutCache(): SymbStateRewriter = {
-    new SymbStateRewriterImpl(solverContext, new TrivialTypeFinder())
-  }
-
-  protected def assertUnsatOrExplain(rewriter: SymbStateRewriter, state: SymbState): Unit = {
-    assertOrExplain("UNSAT", rewriter, state, !solverContext.sat())
+  protected def assertUnsatOrExplain(): Unit = {
+    assertOrExplain("UNSAT", !solverContext.sat())
   }
 
   protected def assumeTlaEx(rewriter: SymbStateRewriter, state: SymbState): SymbState = {
@@ -48,22 +61,19 @@ class RewriterBase extends FunSuite with BeforeAndAfterEach {
     assert(solverContext.sat())
     rewriter.pop()
     rewriter.push()
-    solverContext.assertGroundExpr(tla.not(nextState.ex))
-    assertUnsatOrExplain(rewriter, nextState)
+    solverContext.assertGroundExpr(tla.not(tla.unchecked(nextState.ex)))
+    assertUnsatOrExplain()
     rewriter.pop()
     rewriter.pop()
   }
 
-  private def assertOrExplain(msg: String, rewriter: SymbStateRewriter,
-                              state: SymbState, outcome: Boolean): Unit = {
+  private def assertOrExplain(msg: String, outcome: Boolean): Unit = {
     if (!outcome) {
       val writer = new StringWriter()
-      new SymbStateDecoder(solverContext, rewriter).dumpArena(state, new PrintWriter(writer))
       solverContext.log(writer.getBuffer.toString)
       solverContext.push() // push and pop flush the log output
       solverContext.pop()
       fail("Expected %s, check log.smt for explanation".format(msg))
     }
-
   }
 }

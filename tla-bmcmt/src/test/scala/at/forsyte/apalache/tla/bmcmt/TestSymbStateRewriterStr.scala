@@ -1,32 +1,17 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.lir.convenience.tla
-import at.forsyte.apalache.tla.lir.values.TlaStr
-import at.forsyte.apalache.tla.lir.{NameEx, ValEx}
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
+import at.forsyte.apalache.infra.passes.options.SMTEncoding
+import at.forsyte.apalache.tla.lir.TypedPredefs._
+import at.forsyte.apalache.tla.lir.convenience.tla._
+import at.forsyte.apalache.tla.lir.BoolT1
 
-@RunWith(classOf[JUnitRunner])
-class TestSymbStateRewriterStr extends RewriterBase {
-  test("SE-STR-CTOR: \"red\" -> $C$k") {
-    val state = new SymbState(ValEx(TlaStr("red")), arena, Binding())
-    val rewriter = create()
-    val nextStateRed = rewriter.rewriteUntilDone(state)
-    nextStateRed.ex match {
-      case predEx@NameEx(name) =>
-        assert(solverContext.sat())
-        val redEqBlue = tla.eql(tla.str("blue"), tla.str("red"))
-        val nextStateEq = rewriter.rewriteUntilDone(nextStateRed.setRex(redEqBlue))
-        rewriter.push()
-        solverContext.assertGroundExpr(nextStateEq.ex)
-        assert(!solverContext.sat())
-        rewriter.pop()
-        solverContext.assertGroundExpr(tla.not(nextStateEq.ex))
-        assert(solverContext.sat())
+trait TestSymbStateRewriterStr extends RewriterBase {
+  test(""" rewrite "red" """) { rewriterType: SMTEncoding =>
+    val neq = not(eql(str("red"), str("blue")).typed(BoolT1))
+      .typed(BoolT1)
 
-
-      case _ =>
-        fail("Unexpected rewriting result")
-    }
+    val state = new SymbState(neq, arena, Binding())
+    val rewriter = create(rewriterType)
+    assertTlaExAndRestore(rewriter, state)
   }
 }

@@ -1,0 +1,47 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - master
+      # TODO Remove once deploying main versions separately
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v1
+        with:
+          mdbook-version: "0.4.5"
+          # mdbook-version: 'latest'
+
+      - name: Build the mdBook
+        run: |
+          set -x
+
+          cd docs
+
+          # Install emojitsu
+          wget --no-verbose https://github.com/shonfeder/emojitsu/releases/download/0.0.6/gh-actions-emojitsu
+          chmod +x gh-actions-emojitsu
+
+          # Emojify the markdown
+          find . -type f -name "*.md" -exec ./gh-actions-emojitsu emojify -i {} \;
+          # Build the book
+          mdbook build
+          # mdbook generates this file automatically but it breaks the gh-pages
+          # jekyll rendering we use for the base site
+          rm ../target/docs/.nojekyll
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/docs
+          destination_dir: docs
+          # We use GitHub's builtin jekyll for rendering the main landing page
+          enable_jekyll: true

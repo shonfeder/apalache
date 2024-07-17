@@ -2,14 +2,17 @@ package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.lir.NameEx
+import at.forsyte.apalache.tla.pp.TlaInputError
+import com.typesafe.scalalogging.LazyLogging
 
 /**
-  * Substitutes a bound name with a cell. For instance, it substitutes a name that is declared with VARIABLE or CONSTANT,
-  * as well as bound variables declared with \A, \E, set operations, etc.
-  *
-  * @author Igor Konnov
-   */
-class SubstRule(rewriter: SymbStateRewriter) extends RewritingRule {
+ * Substitutes a bound name with a cell. For instance, it substitutes a name that is declared with VARIABLE or CONSTANT,
+ * as well as bound variables declared with \A, \E, set operations, etc.
+ *
+ * @author
+ *   Igor Konnov
+ */
+class SubstRule extends RewritingRule with LazyLogging {
   override def isApplicable(state: SymbState): Boolean = {
     state.ex match {
       case NameEx(x) =>
@@ -25,9 +28,11 @@ class SubstRule(rewriter: SymbStateRewriter) extends RewritingRule {
       case NameEx(x) =>
         if (state.binding.contains(x)) {
           val cell = state.binding(x)
-          state.setRex(NameEx(cell.toString))
+          state.setRex(cell.toBuilder)
         } else {
-          throw new RewriterException(s"${getClass.getSimpleName}: Variable $x is not assigned a value", state.ex)
+          logger.error("This error may show up when CONSTANTS are not initialized.")
+          logger.error("Check the manual: https://apalache.informal.systems/docs/apalache/parameters.html")
+          throw new TlaInputError(s"${getClass.getSimpleName}: Variable $x is not assigned a value")
         }
 
       case _ =>

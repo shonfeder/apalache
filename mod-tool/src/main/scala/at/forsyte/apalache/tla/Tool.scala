@@ -1,240 +1,225 @@
 package at.forsyte.apalache.tla
 
-import java.io.{File, FileNotFoundException}
-import java.nio.file.{Files, Path, Paths}
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
-
+// Generated from the build.sbt file by the buildInfo plugin
+import apalache.BuildInfo
+import at.forsyte.apalache.infra._
 import at.forsyte.apalache.infra.log.LogbackConfigurator
-import at.forsyte.apalache.infra.passes.{PassChainExecutor, TlaModuleMixin}
-import at.forsyte.apalache.infra.{ExceptionAdapter, FailureMessage, NormalErrorMessage, PassOptionException}
-import at.forsyte.apalache.tla.bmcmt.config.CheckerModule
-import at.forsyte.apalache.tla.imp.passes.ParserModule
-import at.forsyte.apalache.tla.tooling.Version
-import at.forsyte.apalache.tla.tooling.opt.{CheckCmd, ParseCmd, TypeCheckCmd}
-import at.forsyte.apalache.tla.typecheck.passes.TypeCheckerModule
-import com.google.inject.{Guice, Injector}
+import at.forsyte.apalache.io.{OutputManager, ReportGenerator}
+import at.forsyte.apalache.tla.tooling.opt._
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.commons.configuration2.builder.fluent.Configurations
-import org.apache.commons.configuration2.ex.ConfigurationException
-import org.backuity.clist.{Cli, Command}
+import org.backuity.clist.Cli
+import util.ExecutionStatisticsCollector
 
-import scala.collection.JavaConverters._
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
+import scala.jdk.CollectionConverters._
+import scala.util.Random
+import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
+import at.forsyte.apalache.io.ConfigManager
 
 /**
-  * Command line access to the APALACHE tools.
-  *
-  * @author Igor Konnov
-  */
-object Tool extends App with LazyLogging {
+ * Command line access to the APALACHE tools.
+ *
+ * @author
+ *   Igor Konnov
+ */
+object Tool extends LazyLogging {
   lazy val ISSUES_LINK: String = "[https://github.com/informalsystems/apalache/issues]"
-  lazy val ERROR_EXIT_CODE = 99
-  lazy val OK_EXIT_CODE = 0
 
   /**
-    * Run the tool in the standalone mode with the provided arguments.
-    * This method calls System.exit with the computed exit code.
-    * If you like to call the tool without System.exit, use the the Tool#run.
-    *
-    * @param args the command line arguments
-    */
-  override def main(args: Array[String]): Unit = {
-    val exitcode = run(args)
-    if (exitcode == OK_EXIT_CODE) {
-      Console.out.println("EXITCODE: OK")
-    } else {
-      Console.out.println(s"EXITCODE: ERROR ($exitcode)")
-    }
-    System.exit(exitcode)
-  }
-
-  /**
-    * Run the tool in a library mode, that is, with a call to System.exit.
-    *
-    * @param args the command line arguments
-    * @return the exit code; as usual, 0 means success.
-    */
-  def run(args: Array[String]): Int = {
-    Console.println("# APALACHE version %s build %s".format(Version.version, Version.build))
-    Console.println("#")
-    Console.println("# WARNING: This tool is in the experimental stage.")
-    Console.println("#          Please report bugs at: " + ISSUES_LINK)
-    Console.println("")
-    // force our programmatic logback configuration, as the autoconfiguration works unpredictably
-    new LogbackConfigurator().configureDefaultContext()
-    // start
-    val startTime = LocalDateTime.now()
-    val parseCmd = new ParseCmd
-    val checkCmd = new CheckCmd
-    val typecheckCmd = new TypeCheckCmd
+   * Run the tool in the standalone mode with the provided arguments. This method calls [[java.lang.System.exit]] with
+   * the computed exit code. To call the tool without System.exit, use [[run]].
+   *
+   * @param args
+   *   the command line arguments
+   */
+  def main(args: Array[String]): Unit = {
     try {
-      Cli.parse(args).withProgramName("apalache-mc").version(Version.version)
-        .withCommands(parseCmd, checkCmd, typecheckCmd) match {
-        case Some(parse: ParseCmd) =>
-          logger.info("Parse " + parse.file)
-          val injector = injectorFactory(parseCmd)
-          handleExceptions(injector, runParse(injector, parse, _))
-
-        case Some(check: CheckCmd) =>
-          logger.info("Checker options: filename=%s, init=%s, next=%s, inv=%s"
-            .format(check.file, check.init, check.next, check.inv))
-          val injector = injectorFactory(check)
-          handleExceptions(injector, runCheck(injector, check, _))
-
-        case Some(parse: TypeCheckCmd) =>
-          logger.info("Type checking " + parse.file)
-          val injector = injectorFactory(typecheckCmd)
-          handleExceptions(injector, runTypeCheck(injector, typecheckCmd, _))
-
-        case _ =>
-          OK_EXIT_CODE // nothing to do
-      }
-    } finally {
-      printTimeDiff(startTime)
+      System.exit(run(args))
+    } catch {
+      case _: OutOfMemoryError =>
+        // We usually catch this in `handleExceptions` below.
+        // If it is caught here, logging has not been set up yet, so print directly to `Console.err`.
+        Console.err.println(s"Error: Ran out of heap memory (max JVM memory: ${Runtime.getRuntime.maxMemory})")
+        Console.err.println(s"To increase available heap memory, see the manual:")
+        Console.err.println("  [https://apalache.informal.systems/docs/apalache/running.html#supplying-jvm-arguments]")
+        Console.out.println(s"EXITCODE: ERROR (${ExitCodes.ERROR})")
+        System.exit(ExitCodes.ERROR)
     }
   }
+
+  private def outputAndLogConfig(cmd: ApalacheCommand): Try[Unit] = for {
+    cfg <- cmd.configuration
+    _ <- Try(OutputManager.configure(cfg))
+  } yield {
+    cfg.input.source.foreach(OutputManager.initSourceLines(_))
+    println(s"Output directory: ${OutputManager.runDir.normalize()}")
+    OutputManager.withWriterInRunDir(OutputManager.Names.RunFile)(
+        _.println(s"${cmd.env} ${cmd.label} ${cmd.invocation}")
+    )
+
+    // Write the application configuration, if debug is enabled
+    if (cfg.common.debug.getOrElse(false)) {
+      OutputManager.withWriterInRunDir("application-configs.cfg")(ConfigManager.save(cfg))
+    }
+
+    // force our programmatic logback configuration, as the autoconfiguration works unpredictably
+    new LogbackConfigurator(OutputManager.runDirPathOpt, OutputManager.customRunDirPathOpt).configureDefaultContext()
+    // TODO: update workers when the multicore branch is integrated
+    logger.info(s"# APALACHE version: ${BuildInfo.version} | build: ${BuildInfo.build}")
+
+    submitStatisticsIfEnabled(Map("tool" -> "apalache", "mode" -> cmd.label, "workers" -> "1"))
+  }
+
+  /**
+   * Run the tool in a library mode, that is, with a call to System.exit.
+   *
+   * @param args
+   *   the command line arguments
+   * @return
+   *   the exit code; as usual, 0 means success.
+   */
+  def run(args: Array[String]): Int = {
+    // first, call the arguments parser, which can also handle the standard commands such as version
+    val cli = Cli
+      .parse(args)
+      .withProgramName("apalache-mc")
+      .version(BuildInfo.version)
+      .withCommands(
+          new ParseCmd,
+          new CheckCmd,
+          new SimulateCmd,
+          new TypeCheckCmd,
+          new TestCmd,
+          new ConfigCmd,
+          new ServerCmd,
+          new TranspileCmd,
+          new TraceeCmd,
+      )
+
+    cli match {
+      // A standard option, e.g., --version or --help. No header, no timer, no noise
+      case None => ExitCodes.OK
+      // One of our commands.
+      case Some(cmd) => {
+
+        printStatsConfig()
+
+        val exitcode = outputAndLogConfig(cmd) match {
+          case Failure(cfgErr) => {
+            logger.error(s"Configuration error: ${cfgErr.getMessage()}")
+            ExitCodes.ERROR
+          }
+          case Success(()) => {
+            val startTime = LocalDateTime.now()
+            try {
+              runCommand(cmd)
+            } finally {
+              printTimeDiff(startTime)
+            }
+          }
+        }
+
+        if (exitcode == ExitCodes.OK) {
+          Console.out.println("EXITCODE: OK")
+        } else {
+          Console.out.println(s"EXITCODE: ERROR ($exitcode)")
+        }
+        exitcode
+      }
+    }
+  }
+
+  // Execute the program specified by the subcommand cmd, handling errors as needed
+  private def runCommand(cmd: ApalacheCommand): ExitCodes.TExitCode =
+    try {
+      cmd.run() match {
+        case Left((errorCode, failMsg)) => { logger.info(failMsg); errorCode }
+        case Right(msg)                 => { logger.info(msg); ExitCodes.OK }
+      }
+    } catch {
+      case e: AdaptedException =>
+        e.err match {
+          case NormalErrorMessage(text) => logger.error(text)
+          case FailureMessage(text)     => { logger.error(text, e); generateBugReport(e, cmd) }
+        }
+        ExitCodes.ERROR
+
+      // Raised on invalid or erroneous property files or tuning options arguments
+      case e: PassOptionException =>
+        logger.error(e.getMessage)
+        ExitCodes.ERROR
+
+      case e: Throwable =>
+        logger.error("Unhandled exception", e)
+        generateBugReport(e, cmd)
+        ExitCodes.ERROR
+    }
 
   private def printTimeDiff(startTime: LocalDateTime): Unit = {
     val endTime = LocalDateTime.now()
     logger.info("It took me %d days %2d hours %2d min %2d sec"
-      .format(ChronoUnit.DAYS.between(startTime, endTime),
-        ChronoUnit.HOURS.between(startTime, endTime) % 23,
-        ChronoUnit.MINUTES.between(startTime, endTime) % 60,
-        ChronoUnit.SECONDS.between(startTime, endTime) % 60))
+          .format(ChronoUnit.DAYS.between(startTime, endTime), ChronoUnit.HOURS.between(startTime, endTime) % 24,
+              ChronoUnit.MINUTES.between(startTime, endTime) % 60, ChronoUnit.SECONDS.between(startTime, endTime) % 60))
     logger.info("Total time: %d.%d sec"
-      .format(ChronoUnit.SECONDS.between(startTime, endTime),
-        ChronoUnit.MILLIS.between(startTime, endTime) % 1000))
+          .format(ChronoUnit.SECONDS.between(startTime, endTime), ChronoUnit.MILLIS.between(startTime, endTime) % 1000))
   }
 
-  private def runParse(injector: Injector, parse: ParseCmd, u: Unit): Unit = {
-    // here, we implement a terminal pass to get the parse results
-    val executor = injector.getInstance(classOf[PassChainExecutor])
-    executor.options.set("io.outdir", createOutputDir())
-    executor.options.set("parser.filename", parse.file.getAbsolutePath)
-    executor.options.set("parser.output", parse.output)
-
-    val result = executor.run()
-    if (result.isDefined) {
-      logger.info("Parsed successfully")
-      val tlaModule = result.get.asInstanceOf[TlaModuleMixin].unsafeGetModule
-      logger.info("Root module: %s with %d declarations".format(tlaModule.name,
-        tlaModule.declarations.length))
+  private def printStatsConfig(): Unit = {
+    if (new ExecutionStatisticsCollector().isEnabled) {
+      // Statistic collection is enabled. Thank the user
+      Console.println("# Usage statistics is ON. Thank you!")
+      Console.println("# If you have changed your mind, disable the statistics with config --enable-stats=false.")
     } else {
-      logger.info("Parser has failed")
+      // Statistics collection is not enabled. Cry for help.
+      Console.println("# Usage statistics is OFF. We care about your privacy.")
+      Console.println(
+          "# If you want to help our project, consider enabling statistics with config --enable-stats=true.")
+    }
+    Console.println("")
+  }
+
+  // If the user has opted-in, collect statistics with the code from tlatools:
+  //
+  // https://github.com/tlaplus/tlaplus/blob/master/tlatools/org.lamport.tlatools/src/util/ExecutionStatisticsCollector.java
+  //
+  // See how TLC does it:
+  // https://github.com/tlaplus/tlaplus/blob/master/tlatools/org.lamport.tlatools/src/tlc2/TLC.java
+  private def submitStatisticsIfEnabled(commandParams: Map[String, String]): Unit = {
+    val statCollector = new ExecutionStatisticsCollector()
+    if (statCollector.isEnabled) {
+      val params = new java.util.HashMap[String, String]()
+      params.put("ver", "apalache-%s-%s".format(BuildInfo.version, BuildInfo.build))
+      params.put("osName", System.getProperty("os.name"))
+      params.put("osArch", System.getProperty("os.arch"))
+      params.put("osVersion", System.getProperty("os.version"))
+      params.put("jvmVendor", System.getProperty("java.vendor"))
+      params.put("jvmVersion", System.getProperty("java.version"))
+      params.put("jvmArch", System.getProperty("os.arch"))
+      params.put("cores", Runtime.getRuntime.availableProcessors.toString)
+      val heapMemory = Runtime.getRuntime.maxMemory / 1024L / 1024L
+      params.put("jvmHeapMem", heapMemory.toString)
+      val saltSec = Random.nextInt(600) // a random salt to introduce a bit of entropy in the timestamp
+      val timestampSec = System.currentTimeMillis() / 1000 - saltSec
+      params.put("ts", timestampSec.toString)
+      params.putAll(commandParams.asJava)
+      // fix #288: one more parameter to keep compatibility with TLC reporting
+      params.put("jvmOffHeapMem", "0")
+      statCollector.collect(params)
     }
   }
 
-  private def runCheck(injector: Injector, check: CheckCmd, u: Unit): Unit = {
-    val executor = injector.getInstance(classOf[PassChainExecutor])
-    executor.options.set("io.outdir", createOutputDir())
-    val tuning =
-      if (check.tuning != "") {
-        loadProperties(check.tuning)
-      } else {
-        Map[String, String]()
-      }
-    executor.options.set("general.tuning", tuning)
-    executor.options.set("general.debug", check.debug)
-    executor.options.set("smt.prof", check.smtprof)
-    executor.options.set("parser.filename", check.file.getAbsolutePath)
-    if (check.config != "")
-      executor.options.set("checker.config", check.config)
-    if (check.init != "")
-      executor.options.set("checker.init", check.init)
-    if (check.next != "")
-      executor.options.set("checker.next", check.next)
-    if (check.inv != "")
-      executor.options.set("checker.inv", List(check.inv))
-    if (check.cinit != "")
-      executor.options.set("checker.cinit", check.cinit)
-    executor.options.set("checker.length", check.length)
-    executor.options.set("checker.search", check.search)
-
-    val result = executor.run()
-    if (result.isDefined) {
-      logger.info("Checker reports no error up to computation length " + check.length)
-    } else {
-      logger.info("Checker has found an error")
-    }
-  }
-
-  private def runTypeCheck(injector: Injector, parse: TypeCheckCmd, u: Unit): Unit = {
-    // type checker
-    val executor = injector.getInstance(classOf[PassChainExecutor])
-    executor.options.set("io.outdir", createOutputDir())
-    executor.options.set("parser.filename", parse.file.getAbsolutePath)
-
-    executor.run() match {
-      case None => logger.info("Type checker [FAILED]")
-      case Some(_) => logger.info("Type checker [OK]")
-    }
-  }
-
-  private def loadProperties(filename: String): Map[String, String] = {
-    // use an apache-commons library, as it supports variable substitution
-    try {
-      val config = new Configurations().properties(new File(filename))
-      // access configuration properties
-      var map = Map[String, String]()
-      for (name: String <- config.getKeys.asScala) {
-        map += (name -> config.getString(name))
-      }
-      map
-    } catch {
-      case _: FileNotFoundException =>
-        throw new PassOptionException(s"The properties file $filename not found")
-
-      case e: ConfigurationException =>
-        throw new PassOptionException(s"Error in the properties file $filename: ${e.getMessage}")
-    }
-  }
-
-  private def createOutputDir(): Path = {
-    // here we use the order 'hours-minutes and then the date', as it is much easier to use with completion
-    val nicetime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH.mm-dd.MM.uuuu-"))
-    val xdir = new File(System.getProperty("user.dir"), "x")
-    if (!xdir.exists()) {
-      xdir.mkdir()
-    }
-    Files.createTempDirectory(Paths.get(xdir.getAbsolutePath), nicetime)
-  }
-
-  private def injectorFactory(cmd: Command): Injector = {
-    cmd match {
-      case _: ParseCmd => Guice.createInjector(new ParserModule)
-      case _: CheckCmd => Guice.createInjector(new CheckerModule)
-      case _: TypeCheckCmd => Guice.createInjector(new TypeCheckerModule)
-      case _ => throw new RuntimeException("Unexpected command: " + cmd)
-    }
-  }
-
-  private def handleExceptions(injector: Injector, fun: Unit => Unit): Int = {
-    val adapter = injector.getInstance(classOf[ExceptionAdapter])
-
-    try {
-      fun()
-      Tool.OK_EXIT_CODE
-    } catch {
-      case e: Exception if adapter.toMessage.isDefinedAt(e) =>
-        adapter.toMessage(e) match {
-          case NormalErrorMessage(text) =>
-            logger.error(text)
-
-          case FailureMessage(text) =>
-            Console.err.println("Please report an issue at: " + ISSUES_LINK, e)
-            logger.error(text, e)
-        }
-        Tool.ERROR_EXIT_CODE
-
-      case e: PassOptionException =>
-        logger.error(e.getMessage)
-        Tool.ERROR_EXIT_CODE
-
-      case e: Throwable =>
-        Console.err.println("Please report an issue at: " + ISSUES_LINK, e)
-        logger.error("Unhandled exception", e)
-        Tool.ERROR_EXIT_CODE
-    }
+  private def generateBugReport(e: Throwable, cmd: ApalacheCommand): Unit = {
+    val absPath = ReportGenerator.prepareReportFile(
+        cmd.invocation.split(" ").dropRight(1).mkString(" "),
+        s"${BuildInfo.version} build ${BuildInfo.build}",
+    )
+    Console.err.println(
+        s"""|Please report an issue at $ISSUES_LINK: $e
+            |A bug report template has been generated at [$absPath].
+            |If you choose to use it, please complete the template with a description of the expected behavior and impact.""".stripMargin
+    )
   }
 }

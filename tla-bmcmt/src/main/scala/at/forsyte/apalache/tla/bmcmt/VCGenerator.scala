@@ -1,52 +1,140 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.lir.TypedPredefs._
 import at.forsyte.apalache.tla.lir.convenience.tla
-import at.forsyte.apalache.tla.lir.oper.TlaBoolOper
+import at.forsyte.apalache.tla.lir.oper.{ApalacheOper, TlaBoolOper, TlaOper}
 import at.forsyte.apalache.tla.lir.transformations.TransformationTracker
-import at.forsyte.apalache.tla.lir.transformations.standard.DeepCopy
-import at.forsyte.apalache.tla.pp.NormalizedNames
+import at.forsyte.apalache.tla.lir.transformations.standard.{DeepCopy, ReplaceFixed}
+import at.forsyte.apalache.tla.lir._
+import at.forsyte.apalache.tla.pp.{NormalizedNames, TlaInputError}
 import com.typesafe.scalalogging.LazyLogging
 
+import scala.annotation.tailrec
+import scala.collection.immutable.SortedMap
+
 /**
-  * Generator of verification conditions. In the current implementation, VCGenerator takes an invariant candidate,
-  * decomposes the invariant into smaller invariant candidates and produces negations of the invariant candidates.
-  * In the future, we would temporal formulas as well.
-  *
-  * @author Igor Konnov
-  */
+ * Generator of verification conditions. In the current implementation, VCGenerator takes an invariant candidate,
+ * decomposes the invariant into smaller invariant candidates and produces negations of the invariant candidates. In the
+ * future, we would temporal formulas as well.
+ *
+ * @author
+ *   Igor Konnov
+ */
 class VCGenerator(tracker: TransformationTracker) extends LazyLogging {
 
   /**
-    * Given a module and the name of an invariant candidate, add verification conditions in the module.
-    *
-    * @param module an input module
-    * @param invName the name of an invariant
-    * @return a transformed module
-    */
-  def gen(module: TlaModule, invName: String): TlaModule = {
-    module.declarations.find(_.name == invName) match {
-      case Some(inv: TlaOperDecl) if inv.formalParams.isEmpty =>
-        new TlaModule(module.name, module.declarations ++ introConditions(inv.body))
+   * Given a module and the name of an invariant candidate, add verification conditions in the module.
+   *
+   * @param module
+   *   an input module
+   * @param invName
+   *   name of an invariant
+   * @param optViewName
+   *   optional name of a state view
+   * @return
+   *   a transformed module
+   */
+  def gen(module: TlaModule, invName: String, optViewName: Option[String] = None): TlaModule = {
+    val levelFinder = new TlaLevelFinder(module)
 
-      case Some(decl: TlaOperDecl) =>
-        val message = s"Expected a nullary operator $invName, found ${decl.formalParams.length} arguments"
-        throw new MalformedTlaError(message, decl.body)
+    val newModule =
+      module.declarations.find(_.name == invName) match {
+        case Some(inv: TlaOperDecl) if inv.formalParams.isEmpty =>
+          // either a state invariant, or an action invariant
+          val level = levelFinder.getLevelOfDecl(inv)
+          level match {
+            case TlaLevelConst | TlaLevelState | TlaLevelAction =>
+              TlaModule(module.name, module.declarations ++ introConditions(level, inv.body))
 
-      case Some(decl) =>
-        val message = s"Expected a nullary operator $invName, found ${decl.getClass.getSimpleName}"
-        throw new MalformedTlaError(message, NullEx)
+            case TlaLevelTemporal =>
+              val message =
+                s"Expected a state invariant or an action invariant in $invName, found a temporal property (did you mean to use --temporal?)"
+              throw new TlaInputError(message, Some(inv.body.ID))
+          }
 
-      case None =>
-        throw new MalformedTlaError(s"Invariant candidate $invName not found", NullEx)
+        case Some(traceInv @ TlaOperDecl(_, params @ List(OperParam(_, 0)), body)) =>
+          // a trace invariant
+          if (TlaLevelConst != levelFinder.getLevelOfDecl(traceInv)) {
+            throw new TlaInputError(
+                s"Trace invariant $invName should not refer to state variables or use action/temporal operators",
+                Some(body.ID))
+          }
+          assertTraceInvType(module, traceInv)
+          val copy = DeepCopy(tracker)
+          // we do not decompose trace invariants, so a trace invariant always has index 0
+          val positive =
+            TlaOperDecl(NormalizedNames.VC_TRACE_INV_PREFIX + "0", params, copy.deepCopyEx(body))(traceInv.typeTag)
+          val notBody = tla.not(tla.fromTlaEx(copy.deepCopyEx(body))).typed(BoolT1)
+          val negative =
+            TlaOperDecl(NormalizedNames.VC_NOT_TRACE_INV_PREFIX + "0", params, notBody)(traceInv.typeTag)
+          TlaModule(module.name, module.declarations :+ positive :+ negative)
+
+        case Some(decl: TlaOperDecl) =>
+          val nparams = decl.formalParams.length
+          val message =
+            s"Expected a state/action invariant $invName (0 parameters) or a trace invariant (1 parameter), found $nparams parameters"
+          throw new TlaInputError(message, Some(decl.body.ID))
+
+        case Some(decl) =>
+          val message = s"Expected a nullary operator $invName, found ${decl.getClass.getSimpleName}"
+          throw new TlaInputError(message, None)
+
+        case None =>
+          throw new TlaInputError(s"Invariant candidate $invName not found", None)
+      }
+
+    if (optViewName.isEmpty) {
+      newModule
+    } else {
+      newModule.declarations.find(d => optViewName.contains(d.name)) match {
+        case Some(decl @ TlaOperDecl(name, params, body)) =>
+          if (params.nonEmpty) {
+            val msg = s"Expected state view $name to have no parameters, found: ${params.size} parameters"
+            throw new MalformedTlaError(msg, body)
+          }
+          val copy = DeepCopy(tracker)
+          val viewDecl =
+            TlaOperDecl(NormalizedNames.VC_VIEW, params, copy.deepCopyEx(body))(decl.typeTag)
+          TlaModule(newModule.name, newModule.declarations :+ viewDecl)
+
+        case Some(decl @ _) =>
+          val msg = s"Expected state view ${decl.name} to be an operator, found: " + decl
+          throw new MalformedTlaError(msg, NullEx)
+
+        case None =>
+          throw new MalformedTlaError(s"State view ${optViewName.get} not found", NullEx)
+      }
     }
   }
 
-  private def introConditions(inputInv: TlaEx): Seq[TlaOperDecl] = {
-    def mapToDecls(smallInv: TlaEx, index: Int): Seq[TlaOperDecl] = {
-      val deepCopy = DeepCopy(tracker)
-      val positive = TlaOperDecl(NormalizedNames.VC_INV_PREFIX + index, List(), deepCopy(smallInv))
-      val negative = TlaOperDecl(NormalizedNames.VC_NOT_INV_PREFIX + index, List(), tla.not(deepCopy(smallInv)))
+  private def assertTraceInvType(module: TlaModule, traceInv: TlaOperDecl): Unit = {
+    val varTypes = SortedMap(module.varDeclarations.map(d => d.name -> d.typeTag.asTlaType1()): _*)
+    // the history variable is a sequence of records over variable names
+    val histType = SeqT1(RecRowT1(RowT1(varTypes, None)))
+    if (traceInv.typeTag.asTlaType1() != OperT1(Seq(histType), BoolT1)) {
+      val msg =
+        s"Expected the trace invariant ${traceInv.name} to be a predicate of a sequence of records over the names of state variables"
+      throw new MalformedTlaError(msg, traceInv.body)
+    }
+  }
+
+  private def introConditions(level: TlaLevel, inputInv: TlaEx): Seq[TlaOperDecl] = {
+    def mapToDecls(invPiece: TlaEx, index: Int): Seq[TlaOperDecl] = {
+      // In rare cases, invPiece may contain assignments, e.g., when one uses --inv=Next.
+      // Replace assignments with equality.
+      val removeAssignments = ReplaceFixed(tracker).withFun { case ex @ OperEx(ApalacheOper.assign, lhs, rhs) =>
+        OperEx(TlaOper.eq, lhs, rhs)(ex.typeTag)
+      }
+      val invPieceNorm = removeAssignments(invPiece)
+      val invPieceCopy = DeepCopy(tracker).deepCopyEx(invPieceNorm)
+      val tag = inputInv.typeTag
+      val positivePrefix =
+        if (level == TlaLevelAction) NormalizedNames.VC_ACTION_INV_PREFIX else NormalizedNames.VC_INV_PREFIX
+      val positive = TlaOperDecl(positivePrefix + index, List(), invPieceNorm)(tag)
+      val notInvPieceCopy = tla.not(invPieceCopy).typed(BoolT1)
+      val negativePrefix =
+        if (level == TlaLevelAction) NormalizedNames.VC_NOT_ACTION_INV_PREFIX else NormalizedNames.VC_NOT_INV_PREFIX
+      val negative = TlaOperDecl(negativePrefix + index, List(), notInvPieceCopy)(tag)
       Seq(positive, negative)
     }
 
@@ -55,11 +143,11 @@ class VCGenerator(tracker: TransformationTracker) extends LazyLogging {
     fragments.zipWithIndex.flatMap { case (e, i) => mapToDecls(e, i) }
   }
 
-  private def splitInv(universalsRev: Seq[(String, TlaEx)], inv: TlaEx): Seq[TlaEx] = {
+  private def splitInv(universalsRev: Seq[(NameEx, TlaEx)], inv: TlaEx): Seq[TlaEx] = {
     inv match {
-      case OperEx(TlaBoolOper.forall, NameEx(varName), set, pred) =>
+      case OperEx(TlaBoolOper.forall, nameEx @ NameEx(_), set, pred) =>
         // \A x \in S: B /\ C is equivalent to (\A x \in S: B) /\ (\A x \in S: C)
-        splitInv((varName, set) +: universalsRev, pred)
+        splitInv((nameEx, set) +: universalsRev, pred)
 
       case OperEx(TlaBoolOper.and, args @ _*) =>
         // we split A /\ B into the set {A, B}
@@ -71,13 +159,14 @@ class VCGenerator(tracker: TransformationTracker) extends LazyLogging {
     }
   }
 
-  private def decorateWithUniversals(universalsRev: Seq[(String, TlaEx)], expr: TlaEx): TlaEx = {
+  @tailrec
+  private def decorateWithUniversals(universalsRev: Seq[(NameEx, TlaEx)], expr: TlaEx): TlaEx = {
     universalsRev match {
       case Nil =>
         expr
 
-      case (name, set) :: tail =>
-        decorateWithUniversals(tail, tla.forall(NameEx(name), set, expr))
+      case (nameEx, set) :: tail =>
+        decorateWithUniversals(tail, tla.forall(nameEx, set, expr).typed(BoolT1))
     }
   }
 }

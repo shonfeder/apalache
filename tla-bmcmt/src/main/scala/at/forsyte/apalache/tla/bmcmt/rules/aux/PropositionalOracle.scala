@@ -1,35 +1,31 @@
 package at.forsyte.apalache.tla.bmcmt.rules.aux
 
 import at.forsyte.apalache.tla.bmcmt.smt.SolverContext
-import at.forsyte.apalache.tla.bmcmt.types.BoolT
+import at.forsyte.apalache.tla.bmcmt.types.CellTFrom
 import at.forsyte.apalache.tla.bmcmt.{ArenaCell, SymbState, SymbStateRewriter}
-import at.forsyte.apalache.tla.lir.TlaEx
-import at.forsyte.apalache.tla.lir.convenience.tla
-
+import at.forsyte.apalache.tla.lir.BoolT1
+import at.forsyte.apalache.tla.typecomp.TBuilderInstruction
+import at.forsyte.apalache.tla.types.tla
 
 class PropositionalOracle(bitCells: Seq[ArenaCell], nvalues: Int) extends Oracle {
-  /**
-    * Produce an expression that states that the oracle values equals to the given integer position.
-    * The actual implementation may be different from an integer comparison.
-    *
-    * @param state    a symbolic state
-    * @param position a position the oracle should be equal to
-    */
-  override def whenEqualTo(state: SymbState, position: Int): TlaEx = {
-    def mkLits(n: Int, cells: Seq[ArenaCell]): Seq[TlaEx] = {
+
+  override def size: Int = nvalues
+
+  override def whenEqualTo(state: SymbState, position: Int): TBuilderInstruction = {
+    def mkLits(n: Int, cells: Seq[ArenaCell]): Seq[TBuilderInstruction] = {
       cells match {
         case Nil => Nil
 
         case hd +: tl =>
           // the least significant bit comes first
           val lit =
-            if ((n & 1) == 1) hd.toNameEx else tla.not(hd.toNameEx)
+            if ((n & 1) == 1) hd.toBuilder else tla.not(hd.toBuilder)
           lit +: mkLits(n >> 1, tl)
       }
     }
 
     bitCells.size match {
-      case 0 => state.arena.cellTrue().toNameEx
+      case 0 => state.arena.cellTrue().toBuilder
 
       case 1 => mkLits(position, bitCells).head
 
@@ -37,34 +33,17 @@ class PropositionalOracle(bitCells: Seq[ArenaCell], nvalues: Int) extends Oracle
     }
   }
 
-  /**
-    * Produce a ground expression that contains assertions for the possible oracle values.
-    *
-    * @param state      a symbolic state
-    * @param assertions a sequence of assertions, one per oracle value
-    * @return an expression ite(oracle = 0, ite(oracle = 1, ...))
-    */
-  override def caseAssertions(state: SymbState, assertions: Seq[TlaEx]): TlaEx = {
-    nvalues match {
-      case 0 => state.arena.cellTrue().toNameEx
-
-      case 1 => assertions.head
-
-      case _ =>
-        val es = assertions.slice(0, nvalues).zipWithIndex
-          .map { case (e, i) => tla.or(e, tla.not(whenEqualTo(state, i))) }
-        tla.and(es :_*)
+  override def caseAssertions(
+      state: SymbState,
+      assertions: Seq[TBuilderInstruction],
+      elseAssertions: Seq[TBuilderInstruction] = Seq.empty): TBuilderInstruction = {
+    if (elseAssertions.nonEmpty & assertions.size != elseAssertions.size) {
+      throw new IllegalStateException(s"Invalid call to Oracle, malformed elseAssertions")
     }
+
+    super.caseAssertions(state, assertions, elseAssertions)
   }
 
-  /**
-    * Get a symbolic state and decode the value of the oracle variable into an integer.
-    * This method assumes that the solver context has produced an SMT model.
-    *
-    * @param solverContext a solver context
-    * @param state         a symbolic state
-    * @return an integer value of the oracle
-    */
   override def evalPosition(solverContext: SolverContext, state: SymbState): Int = {
     def cellsToInt(bits: Seq[ArenaCell]): Int = {
       bits match {
@@ -72,7 +51,7 @@ class PropositionalOracle(bitCells: Seq[ArenaCell], nvalues: Int) extends Oracle
 
         case lsbCell :: otherBitCells =>
           // find the value of the bit, which is the least significant
-          val isOn = solverContext.evalGroundExpr(lsbCell.toNameEx) == tla.bool(true)
+          val isOn = solverContext.evalGroundExpr(lsbCell.toBuilder) == tla.bool(true).build
           val lsb = if (isOn) 1 else 0
           // find the unsigned integer value
           lsb + 2 * cellsToInt(otherBitCells) // the bits to the right are more significant
@@ -98,9 +77,9 @@ object PropositionalOracle {
 
     val nbits = findNBits(1)
     // create nbits cells to hold the propositional variables
-    val (newArena, newCells) = state.arena.appendCellSeq(0 until nbits map (_ => BoolT()) :_*)
+    val (newArena, newCells) = state.arena.appendCellSeq((0 until nbits).map(_ => CellTFrom(BoolT1)): _*)
     val oracle = new PropositionalOracle(newCells, nvalues)
-    var nextState = state.setArena(newArena)
+    val nextState = state.setArena(newArena)
 
     // exclude the values that are above nvalues
     def pow(n: Int): Int = if (n <= 0) 1 else 2 * pow(n - 1)

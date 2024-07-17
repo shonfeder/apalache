@@ -25,12 +25,27 @@
 (* operator, where Cardinality(S) is the number of elements in S if S is a *)
 (* finite set.                                                             *)
 (***************************************************************************)
-EXTENDS Integers, FiniteSets, Typing
+EXTENDS Integers, FiniteSets
+
+(***************************************************************************)
+(* With operator MissionariesAndCannibalsTyped_typedefs, we group all type *)
+(* in one place.                                                           *)
+(* This makes it easy to refer to the defined aliases and the unique       *)
+(* prefix protects against name clashes if this module is extended or      *)
+(* instantiated.                                                           *)
+(***************************************************************************)
+
+\* @typeAlias: persons = Set(PERSON);
+MissionariesAndCannibalsTyped_typedefs == TRUE
 
 (***************************************************************************)
 (* Next comes the declaration of the sets of missionaries and cannibals.   *)
 (***************************************************************************)
-CONSTANTS Missionaries, Cannibals 
+CONSTANTS
+    \* @type: $persons;
+    Missionaries,
+    \* @type: $persons;
+    Cannibals 
 
 (***************************************************************************)
 (* In TLA+, an execution of a system is described as a sequence of states, *)
@@ -68,13 +83,11 @@ CONSTANTS Missionaries, Cannibals
 (* (for east bank) and "W" (for west bank), so {"E","W"} is the set of     *)
 (* riverbanks.                                                             *)
 (***************************************************************************)
-VARIABLES bank_of_boat, who_is_on_bank 
-
-TypeAssumptions ==
-    /\ AssumeType(Missionaries, "Set(PERSON)")
-    /\ AssumeType(Cannibals, "Set(PERSON)")
-    /\ AssumeType(bank_of_boat, "Str")
-    /\ AssumeType(who_is_on_bank, "Str -> Set(PERSON)")
+VARIABLES
+    \* @type: Str;
+    bank_of_boat,
+    \* @type: Str -> $persons;
+    who_is_on_bank 
 
 (***************************************************************************)
 (* Although not needed to specify the system, it's a good idea to tell the *)
@@ -92,11 +105,11 @@ TypeAssumptions ==
 (* languages permit only arrays with index-set/domain the set              *)
 (* {0, ...  , n} for some integer n.) For each b in {"E","W"}, the value   *)
 (* of who_is_on_bank[b] will be a set of cannibals and/or missionaries --  *)
-(* that is, an element of the set Cannibals \cup Missionaries, where \cup  *)
-(* is the set union operator.  The expression SUBSET S is the set of all   *)
-(* subsets of the set S, and [D -> T] is the set of all arrays/functions   *)
-(* with index-set/domain D such that f[d] is an element of T for all d     *)
-(* in D.                                                                   *)
+(* that is, an element of the set Cannibals \union Missionaries, where     *)
+(* \union is the set union operator.  The expression SUBSET S is the set   *)
+(* of all subsets of the set S, and [D -> T] is the set of all             *)
+(* arrays/functions with index-set/domain D such that f[d] is an element   *)
+(* of T for all d in D.                                                    *)
 (*                                                                         *)
 (* TLA+ allows you to write a conjunction of formulas as a list of those   *)
 (* formulas bulleted by /\.  A disjunction of formulas is similarly        *)
@@ -104,7 +117,7 @@ TypeAssumptions ==
 (***************************************************************************)
 TypeOK == /\ bank_of_boat \in {"E","W"}
           /\ who_is_on_bank \in 
-                [{"E","W"} -> SUBSET (Cannibals \cup Missionaries)]
+                [{"E","W"} -> SUBSET (Cannibals \union Missionaries)]
 
 (***************************************************************************)
 (* The possible executions of the system are specified by two formulas: an *)
@@ -124,7 +137,7 @@ TypeOK == /\ bank_of_boat \in {"E","W"}
 (***************************************************************************)                             
 Init == /\ bank_of_boat = "E"
         /\ who_is_on_bank = [i \in {"E","W"} |-> 
-                               IF i = "E" THEN Cannibals \cup Missionaries
+                               IF i = "E" THEN Cannibals \union Missionaries
                                           ELSE  {} ]
               
 (***************************************************************************)
@@ -172,10 +185,11 @@ OtherBank(b) == IF b = "E" THEN "W" ELSE "E"
 (* of the two variables (their values in state t) in terms of their old    *)
 (* values (their values in state s).                                       *)
 (***************************************************************************)
-Move(S,b) == "(Set(PERSON), Str) => Bool" ##
+\* @type: ($persons, Str) => Bool;
+Move(S,b) ==
              /\ Cardinality(S) \in {1,2}
              /\ LET newThisBank  == who_is_on_bank[b] \ S
-                    newOtherBank == who_is_on_bank[OtherBank(b)] \cup S
+                    newOtherBank == who_is_on_bank[OtherBank(b)] \union S
                 IN  /\ IsSafe(newThisBank) 
                     /\ IsSafe(newOtherBank)
                     /\ bank_of_boat' = OtherBank(b)

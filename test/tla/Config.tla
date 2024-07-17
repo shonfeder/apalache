@@ -2,7 +2,9 @@
 (* a specification to check whether the configuration files are parsed *)
 EXTENDS Integers
 
-VARIABLES x
+VARIABLES
+    \* @type: Int;
+    x
 
 \* the default init
 Init ==
@@ -33,6 +35,12 @@ Spec ==
 
 Spec2 ==
     Init2 /\ [][Next2]_x
+
+Spec4 ==
+    (Init2 /\ [][Next2]_x) /\ WF_x(Next2)
+
+Spec5 ==
+    Init2 /\ ([][Next2]_x /\ SF_x(Next2))
 
 \* the default invariant
 Inv ==

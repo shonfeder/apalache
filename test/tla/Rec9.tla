@@ -9,15 +9,11 @@ EXTENDS Integers, FiniteSets
 MAX_NUM == 5       \* the maximal number in the set
 NUMS == 1..MAX_NUM  \* the set, from which the numbers are drawn
 
-VARIABLES set, size
-
-\* the syntax for type annotations
-a <: b == a
-
-IntSet(S) == S <: {Int}
-
-\* the type of the function Card
-CardT == [{Int} -> Int]
+VARIABLES
+    \* @type: Set(Int);
+    set,
+    \* @type: Int;
+    size
 
 (*
  The set cardinality function. It needs an upper bound on the set size.
@@ -26,13 +22,13 @@ CardT == [{Int} -> Int]
  for the function Card. This encoding is (at least) double-exponential.
  *)
 Card[S \in SUBSET NUMS] ==
-    IF S = IntSet({})
+    IF S = {}
     THEN 0
     ELSE LET i == CHOOSE j \in S: TRUE IN
-        1 + (Card <: CardT)[S \ {i}]
+        1 + Card[S \ {i}]
 
 Init ==
-    /\ set = IntSet({})
+    /\ set = {}
     /\ size = 0
 
 Next ==     

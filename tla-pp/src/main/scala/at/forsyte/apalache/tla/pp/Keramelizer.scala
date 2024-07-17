@@ -1,144 +1,266 @@
 package at.forsyte.apalache.tla.pp
 
-import at.forsyte.apalache.tla.lir.oper._
+import at.forsyte.apalache.tla.lir.TypedPredefs._
 import at.forsyte.apalache.tla.lir._
-import at.forsyte.apalache.tla.lir.transformations.{LanguageWatchdog, TlaExTransformation, TransformationTracker}
 import at.forsyte.apalache.tla.lir.convenience._
+import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.transformations.standard.FlatLanguagePred
-import javax.inject.Singleton
+import at.forsyte.apalache.tla.lir.transformations.{LanguageWatchdog, TlaExTransformation, TransformationTracker}
+
+import com.google.inject.Singleton
 
 /**
-  * <p>A simplifier from TLA+ to KerA+. This transformation assumes that all operator definitions and internal
-  * let-definitions have been inlined.</p>
-  *
-  * <p>To get the idea about KerA+, check the paper at OOPSLA'19: TLA+ Model Checking Made Symbolic.<p>
-  *
-  * @author Igor Konnov
-  */
+ * <p>A simplifier from TLA+ to KerA+. This transformation assumes that all operator definitions and internal
+ * let-definitions have been inlined.</p>
+ *
+ * <p>To get the idea about KerA+, check the paper at OOPSLA'19: TLA+ Model Checking Made Symbolic.<p>
+ *
+ * @author
+ *   Igor Konnov
+ */
 @Singleton
 class Keramelizer(gen: UniqueNameGenerator, tracker: TransformationTracker)
     extends AbstractTransformer(tracker) with TlaExTransformation {
 
+  /**
+   * Partial transformers, applied left-to-right.
+   */
   override val partialTransformers =
-    List(transformLogic, transformSets, transformTuples, transformRecords, transformControl, transformAssignments)
-
+    List(
+        transformAssignments,
+        transformLogic,
+        transformSets,
+        transformTuples,
+        transformRecords,
+        transformControl,
+    )
 
   override def apply(expr: TlaEx): TlaEx = {
     LanguageWatchdog(FlatLanguagePred()).check(expr)
     transform(expr)
   }
 
+  // extract the type of a set element
+  private def getElemType(e: TlaEx): TlaType1 = {
+    e.typeTag match {
+      case Typed(SetT1(elemType)) => elemType
+      case t =>
+        throw new MalformedTlaError(s"Expected a set, found: $t", e)
+    }
+  }
+
   /**
-    * Set transformations.
-    *
-    * @return a transformed set expression
-    */
+   * Set transformations.
+   *
+   * @return
+   *   a transformed set expression
+   */
   private def transformSets: PartialFunction[TlaEx, TlaEx] = {
     case OperEx(TlaSetOper.cap, setX, setY) =>
-      val tempName = NameEx(gen.newName())
-      tla.filter(tempName, setX, tla.in(tempName, setY))
+      val elemType = getElemType(setX)
+      val tempName = gen.newName()
+      tla
+        .filter(tla.name(tempName) ? "e", setX, tla.in(tla.name(tempName) ? "e", setY) ? "b")
+        .typed(Map("b" -> BoolT1, "e" -> elemType, "s" -> SetT1(elemType)), "s")
 
     case OperEx(TlaSetOper.setminus, setX, setY) =>
-      val tempName = NameEx(gen.newName())
-      tla.filter(tempName, setX, tla.not(tla.in(tempName, setY)))
+      val elemType = getElemType(setX)
+      val tempName = gen.newName()
+      tla
+        .filter(tla.name(tempName) ? "e", setX, tla.not(tla.in(tla.name(tempName) ? "e", setY) ? "b") ? "b")
+        .typed(Map("b" -> BoolT1, "e" -> elemType, "s" -> SetT1(elemType)), "s")
 
     case OperEx(TlaSetOper.notin, x, setX) =>
-      tla.not(tla.in(x, setX))
+      tla
+        .not(tla.in(x, setX).as(BoolT1))
+        .as(BoolT1)
 
-    case OperEx(TlaSetOper.supseteq, setX, setY) =>
-      tla.subseteq(setY, setX)
+    // rewrite POWSET A \subseteq POWSET B
+    // into A \subseteq B
+    case OperEx(TlaSetOper.subseteq, OperEx(TlaSetOper.powerset, setX), OperEx(TlaSetOper.powerset, setY)) =>
+      transform(
+          tla
+            .subseteq(setX, setY)
+            .as(BoolT1)
+      )
 
-    case OperEx(TlaSetOper.subsetProper, setX, setY) =>
-      tla.and(
-        tla.not(tla.eql(setX, setY)),
-        tla.subseteq(setX, setY)
-      ) ///
+    // rewrite A \subseteq POWSET B
+    // into \A S \in A: S \subseteq B
+    case OperEx(TlaSetOper.subseteq, setX, OperEx(TlaSetOper.powerset, setY)) =>
+      val elemType = getElemType(setY)
+      val tempName = gen.newName()
+      transform(
+          tla
+            .forall(tla.name(tempName).as(SetT1(elemType)), setX,
+                tla.subseteq(tla.name(tempName).as(SetT1(elemType)), setY).as(BoolT1))
+            .as(BoolT1)
+      )
 
-    case OperEx(TlaSetOper.supsetProper, setX, setY) =>
-      tla.and(
-        tla.not(tla.eql(setX, setY)),
-        tla.subseteq(setY, setX)
-      ) ///
+    // rewrite A \subseteq B
+    // into \A a \in A: a \in B
+    case OperEx(TlaSetOper.subseteq, setX, setY) =>
+      val elemType = getElemType(setX)
+      val tempName = gen.newName()
+      tla
+        .forall(tla.name(tempName).as(elemType), setX, tla.in(tla.name(tempName).as(elemType), setY).as(BoolT1))
+        .as(BoolT1)
+
+    // rewrite f \in [S -> SUBSET T]
+    // into DOMAIN f = S /\ \A x \in S: \A y \in f[x]: y \in T
+    case OperEx(TlaSetOper.in, fun, OperEx(TlaSetOper.funSet, dom, OperEx(TlaSetOper.powerset, powSetDom))) =>
+      val domType = getElemType(dom)
+      val domElem = tla.name(gen.newName()).as(domType)
+      val powSetDomType = getElemType(powSetDom)
+      val funAppElem = tla.name(gen.newName()).as(powSetDomType)
+      tla
+        .and(tla.eql(tla.dom(fun).as(SetT1(domType)), dom).as(BoolT1),
+            tla
+              .forall(domElem, dom,
+                  tla
+                    .forall(funAppElem, tla.appFun(fun, domElem).as(SetT1(powSetDomType)),
+                        tla.in(funAppElem, powSetDom).as(BoolT1))
+                    .as(BoolT1))
+              .as(BoolT1))
+        .as(BoolT1)
+
+    // rewrite f \in [S -> T]
+    // into DOMAIN f = S /\ \A x \in S: f[x] \in T
+    case OperEx(TlaSetOper.in, fun, OperEx(TlaSetOper.funSet, dom, cdm)) =>
+      val domType = getElemType(dom)
+      val domElem = tla.name(gen.newName()).as(domType)
+      val cdmType = getElemType(cdm)
+      tla
+        .and(tla.eql(tla.dom(fun).as(SetT1(domType)), dom).as(BoolT1),
+            tla.forall(domElem, dom, tla.in(tla.appFun(fun, domElem).as(cdmType), cdm).as(BoolT1)).as(BoolT1))
+        .as(BoolT1)
   }
 
   /**
-    * Record transformations.
-    *
-    * @return a transformed expression
-    */
+   * Record transformations.
+   *
+   * @return
+   *   a transformed expression
+   */
   private def transformRecords: PartialFunction[TlaEx, TlaEx] = {
-    case OperEx(TlaSetOper.recSet, varsAndSets @ _*) =>
-      val vars = varsAndSets.zipWithIndex.filter(_._2 % 2 == 0).map(_._1)
-      val sets = varsAndSets.zipWithIndex.filter(_._2 % 2 == 1).map(_._1)
-      val boundVars: Seq[TlaEx] = vars.map(_ => NameEx(gen.newName()))
-      val mapEx = OperEx(TlaFunOper.enum, vars.zip(boundVars).flatMap(x => List(x._1, x._2)): _*)
-      OperEx(TlaSetOper.map, mapEx +: boundVars.zip(sets).flatMap(x => List(x._1, x._2)): _*)
-
-    case OperEx(BmcOper.withType,
-                OperEx(TlaSetOper.map, mapEx, varsAndSets @ _*),
-                OperEx(TlaSetOper.enumSet, recordAnnotation)) =>
-      // It is quite common to add a type annotation, e.g., [a: A, b: B] <: {[a |-> Int, b |-> STRING]}.
-      // Propagate the annotation in the map expression
-      val annotMapEx = tla.withType(mapEx, recordAnnotation)
-      OperEx(TlaSetOper.map, annotMapEx +: varsAndSets: _*)
+    case ex @ OperEx(TlaSetOper.recSet, keysAndSets @ _*) =>
+      // rewrite [ k_1: S_1, ..., k_n: S_n ]
+      // into { y_1 \in S_1, ..., y_n \in S_n: [ k_1 |-> y_1, ..., k_n |-> y_n ] }
+      val (keys, sets) = TlaOper.deinterleave(keysAndSets)
+      val elemTypes = sets.map(getElemType)
+      // produce a sequence of fresh names wrapped with NameEx
+      val names: Seq[TlaEx] = elemTypes.map { t => NameEx(gen.newName())(Typed(t)) }
+      val keysAndNamesInterleaved = TlaOper.interleave(keys, names)
+      val recordType = getElemType(ex)
+      // [ x_1 |-> v_1, ..., x_n |-> v_n ]
+      val mapEx = OperEx(TlaFunOper.rec, keysAndNamesInterleaved: _*)(Typed(recordType))
+      // { y_1 \in S_1, ..., y_n \in S_n: [ k_1 |-> y_1, ..., k_n |-> y_n ] }
+      val namesAndSetsInterleaved = TlaOper.interleave(names, sets)
+      OperEx(TlaSetOper.map, mapEx +: namesAndSetsInterleaved: _*)(ex.typeTag)
   }
 
   /**
-    * Tuple transformations.
-    *
-    * @return a transformed expression
-    */
-  private def transformTuples: PartialFunction[TlaEx, TlaEx] = {
-    case OperEx(TlaSetOper.times, sets @ _*) =>
-      val boundVars: Seq[TlaEx] = sets.map(_ => NameEx(gen.newName()))
-      val mapEx = OperEx(TlaFunOper.tuple, boundVars: _*)
-      OperEx(TlaSetOper.map, mapEx +: boundVars.zip(sets).flatMap(x => List(x._1, x._2)): _*)
+   * Tuple transformations.
+   *
+   * @return
+   *   a transformed expression
+   */
+  private def transformTuples: PartialFunction[TlaEx, TlaEx] = { case ex @ OperEx(TlaSetOper.times, sets @ _*) =>
+    // transform S_1 \X ... \X S_n
+    // into { y_1 \in S_1, ..., y_n \in S_n: <<y_1, ..., y_n>> }
+    val elemTypes = sets.map(getElemType)
+    val names: Seq[TlaEx] = elemTypes.map(t => NameEx(gen.newName())(Typed(t)))
+    val mapEx = OperEx(TlaFunOper.tuple, names: _*)(Typed(TupT1(elemTypes: _*)))
+    val namesAndSets = TlaOper.interleave(names, sets)
+    OperEx(TlaSetOper.map, mapEx +: namesAndSets: _*)(ex.typeTag)
   }
 
   /**
-    * Boolean equivalences.
-    *
-    * @return a transformed expression
-    */
+   * Boolean equivalences.
+   *
+   * @return
+   *   a transformed expression
+   */
   private def transformLogic: PartialFunction[TlaEx, TlaEx] = {
     case OperEx(TlaBoolOper.equiv, left, right) =>
-      tla.eql(left, right)
+      tla.eql(left, right).typed(BoolT1)
 
     case OperEx(TlaBoolOper.implies, left, right) =>
-      tla.or(tla.not(left), right)
+      tla
+        .or(tla.not(left) ? "b", right)
+        .typed(Map("b" -> BoolT1), "b")
 
     case OperEx(TlaOper.ne, left, right) =>
-      tla.not(tla.eql(left, right))
+      tla
+        .not(tla.eql(left, right) ? "b")
+        .typed(Map("b" -> BoolT1), "b")
   }
 
   /**
-    * Assignment-like expressions.
-    *
-    * @return a transformed expression
-    */
+   * Assignment-like expressions.
+   *
+   * @return
+   *   a transformed expression
+   */
   private def transformAssignments: PartialFunction[TlaEx, TlaEx] = {
-    case OperEx(TlaSetOper.in, prime @ OperEx(TlaActionOper.prime, NameEx(x)), set) =>
+    case OperEx(TlaSetOper.in, prime @ OperEx(TlaActionOper.prime, NameEx(_)), set) =>
+      // rewrite x' \in S
+      // into \E y \in S: x' = y
+      val elemType = getElemType(set)
       val temp = gen.newName()
-      tla.exists(tla.name(temp), set, tla.eql(prime, tla.name(temp)))
+      tla
+        .exists(tla.name(temp) ? "e", set, tla.eql(prime, tla.name(temp) ? "e") ? "b")
+        .typed(Map("b" -> BoolT1, "e" -> elemType), "b")
   }
 
   /**
-    * Control flow transformations.
-    *
-    * @return a transformed expression
-    */
+   * Control flow transformations.
+   *
+   * @return
+   *   a transformed expression
+   */
   private def transformControl: PartialFunction[TlaEx, TlaEx] = {
-    case expr @ OperEx(TlaControlOper.caseWithOther, otherEx, args @ _*) =>
-      def decorateWithIf(elseEx: TlaEx, guardAction: (TlaEx, TlaEx)): OperEx = {
-        tla.ite(guardAction._1, guardAction._2, elseEx)
-      }
-      // produce a chain of if-then-else expressions
-      val revGuardsAndActions = mkGuardsAndActions(args)
-      revGuardsAndActions.foldLeft(otherEx)(decorateWithIf)
 
-    case expr @ OperEx(TlaControlOper.caseNoOther, _*) =>
-      throw new NotInKeraError("CASE without other, see: " +
-        "[docs/preprocessing.md]", expr)
+    case expr @ OperEx(TlaControlOper.caseWithOther, otherEx, args @ _*) =>
+      // CASE with a default arm
+      if (expr.typeTag == Typed(BoolT1)) {
+        // the Boolean case becomes a disjunction that has otherEx as an option
+        val (guards, actions) = TlaOper.deinterleave(args)
+        // produce g_1 /\ a_1, ..., g_n /\ a_n
+        val ands = guards.zip(actions).map { case (g, a) => tla.and(g, a).typed(BoolT1) }
+        val otherForm = tla.and(guards.map(g => tla.not(g).typed(BoolT1)) :+ otherEx: _*).typed(BoolT1)
+        // (g_1 /\ a_1) \/ ... \/ (g_n /\ a_n) \/ ~g_1 /\ ... /\ ~g_n /\ otherEx
+        tla.or(ands :+ otherForm: _*).typed(BoolT1)
+      } else {
+        // produce a chain: IF g_1 THEN e_1 ELSE (IF g_2 THEN e_2 ELSE (..( ELSE otherEx)..)
+        val revGuardsAndActions = mkGuardsAndActions(args)
+        revGuardsAndActions.foldLeft(otherEx)(decorateWithIf)
+      }
+
+    case expr @ OperEx(TlaControlOper.caseNoOther, args @ _*) =>
+      // CASE without a default arm
+      if (expr.typeTag == Typed(BoolT1)) {
+        // the Boolean case becomes a disjunction
+        val (guards, actions) = TlaOper.deinterleave(args)
+        // produce g_1 /\ a_1, ..., g_n /\ a_n
+        val ands = guards.zip(actions).map { case (g, a) => tla.and(g, a).typed(BoolT1) }
+        // (g_1 /\ a_1) \/ ... \/ (g_n /\ a_n)
+        tla.or(ands: _*).typed(BoolT1)
+      } else {
+        // produce a chain: IF g_1 THEN e_1 ELSE (IF g_2 THEN e_2 ELSE (..( ELSE e_n)..)
+        if (args.length >= 2) {
+          // ignore the last guard and treat lastAction as the default arm
+          val prefix = args.dropRight(2)
+          val revGuardsAndActions = mkGuardsAndActions(prefix)
+          revGuardsAndActions.foldLeft(args.last)(decorateWithIf)
+        } else {
+          // in the unlikely case of CASE without any guards, just return FALSE
+          tla.bool(false).typed()
+        }
+      }
+  }
+
+  private def decorateWithIf(elseEx: TlaEx, guardAction: (TlaEx, TlaEx)): TlaEx = {
+    tla.ite(guardAction._1, guardAction._2, elseEx).typed(elseEx.typeTag.asTlaType1())
   }
 
   private def mkGuardsAndActions(args: Seq[TlaEx]): Seq[(TlaEx, TlaEx)] = {

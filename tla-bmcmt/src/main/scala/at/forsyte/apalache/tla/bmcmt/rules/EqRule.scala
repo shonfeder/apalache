@@ -1,17 +1,19 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.types.BoolT
+import at.forsyte.apalache.tla.lir.UntypedPredefs._
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.oper.TlaOper
-import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
+import at.forsyte.apalache.tla.lir.{BoolT1, IntT1, NameEx, OperEx, Typed}
 
 /**
-  * Implement equality test by delegating the actual test to LazyEquality.
-  *
-  * @author Igor Konnov
-  */
-class EqRule(rewriter: SymbStateRewriter) extends RewritingRule {
+ * Implement equality test by delegating the actual test to LazyEquality. Integer equality is packed into a single SMT
+ * constraint.
+ *
+ * @author
+ *   Igor Konnov, Thomas Pani
+ */
+class EqRule(rewriter: SymbStateRewriter) extends RewritingRule with IntArithPacker {
   override def isApplicable(symbState: SymbState): Boolean = {
     symbState.ex match {
       case OperEx(TlaOper.eq, _, _) => true
@@ -25,14 +27,28 @@ class EqRule(rewriter: SymbStateRewriter) extends RewritingRule {
       // identical constants are obviously equal
       state.setRex(state.arena.cellTrue().toNameEx)
 
+    // Pack integer equality into a single SMT constraint
+    case OperEx(TlaOper.eq, lhs, rhs) if lhs.typeTag == Typed(IntT1) && rhs.typeTag == Typed(IntT1) =>
+      // pack the arithmetic expression `state.ex` into `packedState.ex`
+      val leftState = packArithExpr(rewriter, state.setRex(lhs))
+      val rightState = packArithExpr(rewriter, leftState.setRex(rhs))
+
+      // add new arena cell
+      val newArena = rightState.arena.appendCell(BoolT1)
+      val newCell = newArena.topCell
+
+      // assert the new cell is equal to the packed comparison
+      val packedComparison = OperEx(TlaOper.eq, leftState.ex, rightState.ex)
+      rewriter.solverContext.assertGroundExpr(tla.eql(newCell.toNameEx, packedComparison))
+      // return rewritten state; the input arithmetic expression has been rewritten into the new arena cell
+      rightState.setArena(newArena).setRex(newCell.toNameEx)
+
     case OperEx(TlaOper.eq, lhs, rhs) =>
-      // Rewrite the both arguments in Cell theory. Although by doing so,
-      // we may introduce redundant cells, we don't have to think about types.
       var newState = rewriter.rewriteUntilDone(state.setRex(lhs))
       val leftCell = newState.asCell
       newState = rewriter.rewriteUntilDone(newState.setRex(rhs))
       val rightCell = newState.asCell
-      newState = newState.setArena(newState.arena.appendCell(BoolT()))
+      newState = newState.setArena(newState.arena.appendCell(BoolT1))
       val eqPred = newState.arena.topCell
 
       // produce equality constraints, so that we can use SMT equality

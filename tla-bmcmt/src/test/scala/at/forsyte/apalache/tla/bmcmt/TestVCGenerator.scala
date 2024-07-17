@@ -1,17 +1,22 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import at.forsyte.apalache.io.annotations.store._
 import at.forsyte.apalache.tla.imp.SanyImporter
 import at.forsyte.apalache.tla.imp.src.SourceStore
+import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.transformations.impl.IdleTracker
-import at.forsyte.apalache.tla.lir.{TlaModule, TlaOperDecl}
+import at.forsyte.apalache.tla.types.parser.DefaultType1Parser
+import at.forsyte.apalache.tla.types.tla._
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
-import org.scalatest.junit.JUnitRunner
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.junit.JUnitRunner
 
 import scala.io.Source
 
 @RunWith(classOf[JUnitRunner])
-class TestVCGenerator extends FunSuite {
+class TestVCGenerator extends AnyFunSuite {
+  private val parser = DefaultType1Parser
+
   private def mkVCGen(): VCGenerator = {
     new VCGenerator(new IdleTracker)
   }
@@ -26,9 +31,54 @@ class TestVCGenerator extends FunSuite {
       """.stripMargin
 
     val mod = loadFromText("inv", text)
-    val newMod = mkVCGen().gen(mod, "Inv")
+    val newMod = mkVCGen().gen(mod, "Inv", None)
     assertDecl(newMod, "VCInv$0", "x > 0")
     assertDecl(newMod, "VCNotInv$0", "¬(x > 0)")
+  }
+
+  test("action invariant") {
+    val text =
+      """---- MODULE inv ----
+        |EXTENDS Integers
+        |VARIABLE x
+        |Inv == x' > x
+        |====================
+      """.stripMargin
+
+    val mod = loadFromText("inv", text)
+    val newMod = mkVCGen().gen(mod, "Inv", None)
+    assertDecl(newMod, "VCActionInv$0", "x' > x")
+    assertDecl(newMod, "VCNotActionInv$0", "¬(x' > x)")
+  }
+
+  test("trace invariant") {
+    // as trace VCGenerator checks the type of a trace invariant, we construct the declaration manually
+    // hist[Len(hist)].x > hist[1].x
+    val seqT = parser("Seq({ x: Int })")
+    val hist = name("hist", seqT)
+    val invBody = gt(app(app(hist, len(hist)), str("x")), app(app(hist, int(1)), str("x")))
+    val traceInv = decl("TraceInv", invBody, param("hist", seqT))
+    val xDecl = TlaVarDecl("x")(Typed(IntT1))
+    val module = TlaModule("mod", Seq(xDecl, traceInv))
+
+    val newMod = mkVCGen().gen(module, "TraceInv", None)
+    assertDecl(newMod, "VCTraceInv$0", """hist[Len(hist)]["x"] > hist[1]["x"]""")
+    assertDecl(newMod, "VCNotTraceInv$0", """¬(hist[Len(hist)]["x"] > hist[1]["x"])""")
+  }
+
+  test("state view") {
+    val text =
+      """---- MODULE inv ----
+        |EXTENDS Integers
+        |VARIABLE x
+        |Inv == x' > x
+        |View1 == x
+        |====================
+      """.stripMargin
+
+    val mod = loadFromText("inv", text)
+    val newMod = mkVCGen().gen(mod, "Inv", Some("View1"))
+    assertDecl(newMod, "VCView$0", "x")
   }
 
   test("conjunctive invariant") {
@@ -41,7 +91,7 @@ class TestVCGenerator extends FunSuite {
       """.stripMargin
 
     val mod = loadFromText("inv", text)
-    val newMod = mkVCGen().gen(mod, "Inv")
+    val newMod = mkVCGen().gen(mod, "Inv", None)
     assertDecl(newMod, "VCInv$0", "x > 0")
     assertDecl(newMod, "VCInv$1", "x < 10")
     assertDecl(newMod, "VCNotInv$0", "¬(x > 0)")
@@ -58,7 +108,7 @@ class TestVCGenerator extends FunSuite {
       """.stripMargin
 
     val mod = loadFromText("inv", text)
-    val newMod = mkVCGen().gen(mod, "Inv")
+    val newMod = mkVCGen().gen(mod, "Inv", None)
     assertDecl(newMod, "VCInv$0", """∀z ∈ S: (∀y ∈ S: (y > 0))""")
     assertDecl(newMod, "VCInv$1", """∀z ∈ S: (∀y ∈ S: (y < 10))""")
     assertDecl(newMod, "VCNotInv$0", """¬(∀z ∈ S: (∀y ∈ S: (y > 0)))""")
@@ -74,8 +124,8 @@ class TestVCGenerator extends FunSuite {
 
   private def loadFromText(moduleName: String, text: String): TlaModule = {
     val locationStore = new SourceStore
-    val (rootName, modules) = new SanyImporter(locationStore)
-      .loadFromSource(moduleName, Source.fromString(text))
+    val (_, modules) =
+      new SanyImporter(locationStore, createAnnotationStore()).loadFromSource(Source.fromString(text))
     modules(moduleName)
   }
 }
